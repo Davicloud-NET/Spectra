@@ -51,15 +51,13 @@ internal static class ScriptArguments
     // Makes a string. A function that is called every tick takes the bytes.
     public static bool TryText(LuauStack stack, int index, [NotNullWhen(true)] out string? value)
     {
-        value = stack.TypeOf(index) == LuauType.String ? stack.GetText(index) : null;
+        value = stack.GetText(index);
         return value is not null;
     }
 
-    public static bool TryUtf8(LuauStack stack, int index, out ReadOnlySpan<byte> value)
-    {
-        value = default;
-        return stack.TypeOf(index) == LuauType.String && stack.TryGetUtf8(index, out value);
-    }
+    // The bytes where Luau keeps them. They live while the string stays on the stack.
+    public static bool TryUtf8(LuauStack stack, int index, out ReadOnlySpan<byte> value) =>
+        stack.TryGetUtf8(index, out value);
 
     // The error for an argument of the wrong kind, in Roblox's words. A method
     // counts its arguments from the one after the object.

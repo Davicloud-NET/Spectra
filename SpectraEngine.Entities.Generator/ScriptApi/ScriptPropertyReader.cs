@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using System.Collections.Generic;
 
 namespace SpectraEngine.Entities.Generator.ScriptApi;
@@ -11,17 +12,9 @@ internal static class ScriptPropertyReader
     {
         LocationInfo? at = ScriptAttributes.LocationOf(attribute);
         bool isByHand = ScriptAttributes.NamedBool(attribute, "ByHand");
-        if (isSignal && state.Kind != ScriptContainerKind.Class)
+        if (WhyMisplaced(state, isSignal, isByHand) is { } misplaced)
         {
-            state.Report(ScriptApiDiagnostics.Misplaced, at, member.Name, "a signal is a member of a class");
-            return;
-        }
-
-        if (isByHand && state.HoldsObjects)
-        {
-            state.Report(
-                ScriptApiDiagnostics.Misplaced, at, member.Name,
-                "only a constant of a library and a global can be bound by hand");
+            state.Report(ScriptApiDiagnostics.Misplaced, at, member.Name, misplaced);
             return;
         }
 
@@ -61,7 +54,7 @@ internal static class ScriptPropertyReader
             Type: type,
             ReadFormat: access.Format,
             MemberName: member.Name,
-            Access: Microsoft.CodeAnalysis.CSharp.SyntaxFacts.GetText(member.DeclaredAccessibility),
+            Access: SyntaxFacts.GetText(member.DeclaredAccessibility),
             SelfName: access.SelfName,
             Sets: sets,
             CannotSet: isSignal ? "" : ScriptAttributes.NamedString(attribute, "CannotSet"),
@@ -69,6 +62,16 @@ internal static class ScriptPropertyReader
             SignalParameters: EquatableArray.From(signalParameters),
             IsByHand: isByHand,
             Deprecated: ScriptAttributes.Deprecation(member)));
+    }
+
+    private static string? WhyMisplaced(ScriptReadState state, bool isSignal, bool isByHand)
+    {
+        if (isSignal && state.Kind != ScriptContainerKind.Class)
+            return "a signal is a member of a class";
+        if (isByHand && state.HoldsObjects)
+            return "only a constant of a library and a global can be bound by hand";
+
+        return null;
     }
 
     // How the generated code reads the member, and the type it reads. Null

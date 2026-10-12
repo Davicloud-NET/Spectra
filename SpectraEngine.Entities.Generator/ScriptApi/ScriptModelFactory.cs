@@ -38,29 +38,16 @@ internal static class ScriptModelFactory
         var state = new ScriptReadState(kind, type, name, token);
         LocationInfo? location = LocationInfo.From(type);
 
-        bool isPartial = declaration.Modifiers.IndexOf(SyntaxKind.PartialKeyword) >= 0;
-        var containingTypes = new List<string>();
-        for (SyntaxNode? parent = declaration.Parent; parent is TypeDeclarationSyntax outer; parent = parent.Parent)
-        {
-            isPartial &= outer.Modifiers.IndexOf(SyntaxKind.PartialKeyword) >= 0;
-            containingTypes.Insert(
-                0,
-                $"partial {outer.Keyword.ValueText} {outer.Identifier.ValueText}{outer.TypeParameterList}");
-        }
-
+        List<string> containingTypes = ContainingTypesOf(declaration, out bool isPartial);
         if (!isPartial)
             state.Report(ScriptApiDiagnostics.NotPartial, location, type.Name);
 
-        string summary = "";
-        if (kind != ScriptContainerKind.Globals)
+        string summary = kind == ScriptContainerKind.Globals ? "" : state.SummaryOf(type);
+        if (kind != ScriptContainerKind.Globals && !LuauSignatureText.IsName(name))
         {
-            summary = state.SummaryOf(type);
-            if (!LuauSignatureText.IsName(name))
-            {
-                state.Report(
-                    ScriptApiDiagnostics.NotLuau, ScriptAttributes.LocationOf(attribute), name, type.Name,
-                    "a name is letters, digits and underscores");
-            }
+            state.Report(
+                ScriptApiDiagnostics.NotLuau, ScriptAttributes.LocationOf(attribute), name, type.Name,
+                "a name is letters, digits and underscores");
         }
 
         bool isPlaced = IsPlaced(state, attribute);
@@ -94,6 +81,23 @@ internal static class ScriptModelFactory
             Operators: EquatableArray.From(state.Operators),
             Diagnostics: EquatableArray.From(state.Diagnostics),
             Location: location);
+    }
+
+    // The types the class is nested in, outermost first, each spelled as the
+    // partial declaration the emitter reopens. All of them must be partial.
+    private static List<string> ContainingTypesOf(ClassDeclarationSyntax declaration, out bool isPartial)
+    {
+        isPartial = declaration.Modifiers.IndexOf(SyntaxKind.PartialKeyword) >= 0;
+        var containing = new List<string>();
+        for (SyntaxNode? parent = declaration.Parent; parent is TypeDeclarationSyntax outer; parent = parent.Parent)
+        {
+            isPartial &= outer.Modifiers.IndexOf(SyntaxKind.PartialKeyword) >= 0;
+            containing.Insert(
+                0,
+                $"partial {outer.Keyword.ValueText} {outer.Identifier.ValueText}{outer.TypeParameterList}");
+        }
+
+        return containing;
     }
 
     // Whether the attribute can stand on this class at all. When it cannot,
