@@ -24,15 +24,8 @@ public class SceneNode
     private byte _collisionGroup;
     private bool _isRendered = true;
 
-    // Brushes in this subtree, this node included. The first counts every
-    // kind (rigidity: no scale above any brush), the second only World brushes
-    // (dirtying). AdjustSubtreeBrushCounts is the only writer of either.
-    private int _subtreeBrushCount;
-    private int _subtreeStaticWorldBrushCount;
-
-    // World brushes in this subtree that a bake took off their nodes, this
-    // node's included. AdjustBakedBrushCount is its only writer after init.
-    private int _subtreeBakedBrushCount;
+    // AdjustSubtreeCounts is the only writer once the node is made.
+    private SubtreeBrushCounts _subtree;
     private readonly SceneNodeKind? _bakedKind;
 
     public SceneNode(string name = "Node")
@@ -216,7 +209,10 @@ public class SceneNode
             _brush = value;
 
             if (had != has)
-                AdjustSubtreeBrushCounts(this, has ? 1 : -1, world ? (has ? 1 : -1) : 0);
+            {
+                int step = has ? 1 : -1;
+                AdjustSubtreeCounts(this, new SubtreeBrushCounts { Total = step, World = world ? step : 0 });
+            }
 
             // Attach or detach shifts placement slots, so it needs the full
             // walk; a swap keeps the layout and dirties only this node. A part
@@ -257,7 +253,7 @@ public class SceneNode
             if (_brush is null)
                 return;
 
-            AdjustSubtreeBrushCounts(this, 0, value == BrushKind.World ? 1 : -1);
+            AdjustSubtreeCounts(this, new SubtreeBrushCounts { World = value == BrushKind.World ? 1 : -1 });
             Owner?.MarkAdmissionChanged(this);
             Owner?.OnNodeKindChanged(this);
         }
@@ -279,7 +275,7 @@ public class SceneNode
         init
         {
             _bakedKind = value;
-            _subtreeBakedBrushCount = value is SceneNodeKind.BrushWorld or SceneNodeKind.BrushSubtractive ? 1 : 0;
+            _subtree.Baked = value is SceneNodeKind.BrushWorld or SceneNodeKind.BrushSubtractive ? 1 : 0;
         }
     }
 
@@ -288,7 +284,7 @@ public class SceneNode
     /// or one a bake fused into the level. Neither can move while a level
     /// plays.
     /// </summary>
-    public bool HoldsWorldBrush => _subtreeStaticWorldBrushCount > 0 || _subtreeBakedBrushCount > 0;
+    public bool HoldsWorldBrush => _subtree.World > 0 || _subtree.Baked > 0;
 
     /// <summary>
     /// Whether this node's own mesh or part brush is drawn and casts a shadow.
@@ -500,13 +496,13 @@ public class SceneNode
     /// included. Check this before writing <see cref="LocalScale"/>: a scale
     /// anywhere above a brush makes its placement non-rigid.
     /// </summary>
-    public int SubtreeBrushCount => _subtreeBrushCount;
+    public int SubtreeBrushCount => _subtree.Total;
 
     /// <summary>
     /// How many <see cref="BrushKind.World"/> brushes are in this node's
     /// subtree. Moving the node costs a recompile only when this is non-zero.
     /// </summary>
-    public int SubtreeStaticWorldBrushCount => _subtreeStaticWorldBrushCount;
+    public int SubtreeStaticWorldBrushCount => _subtree.World;
 
     /// <summary>The node's accumulated world matrix (local composed with all ancestors).</summary>
     public Matrix4x4 WorldMatrix
@@ -575,15 +571,13 @@ public class SceneNode
         {
             child.UnlinkSiblings();
             oldParent._children.Remove(child);
-            if (child._subtreeBrushCount > 0)
+            if (!child._subtree.IsEmpty)
             {
-                AdjustSubtreeBrushCounts(oldParent, -child._subtreeBrushCount, -child._subtreeStaticWorldBrushCount);
+                AdjustSubtreeCounts(oldParent, child._subtree.Negated);
                 // Only world brushes change the compiled world.
-                if (child._subtreeStaticWorldBrushCount > 0)
+                if (child._subtree.World > 0)
                     child.Owner?.MarkStructuralWorldDirty();
             }
-
-            AdjustBakedBrushCount(oldParent, -child._subtreeBakedBrushCount);
         }
 
         // Clamp after the detach: a move within one parent, or an undo into a
@@ -601,14 +595,12 @@ public class SceneNode
         child.MarkWorldDirty();
         child.SetOwner(Owner);
 
-        if (child._subtreeBrushCount > 0)
+        if (!child._subtree.IsEmpty)
         {
-            AdjustSubtreeBrushCounts(this, child._subtreeBrushCount, child._subtreeStaticWorldBrushCount);
-            if (child._subtreeStaticWorldBrushCount > 0)
+            AdjustSubtreeCounts(this, child._subtree);
+            if (child._subtree.World > 0)
                 Owner?.MarkStructuralWorldDirty();
         }
-
-        AdjustBakedBrushCount(this, child._subtreeBakedBrushCount);
 
         // A reparent inside one scene raises no membership events, but the
         // spatial index still has to refit.
@@ -673,14 +665,13 @@ public class SceneNode
         {
             child.UnlinkSiblings();
             child.Parent = null;
-            if (child._subtreeBrushCount > 0)
+            if (!child._subtree.IsEmpty)
             {
-                AdjustSubtreeBrushCounts(this, -child._subtreeBrushCount, -child._subtreeStaticWorldBrushCount);
-                if (child._subtreeStaticWorldBrushCount > 0)
+                AdjustSubtreeCounts(this, child._subtree.Negated);
+                if (child._subtree.World > 0)
                     Owner?.MarkStructuralWorldDirty();
             }
 
-            AdjustBakedBrushCount(this, -child._subtreeBakedBrushCount);
             child.SetOwner(null);
             child.MarkWorldDirty();
         }
@@ -725,23 +716,11 @@ public class SceneNode
             _children[i].SetOwner(owner);
     }
 
-    // The only writer of either count.
-    private static void AdjustSubtreeBrushCounts(SceneNode node, int totalDelta, int worldDelta)
+    // From the node up to the root.
+    private static void AdjustSubtreeCounts(SceneNode node, SubtreeBrushCounts delta)
     {
         for (SceneNode? n = node; n is not null; n = n.Parent)
-        {
-            n._subtreeBrushCount += totalDelta;
-            n._subtreeStaticWorldBrushCount += worldDelta;
-        }
-    }
-
-    private static void AdjustBakedBrushCount(SceneNode node, int delta)
-    {
-        if (delta == 0)
-            return;
-
-        for (SceneNode? n = node; n is not null; n = n.Parent)
-            n._subtreeBakedBrushCount += delta;
+            n._subtree.Add(in delta);
     }
 
     private void OnLocalTransformChanged()
@@ -749,7 +728,7 @@ public class SceneNode
         MarkWorldDirty();
 
         // World brushes only: moving a subtree of parts must cost no recompile.
-        if (_subtreeStaticWorldBrushCount > 0)
+        if (_subtree.World > 0)
             Owner?.MarkBrushSubtreeDirty(this);
 
         Owner?.OnNodeTransformChanged(this);
