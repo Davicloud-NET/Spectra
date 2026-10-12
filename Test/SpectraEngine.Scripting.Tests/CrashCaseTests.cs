@@ -97,6 +97,21 @@ public sealed class CrashCaseTests
         result.Output.ShouldContain("went on after 4 scripts");
     }
 
+    // What require does with a module. The script that asks has a managed
+    // frame of the host under the module, and no way the module ends may
+    // unwind through it.
+    [Fact]
+    public async Task A_script_run_from_inside_a_host_function_ends_every_way_and_its_asker_goes_on()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("run-inside-host-call");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+        result.Output.ShouldContain("NativeAOT: True");
+        result.Output.ShouldContain("160 scripts inside a host function, 80 errors reported");
+    }
+
     [Fact]
     public async Task A_state_used_on_one_thread_is_closed_from_another()
     {

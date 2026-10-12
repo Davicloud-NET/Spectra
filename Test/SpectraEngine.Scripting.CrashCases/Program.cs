@@ -11,7 +11,7 @@ internal static partial class Program
 {
     private const string Cases =
         "call-host-function, compile-error, raise-through-shim, raise-from-managed-frame, " +
-        "close-from-another-thread, host-stress, yield-from-host or many-finalizers";
+        "close-from-another-thread, host-stress, yield-from-host, many-finalizers or run-inside-host-call";
 
     // A native executable has no assembly file. The dynamic code switch alone
     // says nothing: PublishAot turns it off for a JIT run too.
@@ -59,6 +59,8 @@ internal static partial class Program
                 return YieldCase.Run();
             case "many-finalizers":
                 return FinalizerCase.Run();
+            case "run-inside-host-call":
+                return NestedCase.Run();
             default:
                 Console.WriteLine($"Give one case: --case={Cases}.");
                 return CaseExit.UnknownCase;
