@@ -165,6 +165,10 @@ Two more things stay by hand:
 - An operator. `[ScriptOperator("*", "Vector3", "Vector3")]` goes on the method that implements it, and that method is put into the metatable by hand (`CFrameMembers`).
 - What is set outside the script API's own setup: `script`, which each script gets for itself, and `warn`, which a host has before it has a level. `ByHand = true` on `[ScriptProperty]` or `[ScriptFunction]` declares it without binding it.
 
+### A global the type checker has too
+
+`require` is declared like any global function with by-hand arguments (`ModuleLoader`), so the reference has it with its summary. The definitions file leaves it out. The type checker has a `require` of its own, which follows a path to its file and gives the module its type. A declaration in the file would take its place, and every module would be `any`. `LuauDefinitions.IsTheCheckersOwn` holds the names that are left out this way.
+
 ## What is generated
 
 For a class or a value, in the other half of the declaring class:
@@ -191,7 +195,7 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `SettableListTests` holds the settable properties of the description equal to the list of `ScriptWrites`, by name, type and member.
 - `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop.
 - `PlayerSettingTests` sets every settable property of the character from a script and compares what outlives a play session after Stop. It also tries every name on the player's objects: what takes a value must be what the description says a script can set.
-- `LuauDefinitionsTests` checks that the definitions file has every class, member and global.
+- `LuauDefinitionsTests` checks that the definitions file has every class, member and global, and that it has no `require`.
 - `ScriptCostTests` fails when a crossing allocates. A new kind of crossing gets a row there. Its table of times is a measurement, which runs only when asked for: `dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.ScriptCostTests"`.
 - The generator's own tests are in `Test/SpectraEngine.Entities.Tests` (`ScriptApiGenerator*`). They compile its output against stubs of the binding in `ScriptApiHarness`. When the generator calls something new in the binding, the stub gets it too.
 
