@@ -129,6 +129,9 @@ public sealed class PlayerWrites
         return true;
     }
 
+    // A place inside solid is taken, as a trigger that teleports takes it.
+    // The mover pushes the player out through the nearest face, and a script
+    // that puts the player on a point in the floor relies on that.
     private bool TryTeleport(Vector3 feet, float? yaw, [NotNullWhen(false)] out string? refusal)
     {
         if (!TryFindPlayer(out IPlayerPresence? player, out refusal))

@@ -139,6 +139,8 @@ The value is a number, a boolean, a string, a `Vector3` or a `CFrame`. One of an
 
 What the method changes has to go back at Stop as well. The player's members go through `PlayerWrites` in Core, which records in the journal the door records in. A new one is a method there, and a `TuningJournalKind` when it changes the tuning, which outlives the level.
 
+`PlayerWrites` refuses what is no number or out of range, and nothing else. It does not ask whether a place is free. A teleport into something solid is taken, as `trigger_teleport` takes it, and the mover pushes the player out through the nearest face, half a unit a tick. With the feet just under a floor that is up, so a teleport to a point in the floor stands the player on it. With most of the player under the floor it is down and out of the level, where the fall-out guard starts the player again. `TeleportIntoSolidTests` holds each case.
+
 ### Written by hand
 
 Some members cannot be generated: `CFrame.new` takes six shapes of arguments, `task.wait` yields. Such a member takes a `LuauStack` and returns how many values it pushed, as every host function does. Its attribute says what a script may hand it, as Luau writes it:

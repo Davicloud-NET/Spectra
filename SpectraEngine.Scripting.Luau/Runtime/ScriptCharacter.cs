@@ -47,7 +47,7 @@ internal sealed partial class ScriptCharacter : ScriptObject
     // error at its line. What calls a host function catches it.
     private IPlayerPresence Body => _door.Player ?? throw new InvalidOperationException(ScriptMember.HasLeft);
 
-    /// <summary>Puts the player at rest at a position, or at a frame's position, facing along the frame's LookVector. A player start faces along its ZVector, so its own frame turns the player round.</summary>
+    /// <summary>Puts the player at rest at a position, or at a frame's position, facing along the frame's LookVector. A place inside something solid is taken too, and the player is then pushed out of its nearest side. A player start faces along its ZVector, so its own frame turns the player round.</summary>
     [ScriptMethod(Parameters = "target: CFrame | Vector3")]
     private int Teleport(LuauStack stack)
     {
