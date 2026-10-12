@@ -1,5 +1,6 @@
 using System.Numerics;
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Physics.Character;
 using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
@@ -128,5 +129,32 @@ public sealed class PlayJournalTests
 
         allocated.ShouldBe(0);
         journal.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void What_is_no_node_records_its_first_value_and_gets_it_back_among_the_nodes()
+    {
+        var journal = new PlayJournal();
+        var tuning = new CharacterTuning { WalkSpeed = 6f };
+        var other = new CharacterTuning();
+        var door = new SceneNode("Door");
+
+        journal.Record(tuning, TuningJournalKind.WalkSpeed);
+        tuning.WalkSpeed = 9f;
+        journal.Record(door, JournalKind.Name);
+        door.Name = "Gate";
+        journal.Record(tuning, TuningJournalKind.WalkSpeed);
+        tuning.WalkSpeed = 12f;
+        journal.Record(other, TuningJournalKind.JumpHeight);
+        other.JumpHeight = 3f;
+
+        journal.Count.ShouldBe(3);
+        journal.CountOf(TuningJournalKind.WalkSpeed).ShouldBe(1);
+
+        journal.Restore();
+
+        tuning.WalkSpeed.ShouldBe(6f);
+        other.JumpHeight.ShouldBe(new CharacterTuning().JumpHeight);
+        door.Name.ShouldBe("Door");
     }
 }
