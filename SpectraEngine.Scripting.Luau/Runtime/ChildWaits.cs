@@ -75,7 +75,7 @@ internal sealed class ChildWaits
             return false;
 
         ChildWait wait = _waits[index];
-        if (HasLeft(in wait))
+        if (!_waiting.IsWaiting(token))
         {
             Forget(index);
             return true;
@@ -142,13 +142,12 @@ internal sealed class ChildWaits
             return stack.Fail("the wait was not begun: too many threads are waiting in the level");
         }
 
-        ScriptMessage place = ScriptReport.Line(stack.State, _host.ScriptOf(stack), ScriptSeverity.Warning, string.Empty);
         Tidy();
         _waits.Add(new ChildWait(
-            thread, token, parent, name.ToString(),
+            token, parent, name.ToString(),
             Deadline: hasTimeout ? due : WholeTicks.Never,
             WarnAt: hasTimeout ? WholeTicks.Never : due,
-            place.Script, place.Line));
+            ScriptReport.Line(stack.State, _host.ScriptOf(stack), ScriptSeverity.Warning, string.Empty)));
 
         return LuauStack.Yield();
     }
@@ -180,15 +179,10 @@ internal sealed class ChildWaits
     }
 
     private void Warn(in ChildWait wait) =>
-        _host.Report(new ScriptMessage(
-            ScriptSeverity.Warning,
-            $"Infinite yield possible on '{NodeTree.FullName(wait.Parent)}:WaitForChild(\"{wait.Name}\")'",
-            wait.Script,
-            wait.Line));
-
-    // A thread that was cancelled, or that a script resumed by hand, has
-    // left its wait.
-    private bool HasLeft(in ChildWait wait) => !_waiting.Holds(wait.Token) || !wait.Thread.IsAlive;
+        _host.Report(wait.Warning with
+        {
+            Text = $"Infinite yield possible on '{NodeTree.FullName(wait.Parent)}:WaitForChild(\"{wait.Name}\")'",
+        });
 
     // A thread that ended by hand still has its wait among the others.
     private void Forget(int index)
@@ -197,7 +191,10 @@ internal sealed class ChildWaits
         _waits.RemoveAt(index);
     }
 
-    // No wake may ever come for a wait its thread has left.
+    // No wake may ever come for a wait its thread has left. A thread has
+    // left when it was cancelled, has ended, or waits for something else by
+    // now. One that coroutine.resume took out of the wait and coroutine.yield
+    // parked has not, as far as anything here can tell.
     private void Tidy()
     {
         if (_waits.Count < _tidyAt)
@@ -205,7 +202,7 @@ internal sealed class ChildWaits
 
         for (int i = _waits.Count - 1; i >= 0; i--)
         {
-            if (HasLeft(_waits[i]))
+            if (!_waiting.IsWaiting(_waits[i].Token))
                 Forget(i);
         }
 

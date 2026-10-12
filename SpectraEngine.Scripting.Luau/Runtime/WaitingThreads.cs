@@ -62,11 +62,16 @@ internal sealed class WaitingThreads
         Free(index);
     }
 
-    // Whether a token still names a wait, for a wake that may come more than once.
-    public bool Holds(long token)
+    // Whether the thread a token names still waits under it: the wait was
+    // neither replaced nor removed, and the thread has not ended. For a wake
+    // that may come more than once.
+    public bool IsWaiting(long token)
     {
         int index = (int)(uint)token;
-        return (uint)index < (uint)_used && _slots[index].IsWaiting && _slots[index].Generation == (uint)(token >> 32);
+        return (uint)index < (uint)_used
+            && _slots[index].IsWaiting
+            && _slots[index].Generation == (uint)(token >> 32)
+            && _slots[index].Waiting.Thread.IsAlive;
     }
 
     // The generation moves on, so the old token matches nothing again.
