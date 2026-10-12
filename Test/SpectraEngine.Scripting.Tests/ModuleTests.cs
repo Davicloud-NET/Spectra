@@ -208,6 +208,45 @@ public sealed class ModuleTests
         level.Runtime.ShouldNotBeNull().WaitingThreadCount.ShouldBe(0);
     }
 
+    [Theory]
+    [InlineData("task.wait()")]
+    [InlineData("wait()")]
+    [InlineData("game:GetService('RunService').Heartbeat:Wait()")]
+    [InlineData("coroutine.yield()")]
+    public void Every_way_to_wait_is_refused_while_a_module_loads_and_nothing_wakes_it_later(string wait)
+    {
+        using var level = new ScriptLevel();
+        level.FileAt("Scripts/slow.luau", $"local a = 1\n\n{wait}\nprint('after')\nreturn a");
+        level.ScriptAt("Scripts/main.luau", "print(pcall(require, './slow'))");
+
+        level.Play().Tick(5);
+
+        level.ErrorsWithPlace().ShouldHaveSingleItem().ShouldStartWith(
+            "Scripts/slow.luau:3: a module cannot wait before it returns.");
+        level.Printed.ShouldHaveSingleItem().ShouldStartWith("false Scripts/main.luau:1: ");
+        level.Runtime.ShouldNotBeNull().WaitingThreadCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_function_of_a_module_may_wait_and_the_script_that_calls_it_waits()
+    {
+        using var level = new ScriptLevel();
+        level.FileAt("Scripts/timer.luau", """
+            return { after = function(seconds) task.wait(seconds) return 'done' end }
+            """);
+        level.ScriptAt("Scripts/main.luau", """
+            local timer = require('./timer')
+            print(timer.after(0.05))
+            """);
+
+        level.Play().Tick();
+        level.Printed.ShouldBeEmpty();
+        level.Tick(5);
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["done"]);
+    }
+
     [Fact]
     public void A_module_may_start_a_thread_that_waits_and_what_it_connected_goes_on()
     {

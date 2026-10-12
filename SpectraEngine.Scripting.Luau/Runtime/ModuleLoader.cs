@@ -66,8 +66,8 @@ internal sealed partial class ModuleLoader(
 
         if (TooDeep() is { } deep)
             return stack.Fail(deep);
-        if (Find(asked, files, out string path, out byte[] text) is { } missing)
-            return stack.Fail(missing);
+        if (FindFile(asked, files, out string path, out byte[] text) is { } noFile)
+            return stack.Fail(noFile);
 
         ScriptModule module = new(path, node: null);
         _byPath.Add(path, module);
@@ -101,7 +101,7 @@ internal sealed partial class ModuleLoader(
 
     // The one file of them that is there, with its text. Otherwise the
     // refusal: none is there, both are, or the one cannot be read.
-    private string? Find(string asked, string[] files, out string path, out byte[] text)
+    private string? FindFile(string asked, string[] files, out string path, out byte[] text)
     {
         path = string.Empty;
         text = [];
