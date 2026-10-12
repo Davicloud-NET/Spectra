@@ -3,6 +3,8 @@ using System.Text.RegularExpressions;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
+using SpectraEngine.Core.Scripting.Api;
+using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.Tests;
 
@@ -49,22 +51,49 @@ public sealed class SettableListTests
             "The binding sets a node only through ScriptWrites.TryWrite, which records what Stop puts back");
     }
 
+    // The door is in Core and the description is generated in the binding,
+    // so neither can read the other. This holds the two lists equal.
     [Fact]
-    public void The_names_tried_include_every_member_the_binding_and_a_node_have()
+    public void The_description_names_the_doors_member_for_everything_a_script_can_set_and_for_nothing_else()
+    {
+        var described = new List<string>();
+        foreach (ScriptClassDescription owner in LuauScriptApi.Description.Classes)
+        {
+            foreach (ScriptPropertyDescription property in owner.Properties)
+            {
+                if (property.Sets is { } member)
+                    described.Add($"{owner.Name}.{property.Name}: {property.Type} through {member}");
+            }
+        }
+
+        described.Order(StringComparer.Ordinal).ShouldBe(
+            ScriptWrites.Settable
+                .Select(member => $"Instance.{member.Name}: {MemberValue.TypeName(member.Kind)} through {member.Id}")
+                .Order(StringComparer.Ordinal),
+            "what the description says a script can set, against the list of ScriptWrites. A member of the door " +
+            "needs a property in NodeApi with Sets, of the type the door takes, and the other way round");
+    }
+
+    [Fact]
+    public void The_names_tried_include_every_member_the_description_the_binding_and_a_node_have()
     {
         SortedSet<string> names = Candidates();
 
-        names.ShouldContain("ClassName", "the binding's sources were not found, or name no member the old way");
+        names.ShouldContain("Heartbeat", "the description of the script API was not found");
+        names.ShouldContain("__index", "the binding's sources were not found");
         names.ShouldContain("LocalRotation", "the properties of SceneNode were not found");
         names.ShouldContain("Intensity", "the properties of Light were not found");
     }
 
-    // Every name a script might set: what the door lists, what the binding's
-    // sources name, what a node and its payloads hold, and Roblox's own.
+    // Every name a script might set: what the door lists, what the
+    // description has, what the binding's sources name, what a node and its
+    // payloads hold, and Roblox's own.
     private static SortedSet<string> Candidates()
     {
         var names = new SortedSet<string>(RobloxNames, StringComparer.Ordinal);
         names.UnionWith(ScriptWrites.Settable.Select(member => member.Name));
+        foreach (ScriptClassDescription described in LuauScriptApi.Description.Classes)
+            names.UnionWith(LuauScriptApi.Description.MemberNamesOf(described.Name));
 
         foreach (Type type in NodeTypes)
         {

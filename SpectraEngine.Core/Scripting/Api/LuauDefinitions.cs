@@ -224,8 +224,12 @@ public static class LuauDefinitions
     private static string ReturnsOf(ScriptSignature signature) =>
         signature.Returns.Length == 0 ? "()" : signature.Returns;
 
+    // A signal that hands over nothing takes the empty pack, which is "()".
     private static string SignalOf(ScriptSignalDescription signal)
     {
+        if (signal.Parameters.Count == 0)
+            return SignalType + "<()>";
+
         var type = new StringBuilder(SignalType).Append('<');
         for (int i = 0; i < signal.Parameters.Count; i++)
         {
