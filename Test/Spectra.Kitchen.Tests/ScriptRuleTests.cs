@@ -266,6 +266,26 @@ public class ScriptRuleTests
     }
 
     [Fact]
+    public void A_scripts_folder_beside_Assets_from_an_older_project_is_not_cooked_and_not_touched()
+    {
+        using var project = new TempProject();
+        project.WriteAsset(Door, "print(1)\n");
+
+        // Where a project kept shared scripts before they were content files.
+        string old = Path.Combine(project.Root, "Scripts", "shared.luau");
+        Directory.CreateDirectory(Path.Combine(project.Root, "Scripts"));
+        File.WriteAllText(old, "oops");
+        var check = new FakeScriptCheck();
+
+        CookResult cooked = Cook(project, check);
+
+        cooked.Succeeded.ShouldBeTrue();
+        cooked.Assets.Select(asset => asset.SourcePath).ShouldBe([Door]);
+        check.Asked.Length.ShouldBe(1);
+        File.ReadAllText(old).ShouldBe("oops");
+    }
+
+    [Fact]
     public void A_script_edited_after_the_cook_is_read_by_a_dev_boot_and_not_by_a_shipped_one()
     {
         using var project = new TempProject();

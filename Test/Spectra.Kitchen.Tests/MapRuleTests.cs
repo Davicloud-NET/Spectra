@@ -458,6 +458,29 @@ public class MapRuleTests
     }
 
     [Fact]
+    public void A_bundle_that_still_has_a_scripts_folder_bakes_and_the_folder_stays_as_it_is()
+    {
+        // Where a map was once meant to keep its scripts. Nothing reads it.
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+        string bundle = fixture.WriteBundle(project, "Room.smap");
+
+        string old = Path.Combine(bundle, "scripts", "door.luau");
+        Directory.CreateDirectory(Path.Combine(bundle, "scripts"));
+        File.WriteAllText(old, "not a script (");
+
+        var context = new RuleContext(project.Root, "Maps/Room.smap", CookProfile.Ship);
+        new MapRule().Cook(context);
+
+        context.Diagnostics.ShouldBeEmpty();
+        context.Emissions.ShouldHaveSingleItem().Path.ShouldBe("Maps/Room.scmap");
+        ScmapProbe.Read(context.Emissions[0].Payload).Scripts.ShouldBeEmpty();
+
+        MapBundle.Load(bundle).Nodes.Count.ShouldBeGreaterThan(0);
+        File.ReadAllText(old).ShouldBe("not a script (");
+    }
+
+    [Fact]
     public void The_scripts_add_their_files_to_the_asset_table_and_change_nothing_else()
     {
         using var project = new TempProject();
