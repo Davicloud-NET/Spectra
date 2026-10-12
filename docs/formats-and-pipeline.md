@@ -889,9 +889,9 @@ The entry sits at the script's own content path, such as `Scripts/door.luau`, wi
 ```
 
 - The text is the file's bytes with nothing changed. A byte order mark and CRLF stay. `LuauHost.Load` drops the mark when it compiles, for a loose file and for a packed one.
-- The first byte is the escape character, which no script's text starts with. So the first four bytes tell a packed script from a loose file. `ContentScriptSource` reads both and hands on the same bytes. It is the one reader: whatever else opens a `.luau` path gets the header when the file comes from a pack.
+- The first byte is the escape character, which no script's text starts with. So the first four bytes tell a packed script from a loose file. `ContentScriptSource` reads both and hands on the same bytes. It is the reader a level uses. The demo's `--script` switch takes a file from disk in either form, through `PackedScript.TextOf`. Whatever else opens a `.luau` path gets the header when the file comes from a pack.
 - `PayloadKind` is there so that bytecode can come as a second kind, with no change to the header and no break for a pack that holds text. A reader refuses a kind it does not know.
-- A packed script this build cannot read does not start. The log names the entry and says why, and the script's node reports that its file is not in the level's content.
+- A packed script this build cannot read does not start, and the error on its node says why: the version or the payload kind, and to cook the project again.
 
 The reader is `PackedScript` in `SpectraEngine.Core/Scripting`, and the writer is `PackedScriptWriter` in `Spectra.Kitchen/Scripts`.
 

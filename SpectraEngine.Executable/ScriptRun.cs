@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SpectraEngine.Core.Scripting;
 using SpectraEngine.Scripting.Luau;
 using System;
 using System.IO;
@@ -19,16 +20,8 @@ internal static class ScriptRun
             return false;
         }
 
-        byte[] source;
-        try
-        {
-            source = File.ReadAllBytes(path);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            logger.LogError("The script {Path} could not be read: {Reason}", path, e.Message);
+        if (ReadText(path, logger) is not { } source)
             return false;
-        }
 
         using LuauHost host = new(new ScriptLogSink(logger));
         host.Seal();
@@ -47,5 +40,20 @@ internal static class ScriptRun
         }
 
         return outcome != LuauResume.Failed;
+    }
+
+    // Null when the file cannot be read, which is logged. A script out of a
+    // cooked folder has the pack's header in front of its text.
+    internal static byte[]? ReadText(string path, ILogger logger)
+    {
+        try
+        {
+            return PackedScript.TextOf(File.ReadAllBytes(path), path).ToArray();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            logger.LogError("The script {Path} could not be read: {Reason}", path, e.Message);
+            return null;
+        }
     }
 }
