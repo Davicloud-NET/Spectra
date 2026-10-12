@@ -128,7 +128,7 @@ A property that cannot be set answers "Property is read only". `CannotSet` gives
 The door sets nodes. An object of a class that is not static takes a write itself: `SetBy` names a method of the class that gets the value and returns null, or why it refused the value. The script reads that as its error.
 
 ```csharp
-/// <summary>How fast the player walks, in units a second. Stop puts back what a script set.</summary>
+/// <summary>How fast the player walks, in units a second. A unit is a metre, so Roblox's 16 is about 4.5 here. Stop puts back what a script set.</summary>
 [ScriptProperty(SetBy = nameof(SetWalkSpeed))]
 public float WalkSpeed => _door.WalkSpeed ?? throw Left();
 
