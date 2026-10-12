@@ -133,10 +133,10 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
     // ask that ran it fails, and the next one runs it again.
     private ScriptMessage Stopped(ScriptModule module, int reason, in ScriptMessage said, Cost own)
     {
-        bool isItsOwn = reason == Shim.StopTime
+        bool isToBlame = reason == Shim.StopTime
             ? own.Time.Ticks >= host.CallLimit.Ticks / 2
             : own.Bytes >= host.MemoryBudget / 2;
-        if (isItsOwn)
+        if (isToBlame)
             return said;
 
         module.IsKept = false;
