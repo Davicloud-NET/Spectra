@@ -179,7 +179,7 @@ public class PackVerifierTests
         cooked.Succeeded.ShouldBeTrue(string.Join(Environment.NewLine, cooked.Diagnostics));
         cooked.Assets.Count(asset => asset.Rule == RuleKind.Script).ShouldBeGreaterThan(0);
 
-        PackVerifyResult result = Verify(cooked.OutputPath!);
+        PackVerifyResult result = Verify(cooked.OutputPath.ShouldNotBeNull());
 
         result.Succeeded.ShouldBeTrue(Describe(result));
         result.ReferencesChecked.ShouldBeGreaterThan(0);

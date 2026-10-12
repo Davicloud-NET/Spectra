@@ -203,7 +203,8 @@ public class ScriptRuleTests
 
         second.CacheHits.ShouldBe(1);
         check.Asked.Length.ShouldBe(1);
-        File.ReadAllBytes(second.OutputPath!).ShouldBe(File.ReadAllBytes(first.OutputPath!));
+        File.ReadAllBytes(second.OutputPath.ShouldNotBeNull())
+            .ShouldBe(File.ReadAllBytes(first.OutputPath.ShouldNotBeNull()));
     }
 
     [Fact]
@@ -249,7 +250,7 @@ public class ScriptRuleTests
         project.WriteAsset(Door, saved);
 
         CookResult cooked = Cook(project, new FakeScriptCheck());
-        var pack = project.Track(new PackSource(NullLogger.Instance, cooked.OutputPath!));
+        var pack = project.Track(new PackSource(NullLogger.Instance, cooked.OutputPath.ShouldNotBeNull()));
         var loose = new LooseFileSource(NullLogger.Instance, project.Layout.AssetsPath);
 
         byte[] fromPack = new ContentScriptSource(pack).Read(Door).ShouldNotBeNull();
@@ -297,7 +298,8 @@ public class ScriptRuleTests
         using var project = new TempProject();
         project.WriteAsset(Door, "print(1)\n");
 
-        PackVerifier.Verify(Cook(project, new FakeScriptCheck()).OutputPath!).Succeeded.ShouldBeTrue();
+        string cooked = Cook(project, new FakeScriptCheck()).OutputPath.ShouldNotBeNull();
+        PackVerifier.Verify(cooked).Succeeded.ShouldBeTrue();
 
         // Written by hand: this cook packs no script it did not check.
         string copied = Path.Combine(project.Root, "copied.spack");
