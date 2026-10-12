@@ -6,6 +6,7 @@ using Spectra.Kitchen.Rules;
 using Spectra.Kitchen.Scripts;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Assets.Sources;
+using SpectraEngine.Core.Projects;
 using SpectraEngine.Core.Scripting;
 using System;
 using System.IO;
@@ -261,6 +262,33 @@ public class ScriptRuleTests
         pack.TryOpen(Door, out ContentBlob? entry).ShouldBeTrue();
         using (entry)
             PackedScript.IsPacked(entry.Span).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_script_edited_after_the_cook_is_read_by_a_dev_boot_and_not_by_a_shipped_one()
+    {
+        using var project = new TempProject();
+        project.WriteAsset(Door, "print(\"cooked\")\n");
+
+        // Into the project's own cooked folder, where a boot looks.
+        var settings = new CookSettings { UseCache = false, ScriptCheck = new FakeScriptCheck() };
+        new CookSession(project.Layout, settings).Run(TestContext.Current.CancellationToken)
+            .Succeeded.ShouldBeTrue();
+
+        byte[] edited = project.WriteAsset(Door, "print(\"edited\")\n");
+
+        // The loose file is plain text over a packed entry with a header.
+        using (ProjectContentMount dev = ProjectContentMount.Open(
+                   NullLogger.Instance, project.Layout, ContentMountProfile.Dev))
+        {
+            new ContentScriptSource(dev.Content).Read(Door).ShouldBe(edited);
+        }
+
+        using ProjectContentMount shipped = ProjectContentMount.Open(
+            NullLogger.Instance, project.Layout, ContentMountProfile.Shipped);
+
+        byte[] packed = new ContentScriptSource(shipped.Content).Read(Door).ShouldNotBeNull();
+        Encoding.UTF8.GetString(packed).ShouldBe("print(\"cooked\")\n");
     }
 
     [Fact]
