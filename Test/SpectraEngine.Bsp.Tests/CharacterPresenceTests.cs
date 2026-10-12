@@ -156,7 +156,21 @@ public sealed class CharacterPresenceTests
         presence.State.Position.ShouldBe(character.State.Position);
         presence.State.Velocity.ShouldBe(character.State.Velocity);
         presence.State.Grounded.ShouldBeTrue();
-        presence.Tuning.ShouldBeSameAs(character.Tuning);
+    }
+
+    [Fact]
+    public void What_an_entity_gets_of_the_player_does_not_hand_out_its_tuning()
+    {
+        // The tuning outlives the level. A write to it that records nothing
+        // would still be there on the next Play.
+        Type[] handedOut =
+        [
+            .. typeof(IPlayerPresence).GetProperties().Select(property => property.PropertyType),
+            .. typeof(IPlayerPresence).GetMethods().Select(method => method.ReturnType),
+        ];
+
+        handedOut.ShouldContain(typeof(CharacterState), "the members of the presence were not found");
+        handedOut.ShouldNotContain(typeof(CharacterTuning));
     }
 
     [Fact]

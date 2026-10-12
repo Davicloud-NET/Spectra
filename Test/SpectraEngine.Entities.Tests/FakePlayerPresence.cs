@@ -20,8 +20,6 @@ internal sealed class FakePlayerPresence : IPlayerPresence
 
     public CharacterState State => CharacterState.AtFeet(Feet);
 
-    public CharacterTuning Tuning { get; } = new();
-
     public List<(Vector3 Feet, float? Yaw)> Teleports { get; } = [];
 
     public void Teleport(Vector3 feet, float? yaw = null)

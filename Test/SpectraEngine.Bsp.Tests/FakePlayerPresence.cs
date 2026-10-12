@@ -5,7 +5,7 @@ using SpectraEngine.Core.Physics.Character;
 namespace SpectraEngine.Bsp.Tests;
 
 // A player a test puts where it likes: a standing capsule at Feet.
-internal sealed class FakePlayerPresence : IPlayerPresence
+internal sealed class FakePlayerPresence : IPlayerPresence, ITunedPlayer
 {
     public const float Height = 1.8f;
 

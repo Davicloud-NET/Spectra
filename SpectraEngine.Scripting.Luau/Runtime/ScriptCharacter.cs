@@ -33,19 +33,21 @@ internal sealed partial class ScriptCharacter : ScriptObject
 
     /// <summary>How fast the player walks, in units a second. Stop puts back what a script set.</summary>
     [ScriptProperty(SetBy = nameof(SetWalkSpeed))]
-    public float WalkSpeed => Body.Tuning.WalkSpeed;
+    public float WalkSpeed => _door.WalkSpeed ?? throw Left();
 
     /// <summary>How high the player jumps, in units. Stop puts back what a script set.</summary>
     [ScriptProperty(SetBy = nameof(SetJumpHeight))]
-    public float JumpHeight => Body.Tuning.JumpHeight;
+    public float JumpHeight => _door.JumpHeight ?? throw Left();
 
     /// <summary>Whether the player stands on ground.</summary>
     [ScriptProperty]
     public bool IsGrounded => Body.State.Grounded;
 
+    private IPlayerPresence Body => _door.Player ?? throw Left();
+
     // A script that kept the character of a player that has left reads an
     // error at its line. What calls a host function catches it.
-    private IPlayerPresence Body => _door.Player ?? throw new InvalidOperationException(ScriptMember.HasLeft);
+    private static InvalidOperationException Left() => new(ScriptMember.HasLeft);
 
     /// <summary>Puts the player at rest at a position, or at a frame's position, facing along the frame's LookVector. A place inside something solid is taken too, and the player is then pushed out of its nearest side. A player start faces along its ZVector, so its own frame turns the player round.</summary>
     [ScriptMethod(Parameters = "target: CFrame | Vector3")]

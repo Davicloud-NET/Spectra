@@ -38,12 +38,20 @@ public sealed class PlayerWrites
     /// </summary>
     public IPlayerPresence? Player => _world.Player is { IsPresent: true } player ? player : null;
 
+    /// <summary>How fast the player walks, in units a second. Null when nothing walks the level.</summary>
+    public float? WalkSpeed => Tuning?.WalkSpeed;
+
+    /// <summary>How high the player jumps, in units. Null when nothing walks the level.</summary>
+    public float? JumpHeight => Tuning?.JumpHeight;
+
+    private CharacterTuning? Tuning => (Player as ITunedPlayer)?.Tuning;
+
     /// <summary>Sets how fast the player walks, in units a second.</summary>
     /// <param name="refusal">Why nothing was written, as the script's error says it.</param>
     /// <returns>False when the write was refused. The player is as it was then.</returns>
     public bool TrySetWalkSpeed(float value, [NotNullWhen(false)] out string? refusal)
     {
-        if (!TryFindPlayer(out IPlayerPresence? player, out refusal))
+        if (!TryFindTuning(out CharacterTuning? tuning, out refusal))
             return false;
 
         if (!IsFrom0To(MaxSpeed, value))
@@ -52,8 +60,8 @@ public sealed class PlayerWrites
             return false;
         }
 
-        _world.Journal.Record(player.Tuning, TuningJournalKind.WalkSpeed);
-        player.Tuning.WalkSpeed = value;
+        _world.Journal.Record(tuning, TuningJournalKind.WalkSpeed);
+        tuning.WalkSpeed = value;
         return true;
     }
 
@@ -62,7 +70,7 @@ public sealed class PlayerWrites
     /// <returns>False when the write was refused. The player is as it was then.</returns>
     public bool TrySetJumpHeight(float value, [NotNullWhen(false)] out string? refusal)
     {
-        if (!TryFindPlayer(out IPlayerPresence? player, out refusal))
+        if (!TryFindTuning(out CharacterTuning? tuning, out refusal))
             return false;
 
         if (!IsFrom0To(MaxJumpHeight, value))
@@ -71,8 +79,8 @@ public sealed class PlayerWrites
             return false;
         }
 
-        _world.Journal.Record(player.Tuning, TuningJournalKind.JumpHeight);
-        player.Tuning.JumpHeight = value;
+        _world.Journal.Record(tuning, TuningJournalKind.JumpHeight);
+        tuning.JumpHeight = value;
         return true;
     }
 
@@ -144,6 +152,23 @@ public sealed class PlayerWrites
         }
 
         player.Teleport(feet, yaw);
+        return true;
+    }
+
+    private bool TryFindTuning(
+        [NotNullWhen(true)] out CharacterTuning? tuning, [NotNullWhen(false)] out string? refusal)
+    {
+        tuning = null;
+        if (!TryFindPlayer(out IPlayerPresence? player, out refusal))
+            return false;
+
+        if (player is not ITunedPlayer tuned)
+        {
+            refusal = "How this player moves cannot be changed.";
+            return false;
+        }
+
+        tuning = tuned.Tuning;
         return true;
     }
 

@@ -20,8 +20,6 @@ internal sealed class PinnedPlayer : IPlayerPresence
 
     public CharacterState State => CharacterState.AtFeet(Feet);
 
-    public CharacterTuning Tuning { get; } = new();
-
     public void Teleport(Vector3 feet, float? yaw = null) => Feet = feet;
 
     public void Respawn() => Feet = Vector3.Zero;

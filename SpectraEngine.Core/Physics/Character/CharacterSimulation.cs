@@ -11,7 +11,7 @@ namespace SpectraEngine.Core.Physics.Character;
 /// </summary>
 // No camera, input or renderer here: a server, a rollback replay and a
 // scripted mover all tick this without them. The view lives elsewhere.
-public sealed class CharacterSimulation : IPlayerPresence
+public sealed class CharacterSimulation : IPlayerPresence, ITunedPlayer
 {
     // A rise off the ground slower than this stays inside the mover's
     // contact band, and its ground check stands the character again on the

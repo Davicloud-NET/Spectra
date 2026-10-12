@@ -8,6 +8,8 @@ namespace SpectraEngine.Core.Entities;
 /// and how it moves, and a way to move it. The player is neither an entity
 /// nor a node.
 /// </summary>
+// The tuning is not here. It outlives the level, and a level changes it
+// through Scripting.PlayerWrites, which records what Stop puts back.
 public interface IPlayerPresence
 {
     /// <summary>Whether the player is in the level. Nothing else here means anything otherwise.</summary>
@@ -21,13 +23,6 @@ public interface IPlayerPresence
     /// which way it faces, as of the last tick.
     /// </summary>
     CharacterState State { get; }
-
-    /// <summary>
-    /// How the player moves. A change takes effect on the next tick and
-    /// outlives the level, so a running level changes it only through what
-    /// records the change, as <see cref="Scripting.PlayerWrites"/> does.
-    /// </summary>
-    CharacterTuning Tuning { get; }
 
     /// <summary>Puts the player at rest with its feet at a point.</summary>
     /// <param name="feet">Where the feet go, in world space.</param>

@@ -130,14 +130,14 @@ The door sets nodes. An object of a class that is not static takes a write itsel
 ```csharp
 /// <summary>How fast the player walks, in units a second. Stop puts back what a script set.</summary>
 [ScriptProperty(SetBy = nameof(SetWalkSpeed))]
-public float WalkSpeed => Body.Tuning.WalkSpeed;
+public float WalkSpeed => _door.WalkSpeed ?? throw Left();
 
 private string? SetWalkSpeed(float value) => _door.TrySetWalkSpeed(value, out string? refused) ? null : refused;
 ```
 
 The value is a number, a boolean, a string, a `Vector3` or a `CFrame`. One of another kind is refused before the method is called, in the words the door uses.
 
-What the method changes has to go back at Stop as well. The player's members go through `PlayerWrites` in Core, which records in the journal the door records in. A new one is a method there, and a `TuningJournalKind` when it changes the tuning, which outlives the level.
+What the method changes has to go back at Stop as well. The player's members go through `PlayerWrites` in Core, which records in the journal the door records in. A new one is a method there, and a `TuningJournalKind` when it changes the tuning, which outlives the level. The tuning is read through `PlayerWrites` too: `IPlayerPresence` does not hand it out, so no entity can write it past the journal.
 
 `PlayerWrites` refuses what is no number or out of range, and nothing else. It does not ask whether a place is free. A teleport into something solid is taken, as `trigger_teleport` takes it, and the mover pushes the player out through the nearest face, half a unit a tick. With the feet just under a floor that is up, so a teleport to a point in the floor stands the player on it. With most of the player under the floor it is down and out of the level, where the fall-out guard starts the player again. `TeleportIntoSolidTests` holds each case.
 

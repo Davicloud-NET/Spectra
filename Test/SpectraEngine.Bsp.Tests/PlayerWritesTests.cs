@@ -29,6 +29,40 @@ public sealed class PlayerWritesTests
     }
 
     [Fact]
+    public void What_is_read_of_the_tuning_is_what_was_written_and_nothing_when_nobody_walks()
+    {
+        PlayerWrites door = Started();
+        door.WalkSpeed.ShouldBe(_player.Tuning.WalkSpeed);
+        door.JumpHeight.ShouldBe(_player.Tuning.JumpHeight);
+
+        door.TrySetWalkSpeed(9f, out _).ShouldBeTrue();
+        door.TrySetJumpHeight(3f, out _).ShouldBeTrue();
+        door.WalkSpeed.ShouldBe(9f);
+        door.JumpHeight.ShouldBe(3f);
+
+        _world.Player = null;
+        door.WalkSpeed.ShouldBeNull();
+        door.JumpHeight.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_player_that_keeps_its_tuning_to_itself_refuses_a_speed_and_a_height_and_still_moves()
+    {
+        PlayerWrites door = Started();
+        _world.Player = new UntunedPlayerPresence();
+
+        door.TrySetWalkSpeed(9f, out string? refusal).ShouldBeFalse();
+        refusal.ShouldBe("How this player moves cannot be changed.");
+        door.TrySetJumpHeight(3f, out refusal).ShouldBeFalse();
+        refusal.ShouldBe("How this player moves cannot be changed.");
+        door.WalkSpeed.ShouldBeNull();
+        _world.Journal.Count.ShouldBe(0);
+
+        door.TryTeleport(Vector3.One, out refusal).ShouldBeTrue(refusal);
+        door.TryRespawn(out refusal).ShouldBeTrue(refusal);
+    }
+
+    [Fact]
     public void Stop_puts_back_what_was_written_and_keeps_an_edit_made_before_the_level_started()
     {
         _player.Tuning.WalkSpeed = 6f;
