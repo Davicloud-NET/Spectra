@@ -329,7 +329,7 @@ internal static class Program
             return false;
         }
 
-        foreach (string authored in new[] { layout.AssetsPath, layout.MapsPath })
+        foreach (string authored in new[] { layout.AssetsPath, layout.MapsPath, OldScriptsPath(layout) })
         {
             if (!PathsEqual(target, authored)) continue;
 
@@ -340,6 +340,10 @@ internal static class Program
         why = string.Empty;
         return true;
     }
+
+    // A project made by an older build can hold authored scripts here, beside
+    // Assets. Nothing reads the folder, and a clean must not empty it.
+    private static string OldScriptsPath(ProjectLayout layout) => Path.Combine(layout.Root, "Scripts");
 
     // Case-insensitive everywhere: a delete guard should refuse too much.
     private static bool PathsEqual(string a, string b) =>

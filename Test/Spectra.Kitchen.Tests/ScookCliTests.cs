@@ -337,6 +337,21 @@ public class ScookCliTests
     }
 
     [Fact]
+    public void Clean_refuses_the_Scripts_folder_an_older_project_keeps_beside_Assets()
+    {
+        using var project = new TempProject();
+        string scripts = Path.Combine(project.Root, "Scripts");
+        Directory.CreateDirectory(scripts);
+        File.WriteAllText(Path.Combine(scripts, "door.luau"), "print(1)\n");
+
+        var refused = Invoke("clean", project.Root, "-o", scripts);
+
+        refused.ExitCode.ShouldBe(ExitCookError);
+        MatchSingleDiagnostic(refused.Stderr).Groups["code"].Value.ShouldBe("SC0005");
+        File.Exists(Path.Combine(scripts, "door.luau")).ShouldBeTrue();
+    }
+
+    [Fact]
     public void Help_and_version_exit_zero_and_name_the_tool()
     {
         var help = Invoke("--help");
