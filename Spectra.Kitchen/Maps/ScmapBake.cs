@@ -95,27 +95,9 @@ public static class ScmapBake
                     "transform.");
             }
 
-            if (!seen.Add(mapped.Id))
+            if (DefectOf(mapped, seen, sourcePath) is { } defect)
             {
-                report(CookDiagnostic.Error(
-                    CookDiagnosticCodes.MapNodeIdDuplicate,
-                    $"Two nodes in '{sourcePath}' claim id {mapped.Id}. Every command, every wire and every " +
-                    "script reference resolves through that id, so a duplicate resolves by traversal order and " +
-                    "presents as an edit landing on the wrong object.",
-                    sourcePath));
-
-                return false;
-            }
-
-            if (mapped.Brush is { } authored && authored.Planes.Count != authored.Faces.Count)
-            {
-                report(CookDiagnostic.Error(
-                    CookDiagnosticCodes.MapFaceCountMismatch,
-                    $"Node '{mapped.Name}' in '{sourcePath}' has {authored.Planes.Count} brush planes and " +
-                    $"{authored.Faces.Count} faces. One face per plane is the invariant the whole per-face " +
-                    "material path rests on, so a mismatch is an indexing bug rather than a wrong surface.",
-                    sourcePath));
-
+                report(defect);
                 return false;
             }
 
@@ -131,39 +113,78 @@ public static class ScmapBake
                 (ScmapNodeState)node.DeclaredState,
                 PayloadIndexOf(mapped, assets)));
 
-            if (node.Brush is { } brush && KeepsSource(node, mapped, keepBrushSource))
-                builder.AddBrushSource(BrushSourceOf(index, brush, assets));
-            else if (node.Brush is { } unkept)
-                ClaimFaceMaterials(unkept, assets);
-
-            // Not tied to KeepsSource: the chunks hold how a world brush looks,
-            // this is what a character collides with and what a sound has to
-            // get through.
-            if (node.Brush is { } solid && node.IsStaticWorldBrush)
-            {
-                builder.AddCollisionHull(new ScmapCollisionHullSource(
-                    index, [.. solid.LocalPlanes], FaceMaterialsOf(solid, assets)));
-            }
-
-            if (node.Light is { } light)
-                builder.AddLight(new ScmapLightSource(index, light));
-
-            if (node.Entity is { } entity)
-            {
-                if (node.IsStaticWorldBrush) report(EntityOnWorldBrush(node, entity, sourcePath));
-
-                builder.AddEntity(new ScmapEntitySource(
-                    index, entity.ClassName, [.. entity.Keyvalues], [.. entity.Connections]));
-            }
-
-            // The file's path only. Its text is an entry of the pack.
-            if (node.Script is { } script)
-                builder.AddScript(new ScmapScriptSource(index, script.Path, script.IsEnabled, script.IsModule));
+            WriteBrush(builder, assets, node, index, KeepsSource(node, mapped, keepBrushSource));
+            WriteLightEntityAndScript(builder, node, index, report, sourcePath);
 
             PushChildren(pending, mapped.Children, node, index);
         }
 
         return true;
+    }
+
+    // What makes a node unbakeable, or null. Each stops the bake.
+    private static CookDiagnostic? DefectOf(MapNode mapped, HashSet<Guid> seen, string sourcePath)
+    {
+        if (!seen.Add(mapped.Id))
+        {
+            return CookDiagnostic.Error(
+                CookDiagnosticCodes.MapNodeIdDuplicate,
+                $"Two nodes in '{sourcePath}' claim id {mapped.Id}. Every command, every wire and every " +
+                "script reference resolves through that id, so a duplicate resolves by traversal order and " +
+                "presents as an edit landing on the wrong object.",
+                sourcePath);
+        }
+
+        if (mapped.Brush is { } authored && authored.Planes.Count != authored.Faces.Count)
+        {
+            return CookDiagnostic.Error(
+                CookDiagnosticCodes.MapFaceCountMismatch,
+                $"Node '{mapped.Name}' in '{sourcePath}' has {authored.Planes.Count} brush planes and " +
+                $"{authored.Faces.Count} faces. One face per plane is the invariant the whole per-face " +
+                "material path rests on, so a mismatch is an indexing bug rather than a wrong surface.",
+                sourcePath);
+        }
+
+        return null;
+    }
+
+    private static void WriteBrush(
+        ScmapBuilder builder, AssetTable assets, SceneNode node, int index, bool keepsSource)
+    {
+        if (node.Brush is not { } brush) return;
+
+        if (keepsSource)
+            builder.AddBrushSource(BrushSourceOf(index, brush, assets));
+        else
+            ClaimFaceMaterials(brush, assets);
+
+        // Not tied to the kept source: the chunks hold how a world brush
+        // looks, this is what a character collides with and what a sound has
+        // to get through.
+        if (node.IsStaticWorldBrush)
+        {
+            builder.AddCollisionHull(new ScmapCollisionHullSource(
+                index, [.. brush.LocalPlanes], FaceMaterialsOf(brush, assets)));
+        }
+    }
+
+    private static void WriteLightEntityAndScript(
+        ScmapBuilder builder, SceneNode node, int index, Action<CookDiagnostic> report, string sourcePath)
+    {
+        if (node.Light is { } light)
+            builder.AddLight(new ScmapLightSource(index, light));
+
+        if (node.Entity is { } entity)
+        {
+            if (node.IsStaticWorldBrush) report(EntityOnWorldBrush(node, entity, sourcePath));
+
+            builder.AddEntity(new ScmapEntitySource(
+                index, entity.ClassName, [.. entity.Keyvalues], [.. entity.Connections]));
+        }
+
+        // The file's path only. Its text is an entry of the pack.
+        if (node.Script is { } script)
+            builder.AddScript(new ScmapScriptSource(index, script.Path, script.IsEnabled, script.IsModule));
     }
 
     private static void PushChildren(
