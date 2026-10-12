@@ -250,11 +250,19 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          # For Luau, which is built below.
+          submodules: recursive
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
+      # The demo's project has a script, and a cook that cannot check a
+      # script fails.
+      - name: Build Luau, or take it from the cache
+        uses: ./.github/actions/luau
 
       - name: Build
         run: dotnet build
@@ -343,11 +351,19 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          # For Luau, which is built below.
+          submodules: recursive
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
+      # The oracles cook scripts, which scook checks with Luau. Without the
+      # library they skip, and a skip fails this job.
+      - name: Build Luau, or take it from the cache
+        uses: ./.github/actions/luau
 
       # The CLI must be built: the two-process oracles spawn scook and skip
       # themselves when it is missing.
