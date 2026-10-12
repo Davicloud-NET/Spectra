@@ -2,29 +2,27 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The one metatable every managed object shares: what a read, a write and a
-// print of a node, a service, a signal or a connection come to. A name the
+// The one metatable every managed object shares: what a read, a write, a
+// call and a print of a node, a service, a signal or a connection come to.
+// The members are in the generated glue of each class. This finds the
+// object and says what a script reads when a name means nothing. A name the
 // object does not have is an error, never nil.
 internal sealed class ObjectMembers
 {
     private const string HasLeft = "this object has left the level";
 
-    private readonly LuauHost _host;
-    private readonly NodeMembers _nodes;
+    private readonly ScriptContext _context;
 
-    private ObjectMembers(LuauHost host, NodeMembers nodes)
+    private ObjectMembers(ScriptContext context) => _context = context;
+
+    public static void Install(ScriptContext context)
     {
-        _host = host;
-        _nodes = nodes;
-    }
+        ObjectMembers members = new(context);
 
-    public static void Install(LuauHost host, NodeMembers nodes)
-    {
-        ObjectMembers members = new(host, nodes);
-
-        new ApiTable(host)
+        new ApiTable(context.Host)
             .Function("__index"u8, members.Index)
             .Function("__newindex"u8, members.NewIndex)
+            .Function("__namecall"u8, members.NameCall)
             .Function("__tostring"u8, members.ToText)
             .Value("__type"u8, "Instance")
             .Value("__metatable"u8, "The metatable is locked")
@@ -35,38 +33,58 @@ internal sealed class ObjectMembers
     {
         if (TargetOf(stack) is not { } target)
             return stack.Fail(HasLeft);
-        if (!stack.TryGetUtf8(2, out ReadOnlySpan<byte> name))
+        if (!stack.TryGetAtom(2, out int atom))
             return stack.Fail(NotAName(stack));
-        if (target is SceneNode node)
-            return _nodes.Read(stack, node, name);
 
-        ScriptObject other = (ScriptObject)target;
-        int read = other.ReadProperty(stack, name);
-        if (read != ScriptObject.NoSuchProperty)
-            return read;
-
-        return other.Methods is { } methods && methods.TryPush(stack, name)
-            ? 1
-            : stack.Fail(NotAMember(stack, other));
+        int read = Read(stack, target, atom);
+        return read == ScriptMember.None ? stack.Fail(NotAMember(stack.GetText(2), target)) : read;
     }
 
     private int NewIndex(LuauStack stack)
     {
         if (TargetOf(stack) is not { } target)
             return stack.Fail(HasLeft);
-        if (!stack.TryGetUtf8(2, out ReadOnlySpan<byte> name))
+        if (!stack.TryGetAtom(2, out int atom))
             return stack.Fail(NotAName(stack));
-        if (target is SceneNode node)
-            return _nodes.Write(stack, node, name);
 
-        ScriptObject other = (ScriptObject)target;
-        bool isMember = other.ReadProperty(stack, name) != ScriptObject.NoSuchProperty
-            || (other.Methods is { } methods && methods.TryPush(stack, name));
+        int written = target is SceneNode node
+            ? NodeApi.ScriptWrite(_context, stack, node, atom)
+            : ((ScriptObject)target).WriteMember(_context, stack, atom);
 
-        return stack.Fail(isMember
-            ? $"Unable to assign property {stack.GetText(2)}. Property is read only"
-            : NotAMember(stack, other));
+        return written switch
+        {
+            ScriptMember.None => stack.Fail(NotAMember(stack.GetText(2), target)),
+            ScriptMember.ReadOnly => stack.Fail($"Unable to assign property {stack.GetText(2)}. Property is read only"),
+            _ => written,
+        };
     }
+
+    // object:Method(...). Luau hands over the method as an atom, so this
+    // makes no string and looks nothing up.
+    private int NameCall(LuauStack stack)
+    {
+        if (TargetOf(stack) is not { } target)
+            return stack.Fail(HasLeft);
+
+        int atom = stack.NamecallAtom;
+        int called = target is SceneNode node
+            ? NodeApi.ScriptInvoke(_context, stack, node, atom)
+            : ((ScriptObject)target).InvokeMember(_context, stack, atom);
+
+        if (called == ScriptMember.None)
+            return stack.Fail(NotAMember(stack.NamecallName, target));
+        if (called != ScriptMember.NotCallable)
+            return called;
+
+        // A property called like a method: the value is read, and then it is no function.
+        int read = Read(stack, target, atom);
+        return read == 1 ? ScriptMember.FailNotCallable(stack) : read;
+    }
+
+    private int Read(LuauStack stack, object target, int atom) =>
+        target is SceneNode node
+            ? NodeApi.ScriptRead(_context, stack, node, atom)
+            : ((ScriptObject)target).ReadMember(_context, stack, atom);
 
     private int ToText(LuauStack stack) =>
         ScriptResult.Of(stack.Push(TargetOf(stack) switch
@@ -78,13 +96,15 @@ internal sealed class ObjectMembers
 
     // Null for an object that has left the level, and for what is no object.
     private object? TargetOf(LuauStack stack) =>
-        _host.Objects.TryGet(stack, 1, ScriptTags.Object, out object? target) == LuauObjectLookup.Found
+        _context.Host.Objects.TryGet(stack, 1, ScriptTags.Object, out object? target) == LuauObjectLookup.Found
             ? target
             : null;
 
     private static string NotAName(LuauStack stack) =>
         $"a member is named by a string, not by a {ScriptArguments.TypeName(stack, 2)}";
 
-    private static string NotAMember(LuauStack stack, ScriptObject target) =>
-        $"{stack.GetText(2)} is not a valid member of {target.ClassName} \"{target.Name}\"";
+    // Roblox's words for a name a class does not have.
+    private static string NotAMember(string? name, object target) => target is SceneNode node
+        ? $"{name} is not a valid member of {NodeClassName.Of(node)} \"{node.Name}\""
+        : $"{name} is not a valid member of {((ScriptObject)target).ClassName} \"{((ScriptObject)target).Name}\"";
 }

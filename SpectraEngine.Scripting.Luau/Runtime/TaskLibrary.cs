@@ -1,14 +1,21 @@
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The task library, and the old wait, spawn and delay. A thread that waits
-// is an event in the entity world's queue, so it goes on in one order with
-// the wires and the thinks, on a tick and never between two.
-internal sealed class TaskLibrary
+/// <summary>Runs code later, or beside the code that is running. Everything here goes by the level's ticks.</summary>
+// A thread that waits is an event in the entity world's queue, so it goes
+// on in one order with the wires and the thinks, on a tick and never
+// between two. Every function is written by hand: each makes, keeps or
+// yields a thread.
+[ScriptLibrary("task")]
+internal sealed partial class TaskLibrary
 {
     private const string NoRoom =
         "the wait was not queued: the level has stopped, or too many threads are waiting in it";
+
+    // What spawn, defer and delay take to run.
+    private const string Work = "functionOrThread: thread | ((...any) -> ...any), ...: any";
 
     private readonly LuauHost _host;
     private readonly EntityWorld _world;
@@ -19,19 +26,15 @@ internal sealed class TaskLibrary
         _host = host;
         _world = world;
         _waiting = waiting;
-
-        new ApiTable(host)
-            .Function("wait"u8, stack => Wait(stack, WakeReply.Elapsed))
-            .Function("spawn"u8, Spawn)
-            .Function("defer"u8, stack => Later(stack, "defer", target: 1, ticks: 0, WakeReply.Nothing))
-            .Function("delay"u8, stack => Delay(stack, WakeReply.Nothing))
-            .Function("cancel"u8, Cancel)
-            .SetAsGlobal("task"u8);
-
-        SetGlobal("wait"u8, stack => Wait(stack, WakeReply.ElapsedAndTime));
-        SetGlobal("spawn"u8, stack => Later(stack, "spawn", target: 1, ticks: 1, WakeReply.ElapsedAndTime));
-        SetGlobal("delay"u8, stack => Delay(stack, WakeReply.ElapsedAndTime));
     }
+
+    // The old wait, spawn and delay hand a thread the two times in place of
+    // what the script gave them.
+    public int OldWait(LuauStack stack) => Wait(stack, WakeReply.ElapsedAndTime);
+
+    public int OldSpawn(LuauStack stack) => Later(stack, "spawn", target: 1, ticks: 1, WakeReply.ElapsedAndTime);
+
+    public int OldDelay(LuauStack stack) => Delay(stack, WakeReply.ElapsedAndTime);
 
     // A wait is over: the thread goes on, unless a script cancelled it or
     // gave it another wait since.
@@ -65,6 +68,18 @@ internal sealed class TaskLibrary
         waiting.Thread.Cancel();
     }
 
+    /// <summary>Waits so many seconds, and at least until the next tick. Returns the seconds that passed.</summary>
+    [ScriptFunction(Name = "wait", Parameters = "seconds: number?", Returns = "number")]
+    private int WaitForTicks(LuauStack stack) => Wait(stack, WakeReply.Elapsed);
+
+    /// <summary>Runs a function, or goes on with a thread, after what is running now and before the tick ends.</summary>
+    [ScriptFunction(Name = "defer", Parameters = Work, Returns = "thread")]
+    private int Defer(LuauStack stack) => Later(stack, "defer", target: 1, ticks: 0, WakeReply.Nothing);
+
+    /// <summary>Runs a function, or goes on with a thread, after so many seconds and at least on the next tick.</summary>
+    [ScriptFunction(Name = "delay", Parameters = "seconds: number, " + Work, Returns = "thread")]
+    private int DelayByTicks(LuauStack stack) => Delay(stack, WakeReply.Nothing);
+
     // Never the tick it was called on: no time at all still waits for the next.
     private int Wait(LuauStack stack, WakeReply reply)
     {
@@ -85,7 +100,8 @@ internal sealed class TaskLibrary
             : stack.Fail(NoRoom);
     }
 
-    // Runs at once, up to its end or its first wait, and hands back the thread.
+    /// <summary>Runs a function, or goes on with a thread, at once: up to its end or its first wait. Returns the thread.</summary>
+    [ScriptFunction(Name = "spawn", Parameters = Work, Returns = "thread")]
     private int Spawn(LuauStack stack)
     {
         int count = stack.Count;
@@ -172,6 +188,8 @@ internal sealed class TaskLibrary
         return ScriptResult.Of(stack.PushCopy(target));
     }
 
+    /// <summary>Ends a thread that waits. It does not run again.</summary>
+    [ScriptFunction(Name = "cancel", Parameters = "thread: thread")]
     private int Cancel(LuauStack stack)
     {
         if (stack.TypeOf(1) != LuauType.Thread)
@@ -196,13 +214,6 @@ internal sealed class TaskLibrary
 
         thread.Release();
         return false;
-    }
-
-    private void SetGlobal(ReadOnlySpan<byte> name, LuauHostFunction function)
-    {
-        LuauStack stack = _host.Stack;
-        if (!_host.PushFunction(stack, name, function) || !stack.SetGlobal(name))
-            throw new InvalidOperationException($"The script API could not be set up: {stack.GetText(-1)}");
     }
 
     private long TicksFor(double seconds) => Math.Max(1, _world.TicksIn(seconds));

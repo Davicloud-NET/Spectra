@@ -16,9 +16,12 @@ public static class LuauDefinitions
     /// <summary>The name the file has in a project.</summary>
     public const string FileName = "spectra.d.luau";
 
-    // The class a signal property is written as, with what it hands its
-    // listeners as the type arguments.
-    private const string SignalType = "RBXScriptSignal";
+    /// <summary>
+    /// The class a signal is written as, with what it hands its listeners
+    /// as the type arguments. The binding declares its signal class under
+    /// this name.
+    /// </summary>
+    public const string SignalType = "RBXScriptSignal";
 
     private const string Indent = "    ";
 

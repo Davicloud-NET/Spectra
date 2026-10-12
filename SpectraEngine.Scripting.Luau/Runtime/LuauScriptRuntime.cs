@@ -1,5 +1,7 @@
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
+using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
@@ -37,18 +39,23 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
         try
         {
-            Vector3Library.Install(_host);
+            var context = new ScriptContext(_host, new ScriptWrites(_world));
+            Vector3Members.Install(context);
+            Vector3Library.ScriptInstall(context);
 
             // Before the library: a userdata gets its tag's metatable when it
             // is made, and the library makes CFrame.identity.
-            CFrameMembers.Install(_host);
-            CFrameLibrary.Install(_host);
-            ObjectMembers.Install(_host, new NodeMembers(_host, new ScriptWrites(_world)));
+            CFrameMembers.Install(context);
+            CFrameLibrary.ScriptInstall(context);
+            ObjectMembers.Install(context);
 
             _tasks = new TaskLibrary(_host, _world, _waiting);
-            _runService = new RunService(_host, new SignalMethods(_host, _waiting));
-            SetGlobalObject("game"u8, new DataModel(_host, _world.Scene.Root, _runService));
-            SetGlobalObject("workspace"u8, _world.Scene.Root);
+            _tasks.ScriptInstall(context);
+            new OldTaskGlobals(_tasks).ScriptInstall(context);
+
+            _runService = new RunService(new SignalHub(_host, _waiting));
+            SceneNode workspace = _world.Scene.Root;
+            new LevelGlobals(new DataModel(_host, workspace, _runService), workspace).ScriptInstall(context);
 
             _host.Seal();
             _starter = new ScriptStarter(_host, setup.Source, _sink);
@@ -176,13 +183,6 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     {
         _isClosed = true;
         _host.Close();
-    }
-
-    private void SetGlobalObject(ReadOnlySpan<byte> name, object value)
-    {
-        LuauStack stack = _host.Stack;
-        if (!_host.Objects.Push(stack, ScriptTags.Object, value) || !stack.SetGlobal(name))
-            throw new InvalidOperationException($"The script API could not be set up: {stack.GetText(-1)}");
     }
 
     private void ReportFault(Exception fault) =>

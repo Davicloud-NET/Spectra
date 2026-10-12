@@ -1,51 +1,36 @@
+using SpectraEngine.Core.Scripting.Api;
+
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// RunService: the signals of the fixed tick. A level runs none, one or
-// several ticks in a frame, and each fires all four.
-internal sealed class RunService : ScriptObject
+/// <summary>The signals of the fixed tick. A level runs none, one or several ticks in a frame, and each fires all four.</summary>
+[ScriptClass("RunService")]
+internal sealed partial class RunService : ScriptObject
 {
-    public const string ServiceName = "RunService";
-
-    private readonly LuauHost _host;
-
-    public RunService(LuauHost host, SignalMethods methods)
+    public RunService(SignalHub hub)
     {
-        _host = host;
-        PreSimulation = new ScriptSignal("Signal PreSimulation", methods);
-        Stepped = new ScriptSignal("Signal Stepped", methods);
-        PostSimulation = new ScriptSignal("Signal PostSimulation", methods);
-        Heartbeat = new ScriptSignal("Signal Heartbeat", methods);
+        PreSimulation = new ScriptSignal("Signal PreSimulation", hub);
+        Stepped = new ScriptSignal("Signal Stepped", hub);
+        PostSimulation = new ScriptSignal("Signal PostSimulation", hub);
+        Heartbeat = new ScriptSignal("Signal Heartbeat", hub);
     }
 
-    public override string ClassName => ServiceName;
+    public override string Name => "RunService";
 
-    public override string Name => ServiceName;
-
-    // Before the physics step, with the step in seconds.
+    /// <summary>Fires in every tick before the physics step, with the step in seconds.</summary>
+    [ScriptSignal("deltaTime: number")]
     public ScriptSignal PreSimulation { get; }
 
-    // Right after PreSimulation, with the level's time and the step.
+    /// <summary>Fires right after PreSimulation, with the level's time and the step, both in seconds.</summary>
+    [ScriptSignal("time: number, deltaTime: number")]
     public ScriptSignal Stepped { get; }
 
-    // At the end of the tick, with the step in seconds.
+    /// <summary>Fires at the end of every tick, with the step in seconds.</summary>
+    [ScriptSignal("deltaTime: number")]
     public ScriptSignal PostSimulation { get; }
 
-    // Right after PostSimulation, with the step in seconds.
+    /// <summary>Fires right after PostSimulation, with the step in seconds.</summary>
+    [ScriptSignal("deltaTime: number")]
     public ScriptSignal Heartbeat { get; }
-
-    public override int ReadProperty(LuauStack stack, ReadOnlySpan<byte> name)
-    {
-        ScriptSignal? signal =
-            name.SequenceEqual("Heartbeat"u8) ? Heartbeat :
-            name.SequenceEqual("Stepped"u8) ? Stepped :
-            name.SequenceEqual("PreSimulation"u8) ? PreSimulation :
-            name.SequenceEqual("PostSimulation"u8) ? PostSimulation :
-            null;
-
-        return signal is null
-            ? NoSuchProperty
-            : ScriptResult.Of(_host.Objects.Push(stack, ScriptTags.Object, signal));
-    }
 
     public void FireBeforeSimulation(double time, double step)
     {

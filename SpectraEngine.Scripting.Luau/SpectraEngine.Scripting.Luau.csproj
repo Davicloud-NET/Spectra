@@ -9,6 +9,16 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
+
+    <!--
+      Loaded as an analyzer, not referenced: its ScriptApiGenerator writes the
+      binding of everything under Runtime that carries a script attribute.
+      UndefineProperties: as in SpectraEngine.Entities.
+    -->
+    <ProjectReference Include="..\SpectraEngine.Entities.Generator\SpectraEngine.Entities.Generator.csproj"
+                     OutputItemType="Analyzer"
+                     ReferenceOutputAssembly="false"
+                     UndefineProperties="PublishAot;RuntimeIdentifier;SelfContained;PublishTrimmed;PublishSingleFile" />
   </ItemGroup>
 
   <!--

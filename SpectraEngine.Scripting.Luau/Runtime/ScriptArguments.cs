@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using SpectraEngine.Core.Scene;
 
@@ -32,6 +33,33 @@ internal static class ScriptArguments
 
     public static bool TryFrame(LuauStack stack, int index, out CFrame value) =>
         FrameValue.TryGet(stack, index, out value);
+
+    // The readers generated glue calls, one for each kind of value. A
+    // string that reads as a number counts as one, as it does in Luau.
+    public static bool TryDouble(LuauStack stack, int index, out double value) =>
+        stack.TryGetNumber(index, out value);
+
+    // True and false only. Any value counts as one of them in a condition,
+    // and an argument of the wrong kind is a mistake.
+    public static bool TryBoolean(LuauStack stack, int index, out bool value)
+    {
+        bool isBoolean = stack.TypeOf(index) == LuauType.Boolean;
+        value = isBoolean && stack.GetBoolean(index);
+        return isBoolean;
+    }
+
+    // Makes a string. A function that is called every tick takes the bytes.
+    public static bool TryText(LuauStack stack, int index, [NotNullWhen(true)] out string? value)
+    {
+        value = stack.TypeOf(index) == LuauType.String ? stack.GetText(index) : null;
+        return value is not null;
+    }
+
+    public static bool TryUtf8(LuauStack stack, int index, out ReadOnlySpan<byte> value)
+    {
+        value = default;
+        return stack.TypeOf(index) == LuauType.String && stack.TryGetUtf8(index, out value);
+    }
 
     // The error for an argument of the wrong kind, in Roblox's words. A method
     // counts its arguments from the one after the object.

@@ -1,8 +1,12 @@
+using SpectraEngine.Core.Scripting.Api;
+
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// One listener of a signal: a function a script connected, or a thread that
-// waits for the signal to fire once.
-internal sealed class ScriptConnection : ScriptObject
+/// <summary>The link between a signal and a function a script connected to it.</summary>
+// One listener of a signal: a function a script connected, or a thread
+// that waits for the signal to fire once.
+[ScriptClass("RBXScriptConnection")]
+internal sealed partial class ScriptConnection : ScriptObject
 {
     private readonly ScriptSignal _signal;
     private readonly WaitingThreads? _waiting;
@@ -26,16 +30,11 @@ internal sealed class ScriptConnection : ScriptObject
         _isOnce = true;
     }
 
-    public override string ClassName => "RBXScriptConnection";
-
     public override string Name => "Connection";
 
-    public override MethodTable Methods => _signal.SharedMethods.OfConnection;
-
+    /// <summary>Whether the function is still called when the signal fires.</summary>
+    [ScriptProperty(Name = "Connected")]
     public bool IsConnected { get; private set; } = true;
-
-    public override int ReadProperty(LuauStack stack, ReadOnlySpan<byte> name) =>
-        name.SequenceEqual("Connected"u8) ? ScriptResult.Of(stack.Push(IsConnected)) : NoSuchProperty;
 
     // Calls the function on a thread of its own, or lets the waiting thread
     // go on. Either gets the values the signal was fired with.
@@ -52,13 +51,8 @@ internal sealed class ScriptConnection : ScriptObject
             Disconnect();
     }
 
-    // A thread that was cancelled or went on to another wait has left this
-    // one, and its token names nothing.
-    private LuauResume ResumeWaiter(ReadOnlySpan<LuauValue> arguments) =>
-        _waiting is { } waiting && waiting.TryTake(_wait, out WaitingThread waiter)
-            ? waiter.Thread.Resume(arguments)
-            : LuauResume.Refused;
-
+    /// <summary>Ends the connection. The function is not called again.</summary>
+    [ScriptMethod]
     public void Disconnect()
     {
         IsConnected = false;
@@ -68,4 +62,11 @@ internal sealed class ScriptConnection : ScriptObject
         _function = null;
         _signal.OnDisconnected();
     }
+
+    // A thread that was cancelled or went on to another wait has left this
+    // one, and its token names nothing.
+    private LuauResume ResumeWaiter(ReadOnlySpan<LuauValue> arguments) =>
+        _waiting is { } waiting && waiting.TryTake(_wait, out WaitingThread waiter)
+            ? waiter.Thread.Resume(arguments)
+            : LuauResume.Refused;
 }

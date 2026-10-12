@@ -1,11 +1,13 @@
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
+using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // Loads and starts a level's scripts, in the order of the scene tree. One
 // that cannot start says which node it is on, and the rest still run.
-internal sealed class ScriptStarter(LuauHost host, IScriptSource source, NodeNamingSink sink)
+[ScriptGlobals]
+internal sealed partial class ScriptStarter(LuauHost host, IScriptSource source, NodeNamingSink sink)
 {
     public void StartAll(Scene scene)
     {
@@ -21,6 +23,12 @@ internal sealed class ScriptStarter(LuauHost host, IScriptSource source, NodeNam
                 Start(node, script);
         }
     }
+
+    /// <summary>The node of the script that is running. Each script has its own.</summary>
+    // By hand: it is a global of one script and not of the state, so it is
+    // set when the script is loaded.
+    [ScriptProperty(Name = "script", Type = "Instance", ByHand = true)]
+    private static LuauValue ScriptOf(SceneNode node) => LuauValue.Object(ScriptTags.Object, node);
 
     private void Start(SceneNode node, Script script)
     {
@@ -38,7 +46,7 @@ internal sealed class ScriptStarter(LuauHost host, IScriptSource source, NodeNam
         if (loaded is null)
             return;
 
-        if (loaded.SetGlobal("script"u8, LuauValue.Object(ScriptTags.Object, node)))
+        if (loaded.SetGlobal("script"u8, ScriptOf(node)))
             loaded.Start();
         else
             Report(node, script, $"The script on '{node.Name}' could not be given its node, so it did not start.");

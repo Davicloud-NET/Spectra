@@ -1,50 +1,41 @@
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The global `game`: where a script asks for a service, and the way to the
-// level's root as Workspace.
-internal sealed class DataModel : ScriptObject
+/// <summary>The level as a script reaches it, which is the global game. A script asks it for a service.</summary>
+[ScriptClass("DataModel")]
+internal sealed partial class DataModel : ScriptObject
 {
     private readonly LuauHost _host;
-    private readonly SceneNode _workspace;
     private readonly RunService _runService;
 
     public DataModel(LuauHost host, SceneNode workspace, RunService runService)
     {
         _host = host;
-        _workspace = workspace;
         _runService = runService;
-
-        Methods = new ApiTable(host)
-            .Function("GetService"u8, GetService)
-            .KeepAsMethods();
+        Workspace = workspace;
     }
-
-    public override string ClassName => "DataModel";
 
     public override string Name => "game";
 
-    public override MethodTable Methods { get; }
+    /// <summary>The root of the level's tree. The global workspace is the same node.</summary>
+    [ScriptProperty]
+    public SceneNode Workspace { get; }
 
-    public override int ReadProperty(LuauStack stack, ReadOnlySpan<byte> name) =>
-        name.SequenceEqual("Workspace"u8) ? Push(stack, _workspace) : NoSuchProperty;
-
+    /// <summary>Gives the service of that name: RunService or Workspace.</summary>
+    // The name is compared where Luau keeps it, so asking makes no string.
+    [ScriptMethod]
+    [ScriptOverload("service: \"RunService\"", "RunService")]
+    [ScriptOverload("service: \"Workspace\"", "Instance")]
     private int GetService(LuauStack stack)
     {
-        if (_host.Objects.TryGet(stack, 1, ScriptTags.Object, out object? self) != LuauObjectLookup.Found
-            || !ReferenceEquals(self, this))
-        {
-            return ScriptArguments.NoSelf(stack, "GetService");
-        }
-
-        // The name is compared where Luau keeps it, so asking makes no string.
         if (!stack.TryGetUtf8(2, out ReadOnlySpan<byte> service))
             return ScriptArguments.Wrong(stack, 2, "GetService", "string", isMethod: true);
         if (service.SequenceEqual("RunService"u8))
             return Push(stack, _runService);
         if (service.SequenceEqual("Workspace"u8))
-            return Push(stack, _workspace);
+            return Push(stack, Workspace);
 
         return stack.Fail($"'{stack.GetText(2)}' is not a valid Service name");
     }

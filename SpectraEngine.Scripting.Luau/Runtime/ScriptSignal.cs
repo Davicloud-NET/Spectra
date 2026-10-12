@@ -1,27 +1,25 @@
+using SpectraEngine.Core.Scripting.Api;
+
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// Something a script connects a function to or waits for, as it does with
-// Heartbeat. The host fires it with the values every listener gets.
-internal sealed class ScriptSignal : ScriptObject
+/// <summary>Something that happens in the level, which a script connects a function to or waits for.</summary>
+// The host fires it with the values every listener gets.
+[ScriptClass(LuauDefinitions.SignalType, TypeParameters = "T... = ...any")]
+internal sealed partial class ScriptSignal : ScriptObject
 {
     private readonly List<ScriptConnection> _connections = [];
+    private readonly SignalHub _hub;
     private int _fireDepth;
     private bool _hasDisconnected;
 
-    public ScriptSignal(string name, SignalMethods methods)
+    public ScriptSignal(string name, SignalHub hub)
     {
         Name = name;
-        SharedMethods = methods;
+        _hub = hub;
     }
-
-    public override string ClassName => "RBXScriptSignal";
 
     // "Signal Heartbeat", as Roblox prints one.
     public override string Name { get; }
-
-    public SignalMethods SharedMethods { get; }
-
-    public override MethodTable Methods => SharedMethods.OfSignal;
 
     public int ListenerCount => _connections.Count;
 
@@ -31,11 +29,6 @@ internal sealed class ScriptSignal : ScriptObject
         _connections.Add(connection);
         return connection;
     }
-
-    // The thread goes on at the next fire, with what the signal was fired
-    // with, unless it has left the wait by then.
-    public void Await(WaitingThreads waiting, LuauThread thread) =>
-        _connections.Add(new ScriptConnection(this, waiting, waiting.Add(WaitingThread.ForSignal(thread))));
 
     // Runs the listeners in the order they connected. One that connects
     // during the fire waits for the next one. One that disconnects during it
@@ -66,6 +59,43 @@ internal sealed class ScriptSignal : ScriptObject
     {
         _hasDisconnected = true;
         DropDisconnected();
+    }
+
+    /// <summary>Calls the function every time the signal fires, with what it was fired with.</summary>
+    [ScriptMethod(Parameters = "callback: (T...) -> ()", Returns = "RBXScriptConnection")]
+    private int Connect(LuauStack stack) => Listen(stack, "Connect", isOnce: false);
+
+    /// <summary>Calls the function the next time the signal fires, and not again.</summary>
+    [ScriptMethod(Parameters = "callback: (T...) -> ()", Returns = "RBXScriptConnection")]
+    private int Once(LuauStack stack) => Listen(stack, "Once", isOnce: true);
+
+    /// <summary>Waits until the signal fires next, and returns what it was fired with.</summary>
+    // The thread yields here. The next fire resumes it with the values the
+    // signal was fired with, which Wait then returns.
+    [ScriptMethod(Returns = "T...")]
+    private int Wait(LuauStack stack)
+    {
+        LuauThread thread = _hub.Host.ThreadOf(stack);
+        if (!thread.IsAlive)
+            return stack.Fail("this thread cannot wait for a signal");
+
+        // Before the wait is kept: the next fire would resume a thread that
+        // never yielded wherever it waits by then.
+        if (!stack.CanYield)
+            return stack.Fail(WaitingThreads.CannotYield);
+
+        WaitingThreads waiting = _hub.Waiting;
+        _connections.Add(new ScriptConnection(this, waiting, waiting.Add(WaitingThread.ForSignal(thread))));
+        return LuauStack.Yield();
+    }
+
+    private int Listen(LuauStack stack, string method, bool isOnce)
+    {
+        if (_hub.Host.KeepFunction(stack, 2) is not { } function)
+            return ScriptArguments.Wrong(stack, 2, method, "function", isMethod: true);
+
+        ScriptConnection connection = Connect(function, isOnce);
+        return ScriptResult.Of(_hub.Host.Objects.Push(stack, ScriptTags.Object, connection));
     }
 
     // Not while a fire walks the list by index.

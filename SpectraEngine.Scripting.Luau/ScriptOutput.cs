@@ -2,13 +2,17 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using SpectraEngine.Core.Scripting;
+using SpectraEngine.Core.Scripting.Api;
 using SpectraEngine.Scripting.Luau.Native;
 
 namespace SpectraEngine.Scripting.Luau;
 
 // print and warn as every script sees them. Luau's own print writes to the
-// process's standard output, which a game does not have.
-internal static unsafe class ScriptOutput
+// process's standard output, which a game does not have. Both are set by
+// hand: a host has them before it has any script API. print is Luau's own
+// name and is not declared, warn is ours.
+[ScriptGlobals]
+internal static unsafe partial class ScriptOutput
 {
     // Sets the two globals. False: the error value is on top.
     internal static bool Install(nint L) =>
@@ -23,6 +27,8 @@ internal static unsafe class ScriptOutput
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int Print(nint L) => Write(L, ScriptSeverity.Print);
 
+    /// <summary>Writes its arguments to the output as a warning, with a space between them.</summary>
+    [ScriptFunction(Name = "warn", Parameters = "...: any", ByHand = true)]
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int Warn(nint L) => Write(L, ScriptSeverity.Warning);
 

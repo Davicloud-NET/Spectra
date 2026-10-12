@@ -17,3 +17,12 @@ SPE007  | SpectraEntities | Error    | Keyvalue member cannot be assigned
 SPE008  | SpectraEntities | Error    | Unknown entity placement
 SPE009  | SpectraEntities | Error    | Parameter type no wire carries
 SPE010  | SpectraEntities | Error    | Input has no parameter to leave out
+SPS001  | SpectraScriptApi | Error   | Script API class must be partial
+SPS002  | SpectraScriptApi | Error   | Script API member has no summary
+SPS003  | SpectraScriptApi | Error   | Type no script value is made from
+SPS004  | SpectraScriptApi | Error   | Text does not read as Luau writes it
+SPS005  | SpectraScriptApi | Error   | Member does not take the object
+SPS006  | SpectraScriptApi | Error   | Duplicate script API name
+SPS007  | SpectraScriptApi | Error   | Property cannot be set through the door
+SPS008  | SpectraScriptApi | Error   | Script attribute does not belong here
+SPS009  | SpectraScriptApi | Error   | Script API member has the wrong shape
