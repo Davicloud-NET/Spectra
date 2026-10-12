@@ -152,7 +152,7 @@ public sealed class ScriptApiGeneratorDiagnosticTests
 
     [Theory]
     [InlineData("local", "a word Luau keeps for itself")]
-    [InlineData("Zähler", "letters from a to z")]
+    [InlineData("Z\u00e4hler", "letters from a to z")]
     public void A_class_under_what_is_no_name_in_Luau_is_refused(string name, string why)
     {
         GeneratorRun run = Run($$"""
