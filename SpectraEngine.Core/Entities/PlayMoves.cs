@@ -61,8 +61,9 @@ internal sealed class PlayMoves
     private static string? FindRefusal(SceneNode node, in Transform value)
     {
         // A moving world brush recompiles the level every tick, and the
-        // picture stays right while it does.
-        if (node.SubtreeStaticWorldBrushCount > 0)
+        // picture stays right while it does. One baked into the level would
+        // leave its walls and its collision behind.
+        if (node.HoldsWorldBrush)
         {
             return "a world brush sits at or below it, and only parts can move while a level plays. " +
                 "Convert the brush to a part";

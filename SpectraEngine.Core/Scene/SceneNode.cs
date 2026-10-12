@@ -30,6 +30,11 @@ public class SceneNode
     private int _subtreeBrushCount;
     private int _subtreeStaticWorldBrushCount;
 
+    // World brushes in this subtree that a bake took off their nodes, this
+    // node's included. AdjustBakedBrushCount is its only writer after init.
+    private int _subtreeBakedBrushCount;
+    private readonly SceneNodeKind? _bakedKind;
+
     public SceneNode(string name = "Node")
     {
         Name = name;
@@ -260,6 +265,31 @@ public class SceneNode
 
     /// <summary>True when this node's brush is part of the static-world compile.</summary>
     public bool IsStaticWorldBrush => _brush is not null && _brushKind == BrushKind.World;
+
+    /// <summary>
+    /// What this node was in its authored level, when the level arrived baked
+    /// and the bake took the payload that said so: a world brush, which is in
+    /// the level's chunks now, or a mesh the baked map does not bind. Null in
+    /// an authored level and for every other node. Set when the node is made.
+    /// </summary>
+    // The node has no such payload. This keeps its class name, and keeps a
+    // world brush where the level was baked with it.
+    public SceneNodeKind? BakedKind
+    {
+        get => _bakedKind;
+        init
+        {
+            _bakedKind = value;
+            _subtreeBakedBrushCount = value is SceneNodeKind.BrushWorld or SceneNodeKind.BrushSubtractive ? 1 : 0;
+        }
+    }
+
+    /// <summary>
+    /// Whether a world brush sits at or below this node: one a node carries,
+    /// or one a bake fused into the level. Neither can move while a level
+    /// plays.
+    /// </summary>
+    public bool HoldsWorldBrush => _subtreeStaticWorldBrushCount > 0 || _subtreeBakedBrushCount > 0;
 
     /// <summary>
     /// Whether this node's own mesh or part brush is drawn and casts a shadow.
@@ -553,6 +583,8 @@ public class SceneNode
                 if (child._subtreeStaticWorldBrushCount > 0)
                     child.Owner?.MarkStructuralWorldDirty();
             }
+
+            AdjustBakedBrushCount(oldParent, -child._subtreeBakedBrushCount);
         }
 
         // Clamp after the detach: a move within one parent, or an undo into a
@@ -576,6 +608,8 @@ public class SceneNode
             if (child._subtreeStaticWorldBrushCount > 0)
                 Owner?.MarkStructuralWorldDirty();
         }
+
+        AdjustBakedBrushCount(this, child._subtreeBakedBrushCount);
 
         // A reparent inside one scene raises no membership events, but the
         // spatial index still has to refit.
@@ -602,7 +636,7 @@ public class SceneNode
     /// </param>
     public SceneNode Clone(bool deep = true)
     {
-        var copy = new SceneNode(Name);
+        var copy = new SceneNode(Name) { BakedKind = _bakedKind };
 
         copy._localTransform = _localTransform;
         // HasBody names the original's entry in the physics side table.
@@ -646,6 +680,8 @@ public class SceneNode
                 if (child._subtreeStaticWorldBrushCount > 0)
                     Owner?.MarkStructuralWorldDirty();
             }
+
+            AdjustBakedBrushCount(this, -child._subtreeBakedBrushCount);
             child.SetOwner(null);
             child.MarkWorldDirty();
         }
@@ -698,6 +734,15 @@ public class SceneNode
             n._subtreeBrushCount += totalDelta;
             n._subtreeStaticWorldBrushCount += worldDelta;
         }
+    }
+
+    private static void AdjustBakedBrushCount(SceneNode node, int delta)
+    {
+        if (delta == 0)
+            return;
+
+        for (SceneNode? n = node; n is not null; n = n.Parent)
+            n._subtreeBakedBrushCount += delta;
     }
 
     private void OnLocalTransformChanged()

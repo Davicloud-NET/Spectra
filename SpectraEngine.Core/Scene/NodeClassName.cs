@@ -29,10 +29,27 @@ public static class NodeClassName
         ArgumentNullException.ThrowIfNull(node);
 
         return Of(
-            SceneNodeClassifier.Classify(node),
+            KindOf(node),
             node.Entity?.ClassName,
             node.Light?.Kind,
             node.Script is { IsModule: true });
+    }
+
+    // A node of a baked level is still what a bake took from it. That payload
+    // gets the place the classifier gives it: a brush before everything, a
+    // mesh after an entity and a light.
+    private static SceneNodeKind KindOf(SceneNode node)
+    {
+        SceneNodeKind kind = SceneNodeClassifier.Classify(node);
+
+        return node.BakedKind switch
+        {
+            SceneNodeKind.BrushWorld => SceneNodeKind.BrushWorld,
+            SceneNodeKind.BrushSubtractive => SceneNodeKind.BrushSubtractive,
+            SceneNodeKind.Mesh when kind is SceneNodeKind.Script or SceneNodeKind.Group or SceneNodeKind.Empty =>
+                SceneNodeKind.Mesh,
+            _ => kind,
+        };
     }
 
     /// <summary>The same from what a UI holds of a node.</summary>
