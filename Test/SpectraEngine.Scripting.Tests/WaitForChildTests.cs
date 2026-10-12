@@ -397,6 +397,30 @@ public sealed class WaitForChildTests
         level.Printed.ShouldBe(["resumed with a hand", "slept true"]);
     }
 
+    // task.spawn tells the runtime that the thread has left its wait.
+    // coroutine.resume tells nobody, so a thread it took out is only known
+    // to have left once it waits for something else or ends.
+    [Fact]
+    public void A_thread_task_spawn_took_out_of_the_wait_is_done_with_it_wherever_it_parks_next()
+    {
+        using ScriptLevel level = House.With("""
+            local thread = task.spawn(function()
+                print("resumed with", workspace.House:WaitForChild("Key"))
+                print("and then with", coroutine.yield())
+            end)
+            task.spawn(thread, "a hand")
+            """);
+        SceneNode house = level.Scene.Root.Children.Single(node => node.Name == "House");
+
+        level.Play().Tick(2);
+        house.CreateChild("Key");
+        level.Tick(400);
+
+        level.Errors.ShouldBeEmpty();
+        level.Sink.Texts(ScriptSeverity.Warning).ShouldBeEmpty();
+        level.Printed.ShouldBe(["resumed with a hand"]);
+    }
+
     [Fact]
     public void A_wait_where_a_thread_cannot_yield_is_an_error_and_leaves_no_wait_behind()
     {
