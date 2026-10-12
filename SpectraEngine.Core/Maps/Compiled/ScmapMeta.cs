@@ -28,7 +28,10 @@ public readonly struct ScmapMeta
     /// <summary>Cells per region edge. Zero: the region index is reserved and never written.</summary>
     public readonly uint RegionSize;
 
-    /// <summary>Luau debug level the bytecode was compiled at. Zero until scripts are cooked.</summary>
+    /// <summary>
+    /// Written zero. Named for bytecode inside the map, which a map does not
+    /// hold: a script is a file of the pack.
+    /// </summary>
     public readonly uint BytecodeDebugLevel;
 
     /// <summary>Cook switches that changed what was written. None defined in v1; written zero.</summary>
@@ -43,7 +46,7 @@ public readonly struct ScmapMeta
     /// <summary>
     /// Builds the preamble. The compile constants are stamped from the running engine.
     /// </summary>
-    public ScmapMeta(uint sceneNameString, uint spawnCount, uint bytecodeDebugLevel = 0, uint cookFlags = 0)
+    public ScmapMeta(uint sceneNameString, uint spawnCount, uint cookFlags = 0)
     {
         SceneNameString = sceneNameString;
         SpawnCount = spawnCount;
@@ -51,7 +54,7 @@ public readonly struct ScmapMeta
         WeldBand = ScmapFormat.EngineWeldBand;
         SnapGrid = ScmapFormat.EngineSnapGrid;
         RegionSize = 0;
-        BytecodeDebugLevel = bytecodeDebugLevel;
+        BytecodeDebugLevel = 0;
         CookFlags = cookFlags;
         Reserved0 = 0;
         Reserved1 = 0;

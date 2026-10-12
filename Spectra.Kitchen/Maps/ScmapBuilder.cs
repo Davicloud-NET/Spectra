@@ -13,8 +13,8 @@ using SpectraEngine.Core.Scene;
 namespace Spectra.Kitchen.Maps;
 
 /// <summary>
-/// Collects a compiled map's assets, nodes, entities, lights, collision hulls,
-/// chunks, spawns and brush sources and writes them through
+/// Collects a compiled map's assets, nodes, entities, lights, scripts,
+/// collision hulls, chunks, spawns and brush sources and writes them through
 /// <see cref="ScmapWriter"/>.
 /// </summary>
 // The chunk directory is sorted at build time; nodes keep the caller's order,
@@ -31,6 +31,7 @@ public sealed class ScmapBuilder
     private readonly List<ScmapEntitySource> _entities = [];
     private readonly List<ScmapCollisionHullSource> _hulls = [];
     private readonly List<ScmapLightSource> _lights = [];
+    private readonly List<(ScmapScriptSource Script, uint AssetIndex)> _scripts = [];
 
     /// <summary>Creates a builder for a scene.</summary>
     public ScmapBuilder(string sceneName)
@@ -62,6 +63,9 @@ public sealed class ScmapBuilder
 
     /// <summary>How many lights <c>LGHT</c> will carry.</summary>
     public int LightCount => _lights.Count;
+
+    /// <summary>How many scripts <c>SCPT</c> will carry.</summary>
+    public int ScriptCount => _scripts.Count;
 
     /// <summary>Adds a spawn point.</summary>
     public void AddSpawn(ScmapSpawnSource spawn) => _spawns.Add(spawn);
@@ -292,6 +296,26 @@ public sealed class ScmapBuilder
         _lights.Add(light with { Light = light.Light.Clone() });
     }
 
+    /// <summary>
+    /// Adds one node's script to <c>SCPT</c> and its file to the asset table.
+    /// Call in node pre-order, once per node. The node index is checked in
+    /// <see cref="Write"/>.
+    /// </summary>
+    public void AddScript(ScmapScriptSource script)
+    {
+        ArgumentNullException.ThrowIfNull(script.Path);
+
+        if (_scripts.Count > 0 && script.NodeIndex <= _scripts[^1].Script.NodeIndex)
+        {
+            throw new InvalidOperationException(
+                $"The script on node {script.NodeIndex} was added after the one on node " +
+                $"{_scripts[^1].Script.NodeIndex}. Script records are in node order, one per node, and a " +
+                "loader walks them in step with the nodes.");
+        }
+
+        _scripts.Add((script, AddAsset(new ScmapAssetSource(PackEntryKind.Script, script.Path))));
+    }
+
     private static void ValidateSubmeshes(ScmapChunkSource chunk)
     {
         if (chunk.Submeshes is not { Length: > 0 }) return;
@@ -391,11 +415,7 @@ public sealed class ScmapBuilder
         if (hullMaterialBody is not null) writer.AddSection(ScmapFormat.HullMaterialSection, hullMaterialBody);
 
         writer.AddSection(ScmapFormat.LightSection, lightBody);
-
-        // Empty for now. Written so nothing else takes these codes.
-        writer.AddSection(ScmapFormat.ScriptSection, ReadOnlySpan<byte>.Empty);
-        writer.AddSection(ScmapFormat.ScriptBytecodeSection, ReadOnlySpan<byte>.Empty);
-        writer.AddSection(ScmapFormat.ScriptSourceSection, ReadOnlySpan<byte>.Empty);
+        writer.AddSection(ScmapFormat.ScriptSection, ScmapScriptSection.Build(_scripts, _nodes.Count));
 
         // Last, so what a load always reads sits at the front. Omitted when
         // there is none: an empty BRSH would still count as present.

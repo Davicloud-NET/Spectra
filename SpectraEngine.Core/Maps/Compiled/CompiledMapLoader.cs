@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
@@ -16,8 +15,8 @@ namespace SpectraEngine.Core.Maps.Compiled;
 /// Loads a baked <c>.scmap</c> into a live scene without running any CSG.
 /// </summary>
 // Pass order: reader gates, ASTB interned in table order, nodes rebuilt in one
-// forward pass with their flags, lights and entities, collision hulls built,
-// chunks adopted.
+// forward pass with their flags, lights, entities and scripts, collision
+// hulls built, chunks adopted.
 // A baked world brush gets no Brush even when BRSH holds its planes. Rebuilding
 // it would carve the level again and draw every wall twice.
 public static class CompiledMapLoader
@@ -53,7 +52,7 @@ public static class CompiledMapLoader
 
             MaterialRef[] materials = InternAssets(in document, report);
             SceneNode[] nodes = RebuildGraph(scene, in document, materials, report);
-            BrushPlacement[] collision = BuildCollision(in document, nodes, materials, report);
+            BrushPlacement[] collision = CompiledMapCollision.Build(in document, nodes, materials, report);
 
             scene.AdoptCompiledStaticWorld(renderer, in document, materials, collision, file, report);
             return report;
@@ -116,6 +115,7 @@ public static class CompiledMapLoader
         var nodes = new SceneNode[document.Nodes.Length];
         int nextEntity = 0;
         int nextLight = 0;
+        int nextScript = 0;
 
         for (int i = 0; i < nodes.Length; i++)
         {
@@ -125,13 +125,16 @@ public static class CompiledMapLoader
 
             AttachPayload(node, in record, i, name, brushes, brushOfNode[i], materials, report);
 
-            // Light and entity records are in node order, so one cursor each
-            // finds them all.
+            // Light, entity and script records are in node order, so one
+            // cursor each finds them all.
             if (nextLight < document.Lights.Length && document.Lights[nextLight].NodeIndex == (uint)i)
                 node.Light = document.Lights[nextLight++].ToLight();
 
             if (nextEntity < document.Entities.Length && document.Entities[nextEntity].NodeIndex == (uint)i)
                 node.Entity = BuildEntity(in document, document.Entities[nextEntity++]);
+
+            if (nextScript < document.Scripts.Length && document.Scripts[nextScript].NodeIndex == (uint)i)
+                node.Script = BuildScript(in document, document.Scripts[nextScript++]);
 
             if (record.ParentIndex < 0) scene.Root.AddChild(node);
             else nodes[record.ParentIndex].AddChild(node);
@@ -142,9 +145,18 @@ public static class CompiledMapLoader
         report.NodesLoaded = nodes.Length;
         report.EntitiesLoaded = nextEntity;
         report.LightsLoaded = nextLight;
+        report.ScriptsLoaded = nextScript;
 
         return nodes;
     }
+
+    // The reader has checked that the row is a script's and holds a content path.
+    private static Script BuildScript(scoped in ScmapDocument document, ScmapScriptRecord record) =>
+        new(document.AssetPath((int)record.AssetIndex))
+        {
+            IsEnabled = record.IsEnabled,
+            IsModule = record.IsModule,
+        };
 
     // Keeps the stored id. Commands and entity wires address nodes by it.
     private static SceneNode NodeOf(scoped in ScmapNodeRecord record, string name, CompiledMapLoadReport report)
@@ -167,8 +179,20 @@ public static class CompiledMapLoader
             // The record's two fields are numbered as the node's enums are.
             DeclaredRealm = (NodeRealm)record.DeclaredRealm,
             DeclaredState = StateOf(in record, name, report),
+            BakedKind = BakedKindOf(in record),
         };
     }
+
+    // The node gets no brush and no mesh from the file. What it had is kept,
+    // so it reads as the same class as in the authored level, and a world
+    // brush stays where it was baked.
+    private static SceneNodeKind? BakedKindOf(scoped in ScmapNodeRecord record) => record.PayloadKind switch
+    {
+        ScmapPayloadKind.StaticWorldBrush when record.IsSubtractiveBrush => SceneNodeKind.BrushSubtractive,
+        ScmapPayloadKind.StaticWorldBrush => SceneNodeKind.BrushWorld,
+        ScmapPayloadKind.MeshInstance => SceneNodeKind.Mesh,
+        _ => null,
+    };
 
     // The two-bit field has a fourth value that is no state.
     private static NodeState StateOf(scoped in ScmapNodeRecord record, string name, CompiledMapLoadReport report)
@@ -177,87 +201,6 @@ public static class CompiledMapLoader
 
         report.StateInvalid(name);
         return NodeState.Inherit;
-    }
-
-    // The world brushes come back as hulls placed by their nodes, for collision
-    // only. No node gets the brush, so no compile can pick it up.
-    private static BrushPlacement[] BuildCollision(
-        scoped in ScmapDocument document,
-        SceneNode[] nodes,
-        ReadOnlySpan<MaterialRef> materials,
-        CompiledMapLoadReport report)
-    {
-        var placements = new List<BrushPlacement>(document.CollisionHulls.Length);
-
-        foreach (ScmapHullRecord hull in document.CollisionHulls)
-        {
-            SceneNode node = nodes[(int)hull.NodeIndex];
-            Matrix4x4 world = node.WorldMatrix;
-
-            // A scaled placement gives planes that are not unit length, which
-            // collides in the wrong place. The cook refuses one.
-            if (Scene.Scene.DescribeNonRigidDefect(world) is not null ||
-                !TryBuildHull(in document, hull, materials, out Brush? brush))
-            {
-                report.CollisionHullRefused(node.Name);
-                continue;
-            }
-
-            placements.Add(new BrushPlacement(brush, world));
-        }
-
-        report.CollisionHullsLoaded = placements.Count;
-        report.CollisionFaceMaterialsMissing =
-            document.CollisionHulls.Length > 0 && !document.HasCollisionFaceMaterials;
-
-        return [.. placements];
-    }
-
-    private static bool TryBuildHull(
-        scoped in ScmapDocument document,
-        ScmapHullRecord hull,
-        ReadOnlySpan<MaterialRef> materials,
-        [NotNullWhen(true)] out Brush? brush)
-    {
-        Plane[] planes = document.CollisionPlanes.Slice((int)hull.PlaneStart, (int)hull.PlaneCount).ToArray();
-
-        BrushOperation operation = document.Nodes[(int)hull.NodeIndex].IsSubtractiveBrush
-            ? BrushOperation.Subtractive
-            : BrushOperation.Additive;
-
-        try
-        {
-            brush = new Brush(planes, Matrix4x4.Identity, HullFaces(in document, hull, materials), operation);
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            // Planes that bound no solid. One wall without collision is
-            // reported; it should not fail the whole load.
-            brush = null;
-            return false;
-        }
-    }
-
-    // What each face of a hull is made of, so a query can name it. Null when
-    // the map carries no face materials: every face is then the default one.
-    // Only the material is kept. A hull is never drawn, so it has no texture axes.
-    private static FaceSurface[]? HullFaces(
-        scoped in ScmapDocument document, ScmapHullRecord hull, ReadOnlySpan<MaterialRef> materials)
-    {
-        if (!document.HasCollisionFaceMaterials) return null;
-
-        ReadOnlySpan<uint> rows = document.CollisionFaceAssets.Slice((int)hull.PlaneStart, (int)hull.PlaneCount);
-        var faces = new FaceSurface[rows.Length];
-
-        for (int i = 0; i < faces.Length; i++)
-        {
-            // The reader has checked that a row is a material of this table.
-            faces[i] = new FaceSurface(
-                rows[i] == ScmapFormat.NoAssetIndex ? MaterialRef.Default : materials[(int)rows[i]]);
-        }
-
-        return faces;
     }
 
     // No catalogue lookup: the class is a name, and a class this build lacks

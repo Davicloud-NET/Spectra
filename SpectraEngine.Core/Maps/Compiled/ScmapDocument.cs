@@ -25,6 +25,7 @@ public readonly ref struct ScmapDocument
         ReadOnlySpan<uint> collisionFaceAssets,
         bool hasCollisionFaceMaterials,
         ReadOnlySpan<ScmapLightRecord> lights,
+        ReadOnlySpan<ScmapScriptRecord> scripts,
         ReadOnlySpan<ScmapChunkRecord> chunks,
         ReadOnlySpan<byte> chunkMeshBlob,
         ReadOnlySpan<byte> chunkBspBlob,
@@ -51,6 +52,7 @@ public readonly ref struct ScmapDocument
         CollisionFaceAssets = collisionFaceAssets;
         HasCollisionFaceMaterials = hasCollisionFaceMaterials;
         Lights = lights;
+        Scripts = scripts;
         Chunks = chunks;
         ChunkMeshBlob = chunkMeshBlob;
         ChunkBspBlob = chunkBspBlob;
@@ -123,6 +125,12 @@ public readonly ref struct ScmapDocument
     /// node.
     /// </summary>
     public ReadOnlySpan<ScmapLightRecord> Lights { get; }
+
+    /// <summary>
+    /// The <c>SCPT</c> section, in ascending node index. At most one record per
+    /// node. Each names its file as a row of <see cref="Assets"/>.
+    /// </summary>
+    public ReadOnlySpan<ScmapScriptRecord> Scripts { get; }
 
     /// <summary>The <c>CHDR</c> section, sorted by cell coordinate.</summary>
     public ReadOnlySpan<ScmapChunkRecord> Chunks { get; }

@@ -209,29 +209,80 @@ public class ScookCliTests
         match.Groups["origin"].Value.ShouldBe("scook");
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void A_map_with_scripts_cooks_and_says_once_that_they_are_left_out(bool strict)
+    [Fact]
+    public void A_project_with_scripts_cooks_verifies_and_has_nothing_to_say()
     {
-        using var project = new TempProject();
+        RealScriptCheck.Require();
+
+        using var project = ProjectWithScripts();
+        project.WriteAsset("Scripts/rules.luau", "return { speed = 2 }\n");
+
+        var cooked = Invoke("cook", project.Root, "--strict");
+
+        cooked.ExitCode.ShouldBe(ExitSuccess, cooked.Stderr);
+        cooked.Stderr.ShouldBeEmpty();
+
+        string pack = Directory.GetFiles(project.CookedPath, "*.spack").Single();
+        var verified = Invoke("verify", pack);
+
+        verified.ExitCode.ShouldBe(ExitSuccess, verified.Stderr);
+        verified.Stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_script_with_a_mistake_fails_the_cook_on_a_line_that_names_its_place()
+    {
+        RealScriptCheck.Require();
+
+        using var project = ProjectWithScripts();
+        project.WriteAsset("Scripts/rules.luau", "local speed = 2\n\nreturn speed +\n");
+
+        var run = Invoke("cook", project.Root);
+
+        run.ExitCode.ShouldBe(ExitCookError);
+        Directory.Exists(project.CookedPath).ShouldBeFalse("a failed cook writes no pack");
+
+        // Luau names a line and no column, so the column is the line's first.
+        Match match = MatchSingleDiagnostic(run.Stderr);
+        match.Groups["origin"].Value.ShouldBe("Scripts/rules.luau(4,1)");
+        match.Groups["severity"].Value.ShouldBe("error");
+        match.Groups["code"].Value.ShouldBe("SC8001");
+        match.Groups["text"].Value.ShouldContain("<eof>");
+    }
+
+    [Fact]
+    public void A_map_that_names_a_script_nobody_wrote_cooks_and_fails_to_verify()
+    {
+        RealScriptCheck.Require();
+
+        // Spin is there. Rules is not.
+        using var project = ProjectWithScripts();
+
+        Invoke("cook", project.Root, "-q").ExitCode.ShouldBe(ExitSuccess);
+        var verified = Invoke("verify", Directory.GetFiles(project.CookedPath, "*.spack").Single());
+
+        verified.ExitCode.ShouldBe(ExitCookError);
+        Match match = MatchSingleDiagnostic(verified.Stderr);
+        match.Groups["code"].Value.ShouldBe("SC7008");
+        match.Groups["text"].Value.ShouldContain("script 'Scripts/rules.luau'");
+        match.Groups["text"].Value.ShouldNotContain("material");
+    }
+
+    // A level with two script nodes, and the file of the first.
+    private static TempProject ProjectWithScripts()
+    {
+        var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteMaterials(project);
+
         SpectraEngine.Core.Scene.Scene scene = fixture.BuildScene();
         scene.Root.CreateChild("Spin").Script = new SpectraEngine.Core.Scene.Script("Scripts/spin.luau");
-        scene.Root.CreateChild("Rules").Script = new SpectraEngine.Core.Scene.Script("Scripts/rules.luau");
+        scene.Root.CreateChild("Rules").Script =
+            new SpectraEngine.Core.Scene.Script("Scripts/rules.luau") { IsModule = true };
         MapFixture.WriteBundle(project, "Scripted.smap", scene);
 
-        var run = strict ? Invoke("cook", project.Root, "--strict") : Invoke("cook", project.Root);
-
-        // A warning either way: the map is fine, the cook is what lacks scripts.
-        run.ExitCode.ShouldBe(ExitSuccess, run.Stderr);
-        Directory.GetFiles(project.CookedPath, "*.spack").Length.ShouldBe(1);
-
-        Match match = MatchSingleDiagnostic(run.Stderr);
-        match.Groups["severity"].Value.ShouldBe("warning");
-        match.Groups["code"].Value.ShouldBe("SC7011");
-        match.Groups["text"].Value.ShouldContain("2 script node(s)");
+        project.WriteAsset("Scripts/spin.luau", "print(script.Parent.Name)\n");
+        return project;
     }
 
     [Fact]

@@ -175,6 +175,15 @@ public static class ScmapFormat
     public const int LightRecordSize = 48;
 
     /// <summary>
+    /// Bytes of fixed preamble in <c>SCPT</c>: the script count, padded to the
+    /// payload alignment.
+    /// </summary>
+    public const int ScriptPreambleSize = 16;
+
+    /// <summary>Bytes in one <see cref="ScmapScriptRecord"/>.</summary>
+    public const int ScriptRecordSize = 16;
+
+    /// <summary>
     /// The <c>assetIndex</c> a submesh or a face carries when it names no asset.
     /// Not 0: row 0 of <c>ASTB</c> is a real asset.
     /// </summary>
@@ -228,13 +237,22 @@ public static class ScmapFormat
     /// </summary>
     public const uint LightSection = 'L' | ('G' << 8) | ('H' << 16) | ((uint)'T' << 24);
 
-    /// <summary>Section <c>SCPT</c>: script records.</summary>
+    /// <summary>
+    /// Section <c>SCPT</c>: one script record per node that is a script, in node
+    /// order.
+    /// </summary>
     public const uint ScriptSection = 'S' | ('C' << 8) | ('P' << 16) | ((uint)'T' << 24);
 
-    /// <summary>Section <c>LUAB</c>: compiled Luau bytecode, a cache of <c>LUAS</c>.</summary>
+    /// <summary>
+    /// Section <c>LUAB</c>, retired and never written. A map holds no script
+    /// code: a script is a file of the pack. Do not reuse the code.
+    /// </summary>
     public const uint ScriptBytecodeSection = 'L' | ('U' << 8) | ('A' << 16) | ((uint)'B' << 24);
 
-    /// <summary>Section <c>LUAS</c>: Luau source.</summary>
+    /// <summary>
+    /// Section <c>LUAS</c>, retired and never written, for the reason
+    /// <c>LUAB</c> is. Do not reuse the code.
+    /// </summary>
     public const uint ScriptSourceSection = 'L' | ('U' << 8) | ('A' << 16) | ((uint)'S' << 24);
 
     /// <summary>Section <c>BRSH</c>: authored brush planes.</summary>

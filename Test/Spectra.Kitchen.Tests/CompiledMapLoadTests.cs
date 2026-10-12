@@ -340,13 +340,13 @@ public class CompiledMapLoadTests
         string said = CompiledMapLoadReport.DescribeFormatGaps();
 
         said.ShouldContain("spawns");
-        said.ShouldContain("scripts");
         said.ShouldContain("submesh indices");
         said.ShouldContain("materials for ray hits");
         said.ShouldNotContain("entities");
         said.ShouldNotContain("lights");
         said.ShouldNotContain("collision");
-        CompiledMapLoadReport.FormatGaps.Count.ShouldBe(5);
+        said.ShouldNotContain("scripts");
+        CompiledMapLoadReport.FormatGaps.Count.ShouldBe(4);
     }
 
     [Fact]

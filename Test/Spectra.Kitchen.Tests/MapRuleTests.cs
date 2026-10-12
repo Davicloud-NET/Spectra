@@ -407,7 +407,7 @@ public class MapRuleTests
     }
 
     [Fact]
-    public void A_map_with_scripts_bakes_and_says_in_one_line_that_they_are_left_out()
+    public void A_map_with_scripts_bakes_them_on_their_nodes_and_says_nothing()
     {
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
@@ -416,32 +416,49 @@ public class MapRuleTests
         SceneNode crate = scene.Root.Children.Single(node => node.BrushKind == BrushKind.Part);
         crate.AddChild(new SceneNode("Spin") { Script = new Script("Scripts/spin.luau") });
         scene.Root.AddChild(new SceneNode("Rules") { Script = new Script("Scripts/rules.luau") { IsModule = true } });
+        scene.Root.AddChild(new SceneNode("Off") { Script = new Script(@"Scripts\spin.luau") { IsEnabled = false } });
         MapFixture.WriteBundle(project, "Scripted.smap", scene);
 
         (byte[]? file, List<CookDiagnostic> said) = TryBake(project, "Maps/Scripted.smap");
 
-        // One line for the map, not one a script.
-        CookDiagnostic warned = said.Single();
-        warned.Id.ToString().ShouldBe("SC7011");
-        warned.IsError.ShouldBeFalse();
-        warned.Message.ShouldContain("2 script node(s)");
-        warned.Message.ShouldContain("Maps/Scripted.smap");
-        warned.Message.ShouldNotContain("\n");
+        // Nothing said, so the bake is cached like any other map's.
+        said.ShouldBeEmpty();
 
-        // Under --strict too: nothing in the map is wrong.
-        CookGate.Verdict(CookDiagnosticCodes.MapScriptsLeftOut).ShouldBe(CookGateVerdict.Warning);
-        CookGate.Apply(warned, strict: true).IsError.ShouldBeFalse();
-
-        // The nodes are baked, as plain nodes.
         ScmapProbe map = ScmapProbe.Read(file.ShouldNotBeNull());
+        map.Scripts.Select(script => (map.NodeNames[(int)script.NodeIndex], script.Path, script.IsEnabled, script.IsModule))
+            .ShouldBe(
+            [
+                ("Spin", "Scripts/spin.luau", true, false),
+                ("Rules", "Scripts/rules.luau", true, true),
+                ("Off", "Scripts/spin.luau", false, false),
+            ]);
+
+        // A script is a node of its own, under the node it acts on.
         ScmapNodeRecord spin = map.Nodes[map.NodeNames.IndexOf("Spin")];
         spin.PayloadKind.ShouldBe(ScmapPayloadKind.None);
         map.NodeNames[spin.ParentIndex].ShouldBe(crate.Name);
-        map.NodeNames.ShouldContain("Rules");
     }
 
     [Fact]
-    public void The_scripts_change_nothing_else_in_the_baked_map()
+    public void A_script_on_a_part_bakes_beside_its_brush()
+    {
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+
+        SpectraEngine.Core.Scene.Scene scene = fixture.BuildScene();
+        SceneNode crate = scene.Root.Children.Single(node => node.BrushKind == BrushKind.Part);
+        crate.Script = new Script("Scripts/crate.luau");
+        MapFixture.WriteBundle(project, "Scripted.smap", scene);
+
+        ScmapProbe map = Bake(project, "Maps/Scripted.smap");
+
+        int index = map.NodeNames.IndexOf(crate.Name);
+        map.Nodes[index].PayloadKind.ShouldBe(ScmapPayloadKind.PartBrush);
+        map.Scripts.ShouldHaveSingleItem().NodeIndex.ShouldBe((uint)index);
+    }
+
+    [Fact]
+    public void The_scripts_add_their_files_to_the_asset_table_and_change_nothing_else()
     {
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
@@ -452,12 +469,16 @@ public class MapRuleTests
         MapFixture.WriteBundle(project, "Scripted.smap", scene);
 
         ScmapProbe plain = Bake(project, "Maps/Plain.smap");
-        ScmapProbe scripted = ScmapProbe.Read(TryBake(project, "Maps/Scripted.smap").File.ShouldNotBeNull());
+        ScmapProbe scripted = Bake(project, "Maps/Scripted.smap");
 
         scripted.TriangleCount.ShouldBe(plain.TriangleCount);
-        scripted.Assets.ShouldBe(plain.Assets);
         scripted.Hulls.Count.ShouldBe(plain.Hulls.Count);
         scripted.NodeNames.Count.ShouldBe(plain.NodeNames.Count + 1);
+
+        // After the materials, which keep their rows.
+        scripted.Assets.Take(plain.Assets.Count).ShouldBe(plain.Assets);
+        scripted.Assets.Skip(plain.Assets.Count)
+            .ShouldBe([new ScmapProbe.AssetRow(PackEntryKind.Script, "Scripts/rules.luau", 0)]);
     }
 
     [Fact]

@@ -59,13 +59,15 @@ public sealed class ScmapWriter
         ArgumentOutOfRangeException.ThrowIfNegative(bodySize);
 
         // A reader skips unknown codes, so nothing downstream would catch these.
-        if (kind == ScmapFormat.RegionIndexSection || kind == ScmapFormat.BrushModelSection)
+        if (kind is ScmapFormat.RegionIndexSection or ScmapFormat.BrushModelSection
+            or ScmapFormat.ScriptBytecodeSection or ScmapFormat.ScriptSourceSection)
         {
             throw new ArgumentException(
                 $"Section '{ScmapFormat.DescribeFourCc(kind)}' is reserved and has no producer: " +
-                "RGNI belongs to a streaming design nothing builds, and BMDL to a fused brush model whose " +
-                "mechanism was overturned. Emitting either spends a code the format has promised elsewhere, " +
-                "and a reader would step over it in silence.", nameof(kind));
+                "RGNI belongs to a streaming design nothing builds, BMDL to a fused brush model whose " +
+                "mechanism was overturned, and LUAB and LUAS to script code inside the map, which is a file " +
+                "of the pack. Emitting one spends a code the format has promised elsewhere, and a reader " +
+                "would step over it in silence.", nameof(kind));
         }
 
         for (int i = 0; i < _sections.Count; i++)

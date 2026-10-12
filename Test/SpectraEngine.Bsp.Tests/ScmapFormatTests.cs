@@ -56,6 +56,9 @@ public class ScmapFormatTests
         Unsafe.SizeOf<ScmapLightRecord>().ShouldBe(48);
         Unsafe.SizeOf<ScmapLightRecord>().ShouldBe(ScmapFormat.LightRecordSize);
 
+        Unsafe.SizeOf<ScmapScriptRecord>().ShouldBe(16);
+        Unsafe.SizeOf<ScmapScriptRecord>().ShouldBe(ScmapFormat.ScriptRecordSize);
+
         // Framework types the records embed. Their layout is not a documented contract.
         Unsafe.SizeOf<Vector3>().ShouldBe(12);
         Unsafe.SizeOf<Quaternion>().ShouldBe(16);
@@ -92,6 +95,38 @@ public class ScmapFormatTests
 
         ScmapFormat.LightPreambleSize.ShouldBe(16);
         (ScmapFormat.LightRecordSize % sizeof(uint)).ShouldBe(0);
+
+        ScmapFormat.ScriptPreambleSize.ShouldBe(16);
+        (ScmapFormat.ScriptRecordSize % sizeof(uint)).ShouldBe(0);
+    }
+
+    [Fact]
+    public void Script_fields_sit_at_the_documented_offsets()
+    {
+        Offset<ScmapScriptRecord>(nameof(ScmapScriptRecord.NodeIndex)).ShouldBe(0x00);
+        Offset<ScmapScriptRecord>(nameof(ScmapScriptRecord.AssetIndex)).ShouldBe(0x04);
+        Offset<ScmapScriptRecord>(nameof(ScmapScriptRecord.KindRaw)).ShouldBe(0x08);
+        Offset<ScmapScriptRecord>(nameof(ScmapScriptRecord.FlagsRaw)).ShouldBe(0x09);
+        Offset<ScmapScriptRecord>(nameof(ScmapScriptRecord.Reserved0)).ShouldBe(0x0A);
+        Offset<ScmapScriptRecord>(nameof(ScmapScriptRecord.Reserved1)).ShouldBe(0x0C);
+    }
+
+    [Theory]
+    [InlineData(true, false, 0, 0)]
+    [InlineData(true, true, 1, 0)]
+    [InlineData(false, false, 0, 1)]
+    [InlineData(false, true, 1, 1)]
+    public void A_script_record_stores_a_module_as_its_kind_and_a_script_switched_off_as_a_flag(
+        bool isEnabled, bool isModule, byte kind, byte flags)
+    {
+        var record = new ScmapScriptRecord(3, 5, isEnabled, isModule);
+
+        record.NodeIndex.ShouldBe(3u);
+        record.AssetIndex.ShouldBe(5u);
+        record.KindRaw.ShouldBe(kind);
+        record.FlagsRaw.ShouldBe(flags);
+        record.IsEnabled.ShouldBe(isEnabled);
+        record.IsModule.ShouldBe(isModule);
     }
 
     [Fact]
@@ -369,8 +404,8 @@ public class ScmapFormatTests
     [Fact]
     public void The_compiled_map_version_is_declared_and_gated_exactly()
     {
-        // 3: world collision hulls and lights.
-        EngineInfo.CompiledMapFormatVersion.ShouldBe((ushort)3);
+        // 4: script records.
+        EngineInfo.CompiledMapFormatVersion.ShouldBe((ushort)4);
     }
 
     [Fact]

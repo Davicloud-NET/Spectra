@@ -348,8 +348,7 @@ public static class PackVerifier
 
             diagnostics.Add(CookDiagnostic.Error(
                 CookDiagnosticCodes.MapAssetMissing,
-                $"'{name}' names {Describe(kind)} '{path}', which is not in this pack. The running engine " +
-                "would bind the default material and carry on; a shipped build would ship a grey level.",
+                $"'{name}' names {Describe(kind)} '{path}', which is not in this pack. {WhatShips(kind)}",
                 packFile));
         }
 
@@ -363,8 +362,16 @@ public static class PackVerifier
         PackEntryKind.Image => "texture",
         PackEntryKind.Shader => "shader",
         PackEntryKind.Audio => "sound",
+        PackEntryKind.Script => "script",
         _ => $"a {kind} asset",
     };
+
+    // What the running engine does about the miss, and so what would ship.
+    private static string WhatShips(PackEntryKind kind) => kind == PackEntryKind.Script
+        ? "The running engine would start the level without that script and carry on; a shipped build " +
+          "would ship a level where it never runs."
+        : "The running engine would bind the default material and carry on; a shipped build would ship " +
+          "a grey level.";
 
     // The engine's reader must accept a cooked image. The digest cannot see a
     // wrong profile version or a bad level index.

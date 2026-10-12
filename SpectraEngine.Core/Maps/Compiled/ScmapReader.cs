@@ -28,7 +28,8 @@ public static class ScmapReader
     private const int CollisionSlot = 10;
     private const int LightSlot = 11;
     private const int HullMaterialSlot = 12;
-    private const int KnownSectionCount = 13;
+    private const int ScriptSlot = 13;
+    private const int KnownSectionCount = 14;
 
     /// <summary>
     /// Validates <paramref name="file"/> and returns its tables as spans into it.
@@ -159,6 +160,7 @@ public static class ScmapReader
         RequireSection(source, sectionPresent, ConnectionSlot, ScmapFormat.EntityConnectionSection);
         RequireSection(source, sectionPresent, CollisionSlot, ScmapFormat.CollisionSection);
         RequireSection(source, sectionPresent, LightSlot, ScmapFormat.LightSection);
+        RequireSection(source, sectionPresent, ScriptSlot, ScmapFormat.ScriptSection);
 
         // The header flag and the section table must agree about BRSH.
         if (((header.FileFlags & ScmapFlags.HasBrushSource) != 0) != sectionPresent[BrushSourceSlot])
@@ -225,6 +227,13 @@ public static class ScmapReader
             file.Slice(sectionOffset[LightSlot], sectionLength[LightSlot]),
             nodes.Length);
 
+        ReadOnlySpan<ScmapScriptRecord> scripts = ScmapScriptTable.Read(
+            source,
+            file.Slice(sectionOffset[ScriptSlot], sectionLength[ScriptSlot]),
+            nodes.Length,
+            assets,
+            strings);
+
         ReadOnlySpan<byte> meshBlob = sectionPresent[ChunkMeshSlot]
             ? file.Slice(sectionOffset[ChunkMeshSlot], sectionLength[ChunkMeshSlot])
             : default;
@@ -259,6 +268,7 @@ public static class ScmapReader
             hullFaceAssets,
             sectionPresent[HullMaterialSlot],
             lights,
+            scripts,
             chunks,
             meshBlob,
             bspBlob,
@@ -284,9 +294,10 @@ public static class ScmapReader
         ScmapFormat.CollisionSection => CollisionSlot,
         ScmapFormat.LightSection => LightSlot,
         ScmapFormat.HullMaterialSection => HullMaterialSlot,
+        ScmapFormat.ScriptSection => ScriptSlot,
 
-        // Reserved codes with no consumer yet (SCPT, LUAB, LUAS, NBND, RGNI,
-        // BMDL) are skipped like any unknown one.
+        // Codes with no consumer (NBND, RGNI) and retired ones (BMDL, LUAB,
+        // LUAS) are skipped like any unknown one.
         _ => -1,
     };
 

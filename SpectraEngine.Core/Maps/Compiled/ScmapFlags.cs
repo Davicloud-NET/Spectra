@@ -17,7 +17,10 @@ public enum ScmapFlags : uint
     /// </summary>
     HasBrushSource = 1u << 0,
 
-    /// <summary>A <c>LUAS</c> section is present: Luau source.</summary>
+    /// <summary>
+    /// Retired with the <c>LUAS</c> section it stood for. Nothing sets it. Do
+    /// not reuse the bit.
+    /// </summary>
     HasScriptSource = 1u << 1,
 
     /// <summary>Debug information was kept rather than stripped.</summary>

@@ -22,7 +22,6 @@ public sealed class CompiledMapLoadReport
     public static IReadOnlyList<string> FormatGaps { get; } =
     [
         "spawns (scene.spawn is a preserved .smap member, so META always writes a spawn count of zero)",
-        "scripts (SCPT/LUAB/LUAS are claimed and empty)",
         "mesh-instance submesh indices (MeshSource.SubmeshIndex has no table to name)",
         "standalone brush transforms (BRSH carries planes and faces; a node-attached brush ignores it)",
         "world surface materials for ray hits (COLL carries planes and no faces, so a ray that hits baked " +
@@ -59,6 +58,9 @@ public sealed class CompiledMapLoadReport
 
     /// <summary>Nodes that got a light from the file.</summary>
     public int LightsLoaded { get; internal set; }
+
+    /// <summary>Nodes that got their script from the file, switched on or off.</summary>
+    public int ScriptsLoaded { get; internal set; }
 
     /// <summary>Baked world brushes that became collision hulls.</summary>
     public int CollisionHullsLoaded { get; internal set; }

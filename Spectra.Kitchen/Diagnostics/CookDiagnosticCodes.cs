@@ -271,12 +271,6 @@ public static class CookDiagnosticCodes
     /// </summary>
     public static readonly CookDiagnosticId MapEntityOnWorldBrush = CookDiagnosticId.Cook(7010);
 
-    /// <summary>
-    /// A map has script nodes. A baked map does not carry scripts yet, so the
-    /// bake leaves them out.
-    /// </summary>
-    public static readonly CookDiagnosticId MapScriptsLeftOut = CookDiagnosticId.Cook(7011);
-
     /// <summary>A script the Luau compiler refuses. Carries its message and the line.</summary>
     public static readonly CookDiagnosticId ScriptSyntaxError = CookDiagnosticId.Cook(8001);
 
@@ -325,6 +319,8 @@ public static class CookDiagnosticCodes
     // A switch, not a collection: no static state to initialise after the codes above.
     public static bool IsRetired(int number) => number switch
     {
+        // A baked map without its scripts.
+        7011 => true,
         _ => false,
     };
 

@@ -69,7 +69,8 @@ namespace SpectraEngine.Core
         /// </summary>
         // 2: entities, their connections and the four node flags.
         // 3: world collision hulls and lights.
-        public const ushort CompiledMapFormatVersion = 3;
+        // 4: script records.
+        public const ushort CompiledMapFormatVersion = 4;
 
         /// <summary>Version of the .spack container a cook writes.</summary>
         public const ushort PackFormatVersion = 1;

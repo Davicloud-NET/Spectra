@@ -15,18 +15,29 @@ namespace Spectra.Kitchen.Tests;
 // sorted order, so the ordering rules have something to do.
 internal static class ScmapFixture
 {
-    // SCPT, LUAB, LUAS.
-    public const int ReservedEmptySections = 3;
-
     public const string SceneName = "Determinism";
 
-    // In reference order.
+    // In reference order. The script files come last: a script claims its row
+    // when it is added, after the four below.
     public static readonly string[] AssetPaths =
     [
         "Materials/zulu.spectramat",
         "Materials/alpha.spectramat",
         "Textures/mid.png",
         "Models/crate.smodel",
+        "Scripts/world.luau",
+        "Scripts/Lib/rules.luau",
+        "Scripts/Lib/off.luau",
+    ];
+
+    // In node order: a script and a module, each switched on and switched
+    // off. The first and the third are one file on two nodes.
+    public static readonly ScmapScriptSource[] Scripts =
+    [
+        new(0, "Scripts/world.luau"),
+        new(1, "Scripts/Lib/rules.luau", IsModule: true),
+        new(4, "Scripts/world.luau", IsEnabled: false),
+        new(6, "Scripts/Lib/off.luau", IsEnabled: false, IsModule: true),
     ];
 
     // In pre-order.
@@ -197,6 +208,7 @@ internal static class ScmapFixture
         }
 
         foreach (ScmapLightSource light in Lights) builder.AddLight(light);
+        foreach (ScmapScriptSource script in Scripts) builder.AddScript(script);
 
         // Unsorted on every axis.
         builder.AddChunk(Cell(2, 0, -1));

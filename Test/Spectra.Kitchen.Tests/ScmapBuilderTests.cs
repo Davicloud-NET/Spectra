@@ -127,39 +127,45 @@ public class ScmapBuilderTests
     }
 
     [Fact]
-    public void The_reserved_section_codes_are_claimed_and_empty()
+    public void A_map_with_no_geometry_still_carries_its_two_chunk_blob_sections_empty()
     {
         byte[] file = ScmapFixture.Build();
 
-        foreach (uint kind in new[]
-        {
-            ScmapFormat.ScriptSection,
-            ScmapFormat.ScriptBytecodeSection,
-            ScmapFormat.ScriptSourceSection,
-            ScmapFormat.ChunkMeshSection,
-            ScmapFormat.ChunkBspSection,
-        })
+        foreach (uint kind in new[] { ScmapFormat.ChunkMeshSection, ScmapFormat.ChunkBspSection })
         {
             (int offset, long size) = FindSection(file, kind);
             offset.ShouldBeGreaterThan(0, ScmapFormat.DescribeFourCc(kind));
             size.ShouldBe(0, ScmapFormat.DescribeFourCc(kind));
         }
 
-        // These two have no producer and are never written.
-        Should.Throw<InvalidOperationException>(() => FindSection(file, ScmapFormat.RegionIndexSection));
-        Should.Throw<InvalidOperationException>(() => FindSection(file, ScmapFormat.BrushModelSection));
+        // Every section the builder writes is one the reader knows.
+        ScmapProbe.Read(file).SkippedSections.ShouldBe(0);
+    }
 
-        ScmapProbe probe = ScmapProbe.Read(file);
-        probe.SkippedSections.ShouldBe(ScmapFixture.ReservedEmptySections);
+    [Theory]
+    [InlineData(ScmapFormat.RegionIndexSection)]
+    [InlineData(ScmapFormat.BrushModelSection)]
+    [InlineData(ScmapFormat.ScriptBytecodeSection)]
+    [InlineData(ScmapFormat.ScriptSourceSection)]
+    public void A_reserved_or_retired_section_code_is_never_written_and_the_writer_refuses_it(uint kind)
+    {
+        byte[] file = ScmapFixture.Build();
+
+        Should.Throw<InvalidOperationException>(() => FindSection(file, kind));
+
+        var writer = new ScmapWriter(ScmapFlags.None, UInt128.Zero, EngineInfo.MapFormatVersion);
+        Should.Throw<ArgumentException>(() => writer.AddSection(kind, ReadOnlySpan<byte>.Empty))
+            .Message.ShouldContain(ScmapFormat.DescribeFourCc(kind));
     }
 
     [Fact]
     public void A_section_code_this_build_has_no_meaning_for_is_skipped_rather_than_refused()
     {
-        // A section a later cooker adds must not make the map unreadable.
+        // A section a later cooker adds must not make the map unreadable. The
+        // mesh blobs stand in for one: no cell of the fixture has a mesh.
         byte[] file = ScmapFixture.Build();
-        (int offset, _) = FindSection(file, ScmapFormat.ScriptSection);
-        int record = TableRecordOffset(file, ScmapFormat.ScriptSection);
+        (int offset, _) = FindSection(file, ScmapFormat.ChunkMeshSection);
+        int record = TableRecordOffset(file, ScmapFormat.ChunkMeshSection);
 
         BinaryPrimitives.WriteUInt32LittleEndian(
             file.AsSpan(record), 'Z' | ('Z' << 8) | ('Z' << 16) | ((uint)'Z' << 24));
@@ -167,7 +173,7 @@ public class ScmapBuilderTests
         offset.ShouldBeGreaterThan(0);
 
         ScmapProbe probe = ScmapProbe.Read(file);
-        probe.SkippedSections.ShouldBe(ScmapFixture.ReservedEmptySections);
+        probe.SkippedSections.ShouldBe(1);
         probe.NodeNames.ShouldBe(ScmapFixture.NodeNames);
     }
 

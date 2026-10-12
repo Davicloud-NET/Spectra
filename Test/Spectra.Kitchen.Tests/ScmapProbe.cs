@@ -28,6 +28,7 @@ internal sealed class ScmapProbe
     public required List<HullCopy> Hulls { get; init; }
     public required bool HasHullMaterials { get; init; }
     public required List<ScmapLightRecord> Lights { get; init; }
+    public required List<ScriptCopy> Scripts { get; init; }
 
     // The document's own count, not recomputed here: tests grade the reader on it.
     public required int TriangleCount { get; init; }
@@ -58,6 +59,9 @@ internal sealed class ScmapProbe
         string ClassName,
         List<KeyValuePair<string, string>> Keyvalues,
         List<EntityConnection> Connections);
+
+    // The path is the one its asset row holds.
+    public readonly record struct ScriptCopy(uint NodeIndex, string Path, bool IsEnabled, bool IsModule);
 
     public static ScmapProbe Read(ReadOnlySpan<byte> file, string source = "fixture.scmap")
     {
@@ -168,6 +172,13 @@ internal sealed class ScmapProbe
                     : []));
         }
 
+        var scripts = new List<ScriptCopy>(document.Scripts.Length);
+        foreach (ScmapScriptRecord script in document.Scripts)
+        {
+            scripts.Add(new ScriptCopy(
+                script.NodeIndex, document.AssetPath((int)script.AssetIndex), script.IsEnabled, script.IsModule));
+        }
+
         var spawns = new List<ScmapSpawn>(document.Spawns.Length);
         for (int i = 0; i < document.Spawns.Length; i++) spawns.Add(document.Spawns[i]);
 
@@ -191,6 +202,7 @@ internal sealed class ScmapProbe
             Hulls = hulls,
             HasHullMaterials = document.HasCollisionFaceMaterials,
             Lights = [.. document.Lights],
+            Scripts = scripts,
             TriangleCount = document.TriangleCount,
         };
     }

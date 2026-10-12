@@ -85,7 +85,7 @@ public class ScmapHullMaterialTableTests
         ScmapProbe probe = ScmapProbe.Read(file);
         probe.HasHullMaterials.ShouldBeFalse();
         probe.Hulls.ShouldAllBe(hull => hull.FaceAssets.Length == 0);
-        probe.SkippedSections.ShouldBe(ScmapFixture.ReservedEmptySections);
+        probe.SkippedSections.ShouldBe(0);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class ScmapHullMaterialTableTests
         ScmapProbe probe = ScmapProbe.Read(file);
 
         probe.HasHullMaterials.ShouldBeFalse();
-        probe.SkippedSections.ShouldBe(ScmapFixture.ReservedEmptySections + 1);
+        probe.SkippedSections.ShouldBe(1);
         probe.Hulls.Count.ShouldBe(ScmapFixture.Hulls.Length);
         probe.Hulls[0].Planes.ShouldBe(ScmapFixture.Hulls[0].Planes);
     }
@@ -160,7 +160,7 @@ public class ScmapHullMaterialTableTests
         ScmapSurgery.SetU32(file, colm + 16 + (2 * 4), 99);
 
         Should.Throw<ScmapFormatException>(() => ScmapProbe.Read(file))
-            .Message.ShouldContain("face 2 names asset 99 of a 4-asset table");
+            .Message.ShouldContain($"face 2 names asset 99 of a {ScmapFixture.AssetPaths.Length}-asset table");
     }
 
     [Fact]
