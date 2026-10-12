@@ -150,7 +150,7 @@ public sealed class RunServiceTests
             print(RunService.Heartbeat == RunService.Heartbeat, RunService == game:GetService("RunService"))
             print(pcall(function() return RunService.RenderStepped end))
             print(pcall(function() RunService.Heartbeat = nil end))
-            print(pcall(function() return game:GetService("Players") end))
+            print(pcall(function() return game:GetService("TweenService") end))
             print(pcall(function() return RunService.Heartbeat.Connect() end))
             """);
 
@@ -163,7 +163,7 @@ public sealed class RunServiceTests
             "true true",
             $"false {here}:4: RenderStepped is not a valid member of RunService \"RunService\"",
             $"false {here}:5: Unable to assign property Heartbeat. Property is read only",
-            $"false {here}:6: 'Players' is not a valid Service name",
+            $"false {here}:6: 'TweenService' is not a valid Service name",
             $"false {here}:7: Expected ':' not '.' calling member function Connect",
         ]);
     }

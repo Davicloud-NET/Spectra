@@ -35,6 +35,9 @@ public sealed partial class ScriptApiDescriptionTests
             Folder = workspace.Kinds.Folder,
             Script = script,
             ModuleScript = workspace.Kinds.ModuleScript,
+            Players = game:GetService("Players"),
+            Player = game:GetService("Players").LocalPlayer,
+            Character = game:GetService("Players").LocalPlayer.Character,
         }
         """;
 

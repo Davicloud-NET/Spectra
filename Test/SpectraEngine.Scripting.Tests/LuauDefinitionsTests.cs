@@ -221,13 +221,42 @@ public sealed class LuauDefinitionsTests
         BlockOf(written, "declare extern type Instance ").ShouldContain("\n    read ClassName: string\n");
         BlockOf(written, "declare extern type CFrame ").ShouldContain("\n    read X: number\n");
         BlockOf(written, "declare extern type RBXScriptConnection ").ShouldContain("\n    read Connected: boolean\n");
+        BlockOf(written, "declare extern type Character ").ShouldContain("\n    WalkSpeed: number\n");
+        BlockOf(written, "declare extern type Character ").ShouldContain("\n    read Position: Vector3\n");
 
         foreach (ScriptClassDescription described in Api.Classes.Where(described => described.TypeParameters.Length == 0))
         {
             string body = BlockOf(written, $"declare extern type {described.Name} ");
             foreach (ScriptPropertyDescription property in described.Properties)
-                body.ShouldContain($"\n    {(property.Sets is null ? "read " : "")}{property.Name}: ", Case.Sensitive, described.Name);
+                body.ShouldContain($"\n    {(property.CanSet ? "" : "read ")}{property.Name}: ", Case.Sensitive, described.Name);
         }
+    }
+
+    [Fact]
+    public void A_property_an_object_sets_itself_is_not_read_only_and_the_json_says_so()
+    {
+        var api = new ScriptApiDescription
+        {
+            Classes =
+            [
+                new()
+                {
+                    Name = "Dial",
+                    Properties =
+                    [
+                        new() { Name = "Level", Type = "number", CanSet = true },
+                        new() { Name = "Turns", Type = "number" },
+                    ],
+                },
+            ],
+        };
+
+        LuauDefinitions.Write(api).ShouldContain("\n    Level: number\n    read Turns: number\n");
+
+        using JsonDocument json = JsonDocument.Parse(ScriptApiJson.Write(api));
+        JsonElement properties = json.RootElement.GetProperty("classes")[0].GetProperty("properties");
+        properties[0].GetProperty("canSet").GetBoolean().ShouldBeTrue();
+        properties[1].GetProperty("canSet").GetBoolean().ShouldBeFalse();
     }
 
     [Fact]

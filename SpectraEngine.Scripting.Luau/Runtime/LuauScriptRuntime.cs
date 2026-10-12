@@ -57,7 +57,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
             _runService = new RunService(new SignalHub(_host, _waiting));
             SceneNode workspace = _world.Scene.Root;
-            new LevelGlobals(new DataModel(_host, workspace, _runService), workspace).ScriptInstall(context);
+            var players = new Players(new PlayerWrites(_world));
+            new LevelGlobals(new DataModel(_host, workspace, _runService, players), workspace).ScriptInstall(context);
 
             _host.Seal();
             _starter = new ScriptStarter(_host, setup.Source, _sink);
