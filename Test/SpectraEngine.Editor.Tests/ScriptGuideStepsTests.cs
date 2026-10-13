@@ -22,7 +22,10 @@ public sealed partial class ScriptGuideStepsTests
     // A stop names both keys, or is "Stop." or "Stop," as the page telling
     // the reader to stop. "Stop puts back" is the page telling what stopping
     // does, and Esc alone clears the selection of a level that does not play.
-    [GeneratedRegex(@"(?<play>[Pp]ress Play)|(?<stop><kbd>F8</kbd> or <kbd>Esc</kbd>|\bStop[.,])|(?<click>Click the line)|(?<deselect>[Pp]ress <kbd>Esc</kbd>)")]
+    // Ctrl and L open the Logic view, which the game's keyboard does not do.
+    [GeneratedRegex(
+        @"(?<play>[Pp]ress Play)|(?<stop><kbd>F8</kbd> or <kbd>Esc</kbd>|\bStop[.,])|(?<click>Click the line)" +
+        @"|(?<deselect>[Pp]ress <kbd>Esc</kbd>)|(?<logic><kbd>Ctrl</kbd> \+ <kbd>L</kbd>)")]
     private static partial Regex Step();
 
     public static TheoryData<string> Pages() =>
@@ -64,6 +67,11 @@ public sealed partial class ScriptGuideStepsTests
             else if (step.Groups["deselect"].Success)
             {
                 isPlaying.ShouldBeFalse($"the level plays, so Esc would stop it and clear nothing: {where}");
+            }
+            else if (step.Groups["logic"].Success)
+            {
+                // ViewportInputRouterTests holds that the chord is not raised then.
+                isPlaying.ShouldBeFalse($"the level plays and has the keyboard, so the Logic view does not open: {where}");
             }
             else
             {

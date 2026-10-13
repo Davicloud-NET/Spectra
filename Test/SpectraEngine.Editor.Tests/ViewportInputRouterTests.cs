@@ -429,6 +429,17 @@ public sealed class ViewportInputRouterTests
         _chords.ShouldHaveSingleItem().ShouldBe(ShellChord.ToggleBottomDrawer);
     }
 
+    // Why the site's guides open the Logic view before they play.
+    [Fact]
+    public void The_Logic_view_chord_is_not_raised_while_a_level_holds_the_cursor()
+    {
+        _router.ApplyCursorMode(CursorMode.Locked);
+
+        _router.OnKeyDown(InputKey.L, KeyModifiers.Control);
+
+        _chords.ShouldBeEmpty();
+    }
+
     [Fact]
     public void The_console_key_is_raised_during_a_look_and_the_other_chords_are_not()
     {
