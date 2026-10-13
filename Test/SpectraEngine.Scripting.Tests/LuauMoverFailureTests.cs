@@ -100,17 +100,25 @@ public sealed class LuauMoverFailureTests
     public void A_mover_that_never_ends_is_stopped_and_its_tick_goes_to_the_built_in_mover()
     {
         using var builtIn = new MoverLevel();
-        using MoverLevel failing = new MoverLevel().WithScript(string.Format(Installs, "while true do end"));
-        failing.Play();
-        failing.Runtime.ShouldNotBeNull().CallLimit = TimeSpan.FromMilliseconds(50);
+        using MoverLevel failing = new MoverLevel().WithScript("""
+            local character = game:GetService("Players").LocalPlayer.Character
+            game:GetService("RunService").Heartbeat:Wait()
+            character:SetMover(function()
+                while true do end
+            end)
+            """);
 
         string[] expected = Walk(builtIn.Play(), 30);
-        string[] walked = Walk(failing, 30);
+
+        // The mover comes at the end of the first tick, so the short limit
+        // is on for no call but the one that hangs.
+        string[] first = Walk(failing.Play(), 1);
+        string[] walked = [.. first, .. Walk(failing.StopTheNextHangSoon(), 29, from: 1)];
 
         ScriptMessage line = failing.Sink.Single;
         line.Text.ShouldBe(
-            "The mover was stopped: the script ran for more than 0.05 s without a pause and was switched off." + TookOver);
-        line.Position.ShouldBe("Scripts/test1.luau:3");
+            "The mover was stopped: the script ran for more than 0.1 s without a pause and was switched off." + TookOver);
+        line.Position.ShouldBe("Scripts/test1.luau:4");
         walked.ShouldBe(expected);
     }
 
@@ -257,32 +265,33 @@ public sealed class LuauMoverFailureTests
             local walk = require("./movers/walk")
             local ticks = 0
             game:GetService("Players").LocalPlayer.Character:SetMover(walk)
-            game:GetService("RunService").Heartbeat:Connect(function()
+            game:GetService("RunService").Stepped:Connect(function()
                 ticks += 1
                 while ticks == 3 do end
             end)
             """);
-        level.Play();
-        level.Runtime.ShouldNotBeNull().CallLimit = TimeSpan.FromMilliseconds(50);
 
-        level.Tick(MoverCourse.Walk(0f), 10);
+        // On the third tick the listener hangs before the mover is called,
+        // so the short limit is on for no other call.
+        level.Play().Tick(MoverCourse.Walk(0f), 2).StopTheNextHangSoon().Tick(MoverCourse.Walk(0f), 8);
 
         level.Errors.ShouldBe(
         [
-            "the script ran for more than 0.05 s without a pause and was switched off",
+            "the script ran for more than 0.1 s without a pause and was switched off",
             "The mover's script was switched off." + TookOver,
         ]);
         level.Character.Mover.ShouldBeSameAs(DefaultCharacterMover.Instance);
         level.State.Position.X.ShouldBeGreaterThan(125.3f, "the player walked on");
     }
 
-    // East from the start, through the door. Every state bit for bit.
-    private static string[] Walk(MoverLevel level, int ticks)
+    // East from the start, through the door, with a jump on the twenty-first
+    // tick of the walk. Every state bit for bit.
+    private static string[] Walk(MoverLevel level, int ticks, int from = 0)
     {
         var states = new string[ticks];
         for (int i = 0; i < ticks; i++)
         {
-            level.Tick(MoverCourse.Walk(0f, i == 20 ? CharacterButtons.Jump : CharacterButtons.None));
+            level.Tick(MoverCourse.Walk(0f, from + i == 20 ? CharacterButtons.Jump : CharacterButtons.None));
             states[i] = StateBits.Of(level.State, level.Scene);
         }
 

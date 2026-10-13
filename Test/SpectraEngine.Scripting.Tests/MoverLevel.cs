@@ -8,6 +8,7 @@ using SpectraEngine.Core.Play;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 using SpectraEngine.Entities;
+using SpectraEngine.Scripting.Luau;
 using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.Tests;
@@ -129,6 +130,21 @@ internal sealed class MoverLevel : IDisposable
     {
         for (int i = 0; i < ticks; i++)
             Session.Tick(Dt, in command);
+
+        return this;
+    }
+
+    // The watchdog goes by the wall clock. The short limit holds for the one
+    // call that hangs, and the default is back before any other script runs.
+    public MoverLevel StopTheNextHangSoon()
+    {
+        LuauScriptRuntime runtime = Runtime.ShouldNotBeNull();
+        runtime.CallLimit = TimeSpan.FromMilliseconds(100);
+        Sink.Heard = message =>
+        {
+            if (message.Severity == ScriptSeverity.Error)
+                runtime.CallLimit = LuauHost.DefaultCallLimit;
+        };
 
         return this;
     }
