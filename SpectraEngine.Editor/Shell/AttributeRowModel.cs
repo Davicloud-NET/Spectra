@@ -94,11 +94,22 @@ public sealed class AttributeRowModel : ObservableObject
         }
     }
 
+    /// <summary>Whether the value is text.</summary>
     public bool IsText => Kind == MemberValueKind.Text;
+
+    /// <summary>Whether the value is a number.</summary>
     public bool IsNumber => Kind == MemberValueKind.Number;
+
+    /// <summary>Whether the value is true or false, edited with a checkbox.</summary>
     public bool IsBoolean => Kind == MemberValueKind.Boolean;
+
+    /// <summary>Whether the value is three numbers.</summary>
     public bool IsVector => Kind == MemberValueKind.Vector3;
+
+    /// <summary>Whether the value is a colour, edited with a swatch and a hex cell.</summary>
     public bool IsColor => Kind == MemberValueKind.Color;
+
+    /// <summary>Whether the value is a position and a rotation.</summary>
     public bool IsFrame => Kind == MemberValueKind.CFrame;
 
     /// <summary>Whether the value is one cell beside nothing else: text or a number.</summary>

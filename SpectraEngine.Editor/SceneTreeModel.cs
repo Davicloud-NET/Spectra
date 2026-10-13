@@ -518,11 +518,10 @@ public sealed class SceneTreeModel
             return;
         }
 
-        // Before "t:", which "tag:" also starts with.
         bool tagFilter = SceneTreeTagFilter.TryRead(query, out string tagQuery);
 
         SceneNodeKind? kindQuery = null;
-        bool kindFilter = !tagFilter && query.StartsWith("t:", StringComparison.OrdinalIgnoreCase);
+        bool kindFilter = query.StartsWith("t:", StringComparison.OrdinalIgnoreCase);
         if (kindFilter)
         {
             kindQuery = ParseKind(query[2..]);
