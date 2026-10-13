@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 using System;
@@ -22,9 +23,11 @@ public sealed class ScriptListeners
     // What fired while the level spawned, when no script ran yet to listen.
     private readonly HashSet<Port> _missed = [];
 
-    internal ScriptListeners()
-    {
-    }
+    // The nodes a script was told can never be touched in this level.
+    private readonly HashSet<Guid> _toldNoTouch = [];
+    private readonly ILogger _logger;
+
+    internal ScriptListeners(ILogger logger) => _logger = logger;
 
     /// <summary>How many listeners there are in the whole level.</summary>
     public int Count { get; private set; }
@@ -55,8 +58,17 @@ public sealed class ScriptListeners
 
         listeners.Add(listener);
         Count++;
-        if (TouchSignal.IsOne(name))
-            TouchListenerCount++;
+        if (!TouchSignal.IsOne(name))
+            return;
+
+        TouchListenerCount++;
+
+        // Once for a node: a script tends to listen under both names.
+        if (!_toldNoTouch.Contains(node.Id) && TouchSignal.WhyNotHere(node) is { } why)
+        {
+            _toldNoTouch.Add(node.Id);
+            _logger.LogWarning("{Reason}", why);
+        }
     }
 
     /// <summary>
@@ -115,6 +127,7 @@ public sealed class ScriptListeners
     {
         _byPort.Clear();
         _missed.Clear();
+        _toldNoTouch.Clear();
         Count = 0;
         TouchListenerCount = 0;
     }

@@ -39,11 +39,16 @@ internal static class TouchMeasure
         if (node.MeshRenderer is not { } renderer)
             return false;
 
-        // A mesh may be scaled. The cube root of the volume it is scaled by
-        // is right for one scaled the same along every axis.
-        float scale = MathF.Cbrt(MathF.Abs(world.GetDeterminant()));
+        // A mesh may be scaled, and by another amount along each axis. With
+        // each axis stretched to its length in the world, the box and the
+        // capsule are as far apart as in the world. A sheared node is not.
+        var scale = new Vector3(
+            new Vector3(world.M11, world.M12, world.M13).Length(),
+            new Vector3(world.M21, world.M22, world.M23).Length(),
+            new Vector3(world.M31, world.M32, world.M33).Length());
         Aabb box = SceneBvh.MeshLocalBounds(renderer.Mesh);
-        distance = (SegmentToBox(low, high, in box) * scale) - capsule.Radius;
+        var stretched = new Aabb(box.Min * scale, box.Max * scale);
+        distance = SegmentToBox(low * scale, high * scale, in stretched) - capsule.Radius;
         return true;
     }
 

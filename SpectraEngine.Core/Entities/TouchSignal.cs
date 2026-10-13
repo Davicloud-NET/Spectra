@@ -37,4 +37,20 @@ public static class TouchSignal
               "and only parts notice a touch while a level plays. Convert the brush to a part."
             : null;
     }
+
+    /// <summary>
+    /// Why no touch of the node will come in this level though a script may
+    /// listen for one, as a warning says it. Null when one can come.
+    /// </summary>
+    // A baked map binds no mesh to its node yet, so there is no box to
+    // measure, and the authored level has one.
+    public static string? WhyNotHere(SceneNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        return node.BakedKind == SceneNodeKind.Mesh && node.MeshRenderer is null
+            ? $"{node.Name} is a mesh, and a baked map does not load a mesh yet. Nothing can touch it in this " +
+              "level, so a script that listens for its touch is never called. Put a part around it and listen to that."
+            : null;
+    }
 }

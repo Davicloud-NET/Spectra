@@ -67,6 +67,7 @@ public sealed class EntityWorld
         _moves = new PlayMoves(logger, _journal);
         Touches = new TouchTracker(this);
         Sounds = new SoundEmitters(this);
+        Listeners = new ScriptListeners(logger);
     }
 
     /// <summary>The scene this world runs over.</summary>
@@ -160,7 +161,7 @@ public sealed class EntityWorld
     /// touches. <see cref="Scripts"/> is handed each listener when its turn
     /// in the queue comes. <see cref="Deactivate"/> empties it.
     /// </summary>
-    public ScriptListeners Listeners { get; } = new();
+    public ScriptListeners Listeners { get; }
 
     /// <summary>
     /// The most events one <see cref="Tick"/> sends of those that were

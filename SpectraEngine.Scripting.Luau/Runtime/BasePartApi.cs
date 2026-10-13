@@ -27,7 +27,7 @@ internal static partial class BasePartApi
     [ScriptProperty(Sets = SettableMemberId.Visible)]
     public static partial bool Visible(SceneNode node);
 
-    /// <summary>Fires once when the player starts to touch the part: stands on it, pushes against it, or walks into one that is not solid. The function gets the player's character, the one Players.LocalPlayer.Character gives. Only the player touches, where in Roblox every part does. A mesh has no shape of its own yet and is touched by the box around it. A world brush cannot tell what touches it, and listening to one is an error.</summary>
+    /// <summary>Fires once when the player starts to touch the part: stands on it, pushes against it, or walks into one that is not solid. The function gets the player's character, the one Players.LocalPlayer.Character gives. Only the player touches, where in Roblox every part does. A mesh has no shape of its own yet and is touched by the box around it. A baked map does not load a mesh yet, so nothing touches one there. A world brush cannot tell what touches it, and listening to one is an error.</summary>
     [ScriptSignal("character: Character")]
     public static ScriptSignal Touched(ScriptContext context, SceneNode node) =>
         Touch(context, node, TouchSignal.Touched);
