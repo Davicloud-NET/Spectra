@@ -61,6 +61,11 @@ public sealed class SettableMemberClassTests
         foreach (LightKind kind in Enum.GetValues<LightKind>())
             nodes.Add(new SceneNode(kind.ToString()) { Light = new Light { Kind = kind } });
 
+        // A part that carries a light is a Part, and its light is out of reach.
+        SceneNode bulb = EntityMotion.BrushNode(root, "Bulb", BrushKind.Part, Vector3.Zero);
+        bulb.Light = new Light { Kind = LightKind.Point };
+        nodes.Add(bulb);
+
         Enum.GetValues<NodeClassKind>().ShouldBeSubsetOf(nodes.Select(NodeClass.KindOf));
         return nodes;
     }

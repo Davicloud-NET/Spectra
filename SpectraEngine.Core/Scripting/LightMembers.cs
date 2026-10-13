@@ -2,6 +2,7 @@ using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Numerics;
 
 namespace SpectraEngine.Core.Scripting;
 
@@ -11,10 +12,10 @@ namespace SpectraEngine.Core.Scripting;
 internal static class LightMembers
 {
     // None for a node that is no light, and for the range of a directional
-    // light, which has none.
+    // light, which has none. A part that carries a light is a part.
     public static MemberValue Read(SceneNode node, SettableMemberId member)
     {
-        if (node.Light is not { } light)
+        if (node.Light is not { } light || NodeClass.KindOf(node) != NodeClass.OfLight(light.Kind))
             return MemberValue.None;
 
         return member switch
@@ -63,6 +64,8 @@ internal static class LightMembers
         // False for what is no number, too.
         if (!(value >= 0f) || float.IsInfinity(value))
             return Refused("Brightness", value, "of 0 or more");
+        if (!Shines(light.Color, value))
+            return TooMuch("Brightness", "Color", string.Create(CultureInfo.InvariantCulture, $"{value}"));
 
         journal.Record(light, LightJournalKind.Intensity);
         light.Intensity = value;
@@ -92,10 +95,12 @@ internal static class LightMembers
 
         if (!IsPart(value.R) || !IsPart(value.G) || !IsPart(value.B))
         {
-            return string.Create(
-                CultureInfo.InvariantCulture,
-                $"Color cannot be {value.R}, {value.G}, {value.B}: each of red, green and blue is a number of 0 or more that is not infinite.");
+            return $"Color cannot be {Written(value)}: " +
+                "each of red, green and blue is a number of 0 or more that is not infinite.";
         }
+
+        if (!Shines(value.ToLinear(), light.Intensity))
+            return TooMuch("Color", "Brightness", Written(value));
 
         journal.Record(light, LightJournalKind.Color);
         light.DisplayColor = value;
@@ -104,6 +109,21 @@ internal static class LightMembers
 
     // A part above 1 is a brighter light. One below 0 would take light away.
     private static bool IsPart(float part) => part >= 0f && !float.IsInfinity(part);
+
+    // The renderer is handed the linear colour times the brightness. Each
+    // can be a number while that is none: a colour part of 1e17 is past the
+    // largest float once it is linear.
+    private static bool Shines(Vector3 linear, float intensity)
+    {
+        Vector3 radiance = linear * intensity;
+        return float.IsFinite(radiance.X) && float.IsFinite(radiance.Y) && float.IsFinite(radiance.Z);
+    }
+
+    private static string TooMuch(string member, string other, string value) =>
+        $"{member} cannot be {value}: with the light's {other} that is more light than a number holds.";
+
+    private static string Written(Color3 value) =>
+        string.Create(CultureInfo.InvariantCulture, $"{value.R}, {value.G}, {value.B}");
 
     private static string Refused(string member, float value, string takes) => string.Create(
         CultureInfo.InvariantCulture, $"{member} cannot be {value}: it takes a number {takes} that is not infinite.");
