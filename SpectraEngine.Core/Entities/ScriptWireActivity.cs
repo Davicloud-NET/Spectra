@@ -7,8 +7,7 @@ namespace SpectraEngine.Core.Entities;
 // What a level's scripts hear and send while a view watches, as wires the
 // view can draw: one for each script, entity, port and line of code. What a
 // script hears is read from the level's listeners, so a connection that ended
-// is gone. What it sent is remembered from the first send on, for as long as
-// the script runs.
+// is gone. What it sent is kept from the first send on, while the script runs.
 internal sealed class ScriptWireActivity
 {
     // A level that makes wires without end would otherwise grow the table

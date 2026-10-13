@@ -11,9 +11,8 @@ public sealed class LogicScope
 
     /// <summary>
     /// How many wires away from a selected entity a card may be and still
-    /// show. A script's card costs no step: what a script hears from one
-    /// entity and sends to another is one wire between the two. Zero shows
-    /// the selected cards and the scripts that reach them.
+    /// show. A script's card costs no step: what it hears from one entity and
+    /// sends to another is one wire between the two.
     /// </summary>
     public int Steps { get; init; } = 2;
 
