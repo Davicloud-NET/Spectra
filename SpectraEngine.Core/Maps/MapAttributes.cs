@@ -18,6 +18,10 @@ internal static class MapAttributes
     public static void Read(
         ref Utf8JsonReader reader, List<KeyValuePair<string, MemberValue>> into, string? nodeName)
     {
+        // A second member would be read into the first, and saved as one.
+        if (into.Count > 0)
+            throw Fail(ref reader, $"'{MapFormat.AttributesMember}' is there twice", nodeName);
+
         reader.Read();
         if (reader.TokenType != JsonTokenType.StartObject)
             throw Fail(ref reader, $"'{MapFormat.AttributesMember}' must be an object", nodeName);
@@ -89,7 +93,19 @@ internal static class MapAttributes
 
             case MapFormat.CFrameValue:
                 float[] f = ReadNumbers(ref reader, FrameNumbers, name, kind, nodeName);
-                value = MemberValue.Of(new CFrame(new Vector3(f[0], f[1], f[2]), new Quaternion(f[3], f[4], f[5], f[6])));
+                var turn = new Quaternion(f[3], f[4], f[5], f[6]);
+
+                // A frame takes such a rotation for none, and a save would
+                // then write one the file never had. One that is only off
+                // unit length is the same rotation and is kept.
+                if (!UnitLength.TryOf(turn, out _))
+                {
+                    throw Fail(
+                        ref reader, $"attribute '{name}': the rotation in '{kind}' must be finite and have a length",
+                        nodeName);
+                }
+
+                value = MemberValue.Of(new CFrame(new Vector3(f[0], f[1], f[2]), turn));
                 break;
 
             // No fall-through to text: a kind this engine lacks would be

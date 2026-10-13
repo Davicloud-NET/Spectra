@@ -245,6 +245,12 @@ public sealed class MapNodeTagTests
     [InlineData("\"attributes\": {\"Glow\": {\"color3\": 1}},", "'color3' must be an array of 3 numbers")]
     [InlineData("\"attributes\": {\"Rest\": {\"cframe\": [1, 2, 3]}},", "'cframe' must be an array of 7 numbers")]
     [InlineData("\"attributes\": {\"Push\": {\"vector3\": [1, 2, 3], \"more\": 1}},", "'vector3' and nothing else")]
+    [InlineData("\"tags\": [\"Lava\"], \"tags\": [\"Hot\"],", "'tags' is there twice")]
+    [InlineData("\"tags\": [\"Lava\"], \"tags\": [],", "'tags' is there twice")]
+    [InlineData("\"attributes\": {\"Damage\": 1}, \"attributes\": {\"Label\": \"hot\"},", "'attributes' is there twice")]
+    [InlineData("\"attributes\": {\"Rest\": {\"cframe\": [1, 2, 3, 0, 0, 0, 0]}},", "the rotation in 'cframe' must be finite and have a length")]
+    [InlineData("\"attributes\": {\"Rest\": {\"cframe\": [1, 2, 3, 1e39, 0, 0, 1]}},", "the rotation in 'cframe' must be finite and have a length")]
+    [InlineData("\"attributes\": {\"Rest\": {\"cframe\": [1e39, 2, 3, 0, 0, 0, 1]}},", "number has to be finite")]
     public void What_breaks_a_rule_is_refused_by_the_nodes_name(string members, string words)
     {
         byte[] document = Utf8(OneNode(members));
@@ -254,6 +260,27 @@ public sealed class MapNodeTagTests
         thrown.NodeName.ShouldBe("Suspect");
         thrown.ByteOffset.ShouldBeGreaterThan(0);
         thrown.Message.ShouldContain(words);
+    }
+
+    [Fact]
+    public void A_frames_rotation_off_unit_length_is_the_same_rotation_and_is_saved_at_unit_length()
+    {
+        // By hand a quaternion is written to a few digits, or not brought to length at all.
+        byte[] loose = Utf8(OneNode(
+            "\"attributes\": {\"Half\":{\"cframe\":[1,2,3,0,0.7071,0,0.7071]},\"Long\":{\"cframe\":[0,0,0,0,0,0,2]}},"));
+
+        MapDocument document = MapReader.Read(loose);
+
+        Quaternion half = document.Nodes[0].Attributes[0].Value.Frame.Rotation;
+        half.Length().ShouldBe(1f, 1e-6f);
+        half.Y.ShouldBe(0.70710677f, 1e-6f);
+        document.Nodes[0].Attributes[1].Value.Frame.Rotation.ShouldBe(Quaternion.Identity);
+
+        // Once at unit length it is kept bit for bit.
+        byte[] saved = MapWriter.Write(document);
+        Encoding.UTF8.GetString(saved).ShouldContain("\"Half\":{\"cframe\":[1,2,3,0,0.70710677,0,0.70710677]}");
+        Encoding.UTF8.GetString(saved).ShouldContain("\"Long\":{\"cframe\":[0,0,0,0,0,0,1]}");
+        MapWriter.Write(MapReader.Read(saved)).ShouldBe(saved);
     }
 
     [Fact]

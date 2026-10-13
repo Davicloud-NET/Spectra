@@ -13,6 +13,10 @@ internal static class MapTags
 {
     public static void Read(ref Utf8JsonReader reader, List<string> into, string? nodeName)
     {
+        // A second member would be read into the first, and saved as one.
+        if (into.Count > 0)
+            throw Fail(ref reader, $"'{MapFormat.TagsMember}' is there twice", nodeName);
+
         reader.Read();
         if (reader.TokenType != JsonTokenType.StartArray)
             throw Fail(ref reader, $"'{MapFormat.TagsMember}' must be an array of strings", nodeName);
