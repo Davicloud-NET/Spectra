@@ -58,6 +58,9 @@ internal static class PartMembers
                 node.CanTouch = value;
                 break;
             default:
+                // Before the write. The mesh is then kept until Stop, so a
+                // part that blinks builds it once.
+                node.Owner?.KeepMeshWhileHidden(node);
                 node.IsRendered = value;
                 break;
         }

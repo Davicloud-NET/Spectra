@@ -133,6 +133,7 @@ public sealed partial class Scene
         _subtractiveBrushNodes.Remove(node);
         _inertPartBrushNodes.Remove(node);
         _hiddenBrushNodes.Remove(node);
+        _meshKeptNodes.Remove(node);
         _drawableNodes.Remove(node);
         _lightNodes.Remove(node);
         _entityNodes.Remove(node);
@@ -225,13 +226,14 @@ public sealed partial class Scene
 
     // The mesh reference and the drawable list move together. A reference
     // without a list entry holds a GPU mesh nothing draws, and the reverse
-    // hides a part that should draw.
+    // hides a part that should draw. Only a part in _meshKeptNodes holds one.
     private void UpdateRenderMembership(SceneNode node)
     {
         bool additivePart = node.BrushKind == BrushKind.Part &&
                             node.Brush is { Operation: BrushOperation.Additive };
+        bool holdsMesh = node.IsRendered || _meshKeptNodes.Contains(node);
 
-        _partBrushMeshes.SetReference(node, additivePart && node.IsRendered ? node.Brush : null);
+        _partBrushMeshes.SetReference(node, additivePart && holdsMesh ? node.Brush : null);
 
         if (additivePart && !node.IsRendered)
             _hiddenBrushNodes.Add(node);
@@ -239,6 +241,21 @@ public sealed partial class Scene
             _hiddenBrushNodes.Remove(node);
 
         UpdateDrawableMembership(node);
+    }
+
+    // A part a running level hides keeps its mesh from here on, so one that
+    // blinks builds it once. Call before the render bit is written.
+    internal void KeepMeshWhileHidden(SceneNode node)
+    {
+        if (ReferenceEquals(node.Owner, this))
+            _meshKeptNodes.Add(node);
+    }
+
+    // For Stop. A part that is hidden then holds no mesh again.
+    internal void StopKeepingMesh(SceneNode node)
+    {
+        if (_meshKeptNodes.Remove(node))
+            UpdateRenderMembership(node);
     }
 
     // Kept apart from Bvh, which also indexes world brushes for picking. Those
@@ -665,6 +682,9 @@ public sealed partial class Scene
 
     // Additive parts with the render bit off.
     private readonly HashSet<SceneNode> _hiddenBrushNodes = [];
+
+    // Nodes whose render bit a running level wrote.
+    private readonly HashSet<SceneNode> _meshKeptNodes = [];
 
     // Cached so the upload path does not allocate a delegate per call.
     private Func<MaterialRef, Material?>? _resolveWorldMaterial;

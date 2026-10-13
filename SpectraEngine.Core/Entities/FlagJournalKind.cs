@@ -17,7 +17,13 @@ internal static class FlagJournalKind
         static node => node.CanTouch,
         static (node, first) => node.CanTouch = first);
 
+    // A part a level hid kept its mesh. Stop lets go of it, so a part that
+    // was built hidden holds none again.
     public static readonly JournalKind<bool> IsRendered = new(
         static node => node.IsRendered,
-        static (node, first) => node.IsRendered = first);
+        static (node, first) =>
+        {
+            node.IsRendered = first;
+            node.Owner?.StopKeepingMesh(node);
+        });
 }
