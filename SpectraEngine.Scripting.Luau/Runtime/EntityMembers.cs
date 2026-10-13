@@ -21,7 +21,7 @@ internal sealed class EntityMembers
 
     // By the class and by what the node carries, whose own members win.
     // Null for a class this level cannot build, whose node is a placeholder.
-    private readonly Dictionary<(string Class, NodeClassKind Carrier), EntityClassMembers?> _classes = [];
+    private readonly Dictionary<ClassOnNode, EntityClassMembers?> _classes = [];
 
     // The function a script gets when it reads an input and does not call
     // it: one for each name, made on the first read.
@@ -97,7 +97,7 @@ internal sealed class EntityMembers
             return null;
 
         NodeClassKind carrier = NodeClass.KindOf(node);
-        return _classes.TryGetValue((data.ClassName, carrier), out EntityClassMembers? known)
+        return _classes.TryGetValue(new ClassOnNode(data.ClassName, carrier), out EntityClassMembers? known)
             ? known
             : Learn(data.ClassName, carrier);
     }
@@ -116,7 +116,7 @@ internal sealed class EntityMembers
                 _host.Report(new ScriptMessage(ScriptSeverity.Warning, gap, string.Empty, 0));
         }
 
-        _classes.Add((className, kind), members);
+        _classes.Add(new ClassOnNode(className, kind), members);
         return members;
     }
 
@@ -192,4 +192,8 @@ internal sealed class EntityMembers
             ? Send(stack, node, found)
             : stack.Fail($"{input} is not a valid member of {NodeClassName.Of(node)} \"{node.Name}\"");
     }
+
+    // Not a tuple: its hash calls GetHashCode on the enum, which may box.
+    // A record's hash asks the enum's comparer.
+    private readonly record struct ClassOnNode(string Class, NodeClassKind Carrier);
 }
