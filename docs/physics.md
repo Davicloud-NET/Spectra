@@ -600,6 +600,101 @@ The per-tick algorithm is fixed and backend-independent: accelerate horizontal v
 
 > **And freeze the collision source before `N16` validates prediction against it.** Shipping the mover on brush hulls, tuning movement constants against that surface, validating reconciliation against it, and *then* swapping to Box3D's mover changes the physical surface — different skin widths, a different speculative contact distance (`B3_SPECULATIVE_DISTANCE = 4 × B3_LINEAR_SLOP`), a different rest offset — and therefore changes where a player can stand and which ledges block them. That invalidates every reconciliation test, every tuned constant, and any level content authored against the first surface. Either choose the source up front, or make a dual-source trajectory-agreement test (the same recorded input ring through both sources, trajectories agreeing within a tolerance) a **merge gate on `N16`** rather than a later nicety.
 
+### 4.5 The mover in Luau
+
+As built, October 2026. How the player moves can be rewritten in a Luau file with no change to the engine.
+
+The seam is `ICharacterMover`, which `CharacterSimulation.Mover` holds. A script puts a function there:
+
+```lua
+local character = game:GetService("Players").LocalPlayer.Character
+character:SetMover(function(state, command, collision, tuning, deltaTime)
+	-- leave in the state where the player is after this tick
+end)
+```
+
+The function is called on every tick with the five things the built-in mover gets. The first four are objects, the same four on every tick:
+
+| Handed | Is | A mover uses it to |
+|---|---|---|
+| `state: CharacterState` | where the player is and how it moves | read and set `Position`, `Velocity` and the tick counts, say what it stands on (`StandOn`, `LeaveGround`) and what its slide stopped at (`AddSlideContact`), and keep numbers for later ticks (`GetMemory`, `SetMemory`) |
+| `command: CharacterCommand` | what the player asks for on this tick | read `MoveDirection`, the axes, `Yaw`, `Pitch`, and each button as held (`Jump`) and as newly pressed (`JumpPressed`) |
+| `collision: CharacterCollision` | the world and every solid part | `Sweep` the capsule, `Gather` the planes near it, `Solve` and `Clip` against a list of planes the engine keeps |
+| `tuning: CharacterTuning` | the built-in mover's numbers | read `WalkSpeed`, `JumpVelocity`, `StepHeight`, `Gravity` and the rest, or go by numbers of its own |
+| `deltaTime` | the step in seconds | |
+
+`LuauCharacterMover` in `SpectraEngine.Scripting.Luau/Runtime` is the `ICharacterMover` behind this, and `MoverState`, `MoverCommand`, `MoverCollision` and `MoverTuning` are the four objects. They are declared like every other class of the script API, so the definitions file types them and `luau-lsp` completes a mover as it is written.
+
+What the engine keeps to itself runs around the mover, in `CharacterSimulation.Tick` and `PlaySession`, whoever moves the player: the ride on a part that moves, the buttons of the tick before, the facing, the respawn below the level, and Use.
+
+**The state is a copy.** The function works on a copy of the player's state, and the player gets it when the function has returned. So a tick the function did not finish leaves the player as the tick found it, for the built-in mover to move.
+
+**The plane list is the engine's.** `Sweep` returns what stopped it as values: how far it went, the normal, the gap, the point and the part. `AddPlane` puts a normal into the list and `Clip` takes out of a velocity what drives into a plane of the list. `Gather` fills the list with the planes that touch the capsule, `Plane(i)` reads one, and `Solve` finds the move that leaves the capsule in none of them. A plane counts for `Clip` when `AddPlane` added it or `Solve` pushed against it, which is the rule the built-in mover follows by hand. No table crosses, and a tick makes nothing for Luau's collector.
+
+**A mover is a function of what it is handed.** It keeps nothing in a local outside the function. What it needs on a later tick goes into the state: the tick counts the built-in mover has, and eight numbers of its own (`CharacterState.Memory`, `GetMemory` and `SetMemory`, slots 1 to 8). The state is restored by copy, so a tick played again does what it did. A teleport and a respawn set the eight numbers to zero. The built-in mover never touches them.
+
+**Touch reads the state.** A mover says what it stands on with `StandOn(normal, part)` and what its slide stopped at with `AddSlideContact(part)`. Left out, a part is touched only by where the tick ends.
+
+**What a mover may hand the engine** is bounded in `MoverLimits`: a place within a billion units of the origin, a velocity of no more than 10000 units a second (the cap `PlayerWrites` has), a sweep of no more than 10000 units. A value past that, or one that is no number, is an error at the line that wrote it. A sweep that leaves the volume the tick picked, as a dash does, picks a larger one.
+
+#### Coming and going
+
+`SetMover` goes through `PlayerWrites.TrySetMover`, which records the mover the level started with in the play journal. So Stop, a map loaded during play and a restart after a crash all put that one back, and the next Play starts with it until a script installs again. `SetMover(nil)` puts the built-in mover back while the level plays. A second `SetMover` takes the place of the first, with a warning when the first was another script's.
+
+#### When it fails
+
+Each of these takes the mover out. The built-in mover moves the player on that same tick, from the state the tick began with, and is in the mover's place from then on. One line in Output names the script and the line and ends in "The built-in mover took over."
+
+| What went wrong | The line begins |
+|---|---|
+| an error in the function | `The mover failed:` and the error |
+| a value that is no number or past a limit | `The mover failed:` and which value, with what it takes |
+| a wait (`task.wait`, a signal's `Wait`, `coroutine.yield`) | `The mover waited, and a mover has to finish in the tick that calls it.` |
+| a value returned | `The mover returned a value. A mover changes the state it is handed and returns nothing.` |
+| the watchdog or the memory budget | `The mover was stopped:` and why. The script is switched off, as any script the host stops |
+| its script switched off for something else | `The mover's script was switched off.` |
+
+After a failure no mover is taken until the level is played again: `SetMover` with a function is an error that says so. A mover that fails on its first tick and is installed on every tick would otherwise fill the log.
+
+#### What it costs
+
+The function runs on one Luau thread kept for it (`MoverCall`), resumed on every tick. A thread made for each call, which is how a signal's listener runs, leaves the collector 1.3 KB a tick.
+
+The shape of the state was picked by measuring one crossing of a state's worth of values, in Release:
+
+| Shape | A crossing | In C# | In Luau |
+|---|---|---|---|
+| 13 values in and 8 out | 171 ns | 0 bytes | 0 bytes |
+| two objects, 14 members read and 8 written | 651 ns | 0 bytes | 0 bytes |
+| a table, 13 fields set and 8 read | 1331 ns | 0 bytes | 0 bytes |
+
+Objects were taken though values are cheaper. A member is typed and completes, a wrong write is an error at its line, a new member breaks no mover, and what is written is a float at once, so a mover cannot carry a double from tick to tick. The half microsecond is small beside the mover's own work.
+
+One tick of the mover alone, in Release, as the tick in the middle of a walk and as the mean:
+
+| | On the demo's course | On a ground plate |
+|---|---|---|
+| the built-in mover | 6.0 µs, mean 8.0 µs | 0.4 µs, mean 0.6 µs |
+| the mover in Luau | 9.5 µs, mean 11.1 µs | 3.7 µs, mean 3.9 µs |
+| a mover in Luau that does nothing | 0.4 µs | 0.2 µs |
+| a mover in C# that only picks what the tick can touch | 0.2 µs | under 0.1 µs |
+
+So the mover in Luau costs about 3.5 µs a tick more than the built-in one, and the seam alone about 0.2 µs. A tick has 16.6 ms. Neither mover allocates on the managed heap, away from parts, and the one in Luau leaves Luau's collector nothing.
+
+A member read or written costs about 65 ns, a sweep 300 to 600 ns, a gather about 450 ns, and `Solve`, `Clip` and `Plane` about 100 ns each. The walk makes about sixty such calls a tick.
+
+The worst tick of a walk is 0.5 to 2 ms for both movers. That is the collision building the planes of a new stretch of the level, which happens a few times a minute and is no mover's own.
+
+`MoverCostTests` in the scripting suite fails when a tick or a crossing allocates, and writes these tables when asked: `dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.MoverCostTests"`.
+
+#### The movers the engine ships
+
+- `Assets/Scripts/movers/walk.luau` does what the built-in mover does: walk, sprint, jump with the late jump and the kept press, slide along walls, step up, stand on a part that moves. Over the demo's course it stays within 0.000004 units of the built-in mover, and `LuauMoverCourseTests` holds it to 0.0001.
+- `Assets/Scripts/player_mover.luau` installs it. The demo's level has it as a script node (`DemoMover`).
+- `Assets/Scripts/movers/double_jump.luau` is the walk with a second jump in the air: it asks for the walk's file and adds a few lines. The count of jumps is in the state's memory.
+
+All three are content, so a cook packs them and a cooked level plays with them (`CookedMoverTests`).
+
 ---
 
 ## 5. The editor story

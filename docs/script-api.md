@@ -372,6 +372,8 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `EntityClassApiTests` holds the built-in entity classes against the script API: no input or output may be named as a member of the node that carries it, and each has to be in the definitions file.
 - `EntityClassGapsTests` holds the same names free on every class of nodes, so a new member of `Light` or `BasePart` that a built-in class has as an input fails there.
 - `EntityClassBindingTests` asks a node of an entity class for every name of its schema, and compares with the description of the class.
+- An object a script is only ever handed in a call, as a mover is handed its `CharacterState`, gets its holder in `ScriptApiDescriptionTests` from that call: the script keeps it and waits a heartbeat. So its properties have to read between calls, and only its writes and its methods are for the call alone.
+- `MoverCostTests` fails when a tick of a mover in Luau, or anything a mover does with what it is handed, allocates. Its tables of times run when asked for, like the others. `docs/physics.md` has the mover's seam.
 
 ## The files
 
