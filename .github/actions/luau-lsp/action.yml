@@ -11,6 +11,14 @@ description: Fetches the pinned luau-lsp release and names the program in SPECTR
 runs:
   using: composite
   steps:
+    # Only the zip is kept, and the step below holds it to the hash like one
+    # from the network. The key moves with this file, which names the release.
+    - name: Restore the luau-lsp zip
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/luau-lsp-zip
+        key: luau-lsp-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/actions/luau-lsp/action.yml') }}
+
     - name: Fetch luau-lsp and check its hash
       shell: pwsh
       run: |
@@ -25,14 +33,34 @@ runs:
           $name = 'luau-lsp'
         }
 
+        $kept = Join-Path $env:RUNNER_TEMP 'luau-lsp-zip'
         $folder = Join-Path $env:RUNNER_TEMP 'luau-lsp'
-        New-Item -ItemType Directory -Force -Path $folder | Out-Null
-        $zip = Join-Path $folder $file
-        Invoke-WebRequest -Uri "https://github.com/JohnnyMorganz/luau-lsp/releases/download/$version/$file" -OutFile $zip
+        New-Item -ItemType Directory -Force -Path $kept, $folder | Out-Null
+        $zip = Join-Path $kept $file
+
+        function Get-ZipHash {
+          if (Test-Path $zip) { (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLowerInvariant() } else { '' }
+        }
+
+        # A zip from the cache that is not the release is fetched again.
+        if ((Get-ZipHash) -ne $hash) {
+          $url = "https://github.com/JohnnyMorganz/luau-lsp/releases/download/$version/$file"
+          foreach ($attempt in 1..3) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $zip
+              break
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Write-Host "Fetching $file failed, and is tried again: $($_.Exception.Message)"
+              Start-Sleep -Seconds (10 * $attempt)
+            }
+          }
+        }
 
         # Before anything of it is unpacked or run.
-        $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLowerInvariant()
+        $actual = Get-ZipHash
         if ($actual -ne $hash) {
+          Remove-Item -Force $zip
           Write-Host "::error title=luau-lsp hash::$file of release $version has the sha256 $actual. This action expects $hash."
           exit 1
         }

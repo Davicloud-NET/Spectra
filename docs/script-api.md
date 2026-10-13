@@ -311,7 +311,7 @@ Words after `old:` or `new:` are for that solver alone, and the other one then h
 
 A new class or global needs a line in a clean sample, or `ScriptSampleTests` fails and names it. A global that is marked as old cannot be called in a clean sample, so it needs a line in a mistake that ends in the checker's words for it. A new member is worth a line of each kind: one that uses it, and one that hands it the wrong type.
 
-The tests that start luau-lsp carry the trait `Suite=LuauLsp`. They run only where `SPECTRA_LUAU_LSP` holds the path of the program, and skip everywhere else. CI fetches release 1.70.1 by its hash (`.github/actions/luau-lsp`) and fails when one skipped.
+The tests that start luau-lsp carry the trait `Suite=LuauLsp`. They run only where `SPECTRA_LUAU_LSP` holds the path of the program, and skip everywhere else. CI fetches release 1.70.1 by its hash (`.github/actions/luau-lsp`), keeps the zip in its cache, and fails when one skipped.
 
 ```bash
 SPECTRA_LUAU_LSP=/path/to/luau-lsp dotnet run --project Test/SpectraEngine.Scripting.Tests -- -trait "Suite=LuauLsp"
