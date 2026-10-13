@@ -73,6 +73,22 @@ public sealed class Color3ScriptTests
         Floats(printed[3]).ShouldBe([backH, backS, backV]);
     }
 
+    // The sample under ToHSV in Roblox's reference, which prints 1 1 1 for
+    // the red and 0.3333333 1 1 for the green.
+    [Fact]
+    public void Red_and_green_give_the_hue_Robloxs_reference_prints_for_them()
+    {
+        string[] printed = ScriptLevel.Run("""
+            print(Color3.fromRGB(255, 0, 0):ToHSV())
+            print(Color3.fromRGB(0, 255, 0):ToHSV())
+            print(Color3.fromHSV(1, 1, 1) == Color3.fromHSV(0, 1, 1))
+            """);
+
+        printed[0].ShouldBe("1 1 1");
+        Floats(printed[1]).ShouldBe([1f / 3f, 1f, 1f]);
+        printed[2].ShouldBe("true");
+    }
+
     // Six digits for each part, as Roblox prints one.
     [Fact]
     public void A_colour_prints_as_Roblox_prints_one()
