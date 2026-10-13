@@ -30,8 +30,11 @@ internal sealed class LevelTags
     }
 
     // Who has what. Adding here fires nothing, which is how a level's own
-    // tags would be put in before its scripts start.
+    // tags are put in before its scripts start.
     public TagTable Table { get; } = new();
+
+    // What reads a node that comes into the level, or null.
+    public LevelSeed? Seed { get; set; }
 
     public void Listen()
     {
@@ -84,11 +87,13 @@ internal sealed class LevelTags
     // listener's call is queued.
     private void OnEntered(SceneNode node)
     {
-        if (Table.NodeCount == 0)
-            return;
-
         try
         {
+            // A node that was never in the level brings what it was built with.
+            Seed?.Read(node, isInLevel: false);
+            if (Table.NodeCount == 0)
+                return;
+
             IReadOnlyList<TagNodes> tags = Table.Enter(node);
             for (int i = 0; i < tags.Count; i++)
                 Fire(tags[i].Added, node);

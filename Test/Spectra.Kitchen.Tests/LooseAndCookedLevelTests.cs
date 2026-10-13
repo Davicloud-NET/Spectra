@@ -468,6 +468,23 @@ public class LooseAndCookedLevelTests
         played.Cooked.Where(line => line.Contains(MakingScript.Mark)).ShouldBe(MakingScript.Lines);
     }
 
+    // What a builder put on a node is in the map and in the pack: a tag by
+    // its string, an attribute as a record of its kind. A script finds both
+    // before it has set anything, on a world brush too.
+    [Fact]
+    public void Tags_and_attributes_a_level_is_built_with_read_the_same_from_loose_files_and_from_the_pack()
+    {
+        Played played = Play();
+
+        played.Loose.Where(line => line.Contains(BuiltTagsScript.Mark)).ShouldBe(BuiltTagsScript.Lines);
+        played.Cooked.Where(line => line.Contains(BuiltTagsScript.Mark)).ShouldBe(BuiltTagsScript.Lines);
+
+        // A turned frame, number for number.
+        string loose = played.Loose.Single(line => line.Contains(BuiltTagsScript.TurnedMark));
+        played.Cooked.Single(line => line.Contains(BuiltTagsScript.TurnedMark)).ShouldBe(loose);
+        loose.ShouldContain("CFrame 0.1, 4, -2.5, ");
+    }
+
     // Skips where Luau is not built. The level is cooked and played once for
     // the whole class.
     private static Played Play()

@@ -31,7 +31,7 @@ internal sealed class AttributeMethods
     }
 
     // What scripts set. Setting here fires nothing, which is how a level's
-    // own attributes would be put in before its scripts start.
+    // own attributes are put in before its scripts start.
     public AttributeTable Table { get; } = new();
 
     // SetAttribute. The name is the second value and what to set the third.

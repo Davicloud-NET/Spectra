@@ -48,6 +48,7 @@ internal static class AskedLevel
 
         project.WriteAsset(TouchingScript.Path, TouchingScript.Text);
         project.WriteAsset(MakingScript.Path, MakingScript.Text);
+        project.WriteAsset(BuiltTagsScript.Path, BuiltTagsScript.Text);
 
         // The prop's model, with what it wears.
         foreach (string path in new[]
@@ -117,6 +118,9 @@ internal static class AskedLevel
         Ask(root);
         Ask(Named(scene, "Crate").Children.Single(child => child.Script is not null));
         AddWhatThePlayerTouches(root, Named(scene, "Start").LocalPosition);
+
+        // The tags and attributes the level is built with, and who reads them.
+        BuiltTagsScript.AddTo(scene);
 
         // Last under the root, so it starts after every other script.
         root.CreateChild(TaggingScript.Node).Script = new Script(TaggingScript.Path);

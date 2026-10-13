@@ -146,17 +146,17 @@ internal static partial class NodeApi
         return NameChars.TryRead(className, room, out ReadOnlySpan<char> wanted) && NodeClass.IsA(node, wanted);
     }
 
-    /// <summary>What a script set under that name with SetAttribute. On a node that carries an entity, a name no script has set is the entity's keyvalue, as the level was built with it: a number, a boolean, a string, a Vector3, a Color3 for a colour, or a node for a reference to one. A keyvalue the builder left alone is what the entity's class gives it. Nil for a name that has neither.</summary>
+    /// <summary>The attribute of that name: what the node was built with in the editor, or what a script set since with SetAttribute. On a node that carries an entity, a name with neither is the entity's keyvalue, as the level was built with it: a number, a boolean, a string, a Vector3, a Color3 for a colour, or a node for a reference to one. A keyvalue the builder left alone is what the entity's class gives it. Nil for a name that has none of them.</summary>
     [ScriptMethod(Parameters = "attribute: string", Returns = "any")]
     private static int GetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.Get(context, stack, node);
 
-    /// <summary>Leaves a value on the node under a name, for every script to read: a string, a boolean, a number, a Vector3, a CFrame or a Color3. Nil takes the attribute away. A name is 1 to 100 letters, digits and underscores, and does not start with RBX. A string is at most 65536 bytes long, and a node holds at most 256 attributes. On a node that carries an entity, scripts read this in place of the keyvalue of that name, and the entity never sees it: a door does not follow SetAttribute("speed", 9). Stop takes away what scripts set.</summary>
+    /// <summary>Leaves a value on the node under a name, for every script to read: a string, a boolean, a number, a Vector3, a CFrame or a Color3. Nil takes the attribute away. A name is 1 to 100 letters, digits and underscores, and does not start with RBX. A string is at most 65536 bytes long, and a node holds at most 256 attributes. On a node that carries an entity, scripts read this in place of the keyvalue of that name, and the entity never sees it: a door does not follow SetAttribute("speed", 9). Stop takes away what scripts set, and the node has the attributes it was built with again.</summary>
     [ScriptMethod(Parameters = "attribute: string, value: (string | boolean | number | Vector3 | CFrame | Color3)?")]
     private static int SetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.Set(context, stack, node);
 
-    /// <summary>Every attribute of the node by its name: what scripts set, and under that the keyvalues of the entity the node carries. SetAttribute does not take every keyvalue back: one that refers to a node is that node here, and a keyvalue can have a name no attribute has.</summary>
+    /// <summary>Every attribute of the node by its name: what it was built with and what scripts set, and under that the keyvalues of the entity the node carries. SetAttribute does not take every keyvalue back: one that refers to a node is that node here, and a keyvalue can have a name no attribute has.</summary>
     [ScriptMethod(Returns = "{ [string]: any }")]
     private static int GetAttributes(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.GetAll(context, stack, node);
@@ -171,7 +171,7 @@ internal static partial class NodeApi
     private static int GetAttributeChangedSignal(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.PushChangedSignalOf(context, stack, node);
 
-    /// <summary>Puts a tag on the node, by which every script finds it: CollectionService lists the nodes of a tag. Nothing happens when the node has it. A tag is at most 256 bytes long, and a node has at most 256 tags. Stop takes every tag away.</summary>
+    /// <summary>Puts a tag on the node, by which every script finds it: CollectionService lists the nodes of a tag. Nothing happens when the node has it. A tag is at most 256 bytes long, and a node has at most 256 tags. Stop takes away the tags scripts put on, and the node has the tags it was built with again.</summary>
     [ScriptMethod(Parameters = "tag: string")]
     private static int AddTag(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Tags.Add(stack, node, tagAt: 2);

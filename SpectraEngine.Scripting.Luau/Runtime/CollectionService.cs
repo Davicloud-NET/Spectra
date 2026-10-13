@@ -3,7 +3,7 @@ using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-/// <summary>Finds the nodes of the level by their tags, and tells of a node that gets or loses one. A tag is a word a script puts on a node while the level plays, and Stop takes every tag away.</summary>
+/// <summary>Finds the nodes of the level by their tags, and tells of a node that gets or loses one. A tag is a word on a node: one it was built with in the editor, or one a script puts on it while the level plays. Stop puts every node's tags back as they were built.</summary>
 // Every method is written by hand: each reads a tag where Luau keeps it, and
 // the node's own AddTag, RemoveTag, HasTag and GetTags share the code.
 [ScriptClass("CollectionService")]

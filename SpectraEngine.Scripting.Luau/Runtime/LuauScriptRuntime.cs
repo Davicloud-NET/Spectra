@@ -28,6 +28,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     private readonly LevelTags _tags;
     private readonly AttributeMethods _attributes;
     private readonly NodeLifetime _lifetime;
+    private readonly LevelSeed _seed;
     private volatile bool _isClosed;
 
     /// <summary>Opens a Luau state and gives it everything a script of this level can reach.</summary>
@@ -50,6 +51,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         _deferred = new DeferredCalls(_world);
         _tags = new LevelTags(_host, _world, hub, _deferred);
         _attributes = new AttributeMethods(hub, _deferred);
+        _seed = new LevelSeed(_host, _world, _tags.Table, _attributes.Table);
+        _tags.Seed = _seed;
         var tagMethods = new TagMethods(_tags);
 
         try
@@ -132,10 +135,10 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     /// <summary>How many threads wait, for a tick or for a signal.</summary>
     public int WaitingThreadCount => _waiting.Count;
 
-    /// <summary>How many nodes have a tag a script put on them. None once the level has stopped.</summary>
+    /// <summary>How many nodes have a tag, built with it or given it by a script. None once the level has stopped.</summary>
     public int TaggedNodeCount => _tags.Table.NodeCount;
 
-    /// <summary>How many nodes hold an attribute a script set, or a signal of one a script asked for. None once the level has stopped.</summary>
+    /// <summary>How many nodes hold an attribute, built with it or set by a script, or a signal of one a script asked for. None once the level has stopped.</summary>
     public int AttributeNodeCount => _attributes.Table.NodeCount;
 
     // How many tags are kept, with those nothing waits on until they are looked over.
@@ -185,6 +188,9 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
         try
         {
+            // First, so the first line of the first script finds the tags
+            // and attributes the level was built with.
+            _seed.ReadLevel();
             _starter.StartAll(_world.Scene);
         }
         catch (Exception e) // boundary: nothing of a script may throw into the tick
@@ -351,6 +357,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             _deferred.Clear();
             _tags.Table.Clear();
             _attributes.Table.Clear();
+            _seed.Clear();
         }
     }
 
