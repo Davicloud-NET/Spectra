@@ -10,6 +10,9 @@ public interface ICharacterMover
     /// Advances <paramref name="state"/> by one fixed tick. Must be a pure
     /// function of its arguments, or replay breaks.
     /// </summary>
+    // Touch reads what a mover leaves in the state: GroundNodeId while it is
+    // Grounded, and SlideContacts. One that leaves them empty touches a part
+    // only by where the tick ends, and misses a corner it glances off.
     void Tick(
         ref CharacterState state,
         in CharacterCommand command,
