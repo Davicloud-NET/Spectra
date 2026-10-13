@@ -1,5 +1,5 @@
 -- Globals a Roblox script has and a script here has not. Each is nil while
--- the level plays, and the checker says so before.
+-- the level plays. No strict line: the checker names one either way.
 print(shared) --> Unknown global 'shared'
 print(tick()) --> Unknown global 'tick'
 print(time()) --> Unknown global 'time'

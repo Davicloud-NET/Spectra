@@ -438,6 +438,10 @@ SPECTRA_LUAU_LSP=/path/to/luau-lsp dotnet run --project Test/SpectraEngine.Scrip
 
 What luau-lsp cannot check is in `AGENTS.md`: a write to a `read` property passes under the old solver, and a name it does not know is a child of the node.
 
+A clean sample can be one the engine refuses. `Scripts/score_with_extension.luau` asks for a module by a path that ends in `.luau`, which luau-lsp takes and the engine does not, and a guide says so. The day luau-lsp reports it, the clean run fails and the guide's sentence has to change.
+
 The scripts on the site's pages are samples too. A block of Luau on a page is the whole text of one sample, and `SitePageScriptTests` holds every page under `site/src/content/docs` to that. A guide's samples are under `Guides`, in a folder for the page. One that asks for a module by a path is under `Scripts`, where the path is the one a reader's project has.
 
 Each page that shows a script has a test class that plays its samples in a level and holds what the page quotes of Output: `FirstScriptGuideTests`, `MovePartGuideTests`, `TalkToLevelGuideTests`, `HearLevelGuideTests`, `PlayerGuideTests`, `MakeThingsGuideTests` and `MoverGuideTests`. A new page with a script gets one, and a line in `SitePageScriptTests`.
+
+`ComingFromRobloxPageTests` holds the page for a Roblox developer, which shows no script. Its rows on `GetTags`, on an attribute's name and on a destroyed node's tags are held both ways: a row has to be there while the engine answers otherwise than Studio did, and has to go when it answers the same.
