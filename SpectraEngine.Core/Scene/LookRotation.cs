@@ -30,16 +30,20 @@ internal static class LookRotation
         return FromColumns(x, Vector3.Cross(z, x), z);
     }
 
-    // A look along up leaves look cross up with no direction. The frame is then
-    // the one +Y as up gives, and with the look along Y as well the right
-    // vector stays on +X: the identity pitched a quarter turn up or down.
+    // A look along up leaves look cross up with no direction. Roblox then
+    // takes +X for up, and +Y for a look along X. Its documentation does not
+    // say so: Studio was asked. An up of no length gives Roblox a NaN and
+    // counts as +Y here.
     private static Vector3 RightOf(Vector3 look, Vector3 up)
     {
-        if (TryUnitCross(look, up, out Vector3 right) || TryUnitCross(look, Vector3.UnitY, out right))
+        if (!UnitLength.TryOf(up, out _))
+            up = Vector3.UnitY;
+
+        if (TryUnitCross(look, up, out Vector3 right) || TryUnitCross(look, Vector3.UnitX, out right))
             return right;
 
-        // The look is along Y only to within the limit, so square +X up to it.
-        return Vector3.Normalize(Vector3.UnitX - (look * look.X));
+        // A look along X stands square to Y.
+        return Vector3.Normalize(Vector3.Cross(look, Vector3.UnitY));
     }
 
     // The unit vector along a unit vector crossed with another of any length.

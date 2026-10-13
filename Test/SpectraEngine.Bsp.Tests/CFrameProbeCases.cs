@@ -166,11 +166,19 @@ internal sealed class CFrameProbeCases
         Angles("choice_to_orientation_at_pole", Orientation(Quarter, 0.4f, -0.9f).ToOrientation(), ourChoice: true);
 
         // The documentation does not say what an alpha outside 0 to 1 gives.
-        // Ours carries on along the same line and the same arc.
+        // Studio carries on along the same line, and along the same arc
+        // unless the two rotations are close.
         Probed<CFrame> quarterY = At(10f, 0f, -4f).Times(Probe.Angles(0f, Quarter, 0f));
         Frame("choice_lerp_at_two", Identity.Lerp(quarterY, 2f), ourChoice: true);
         Frame("choice_lerp_at_minus_one", Identity.Lerp(quarterY, -1f), ourChoice: true);
         Frame("choice_lerp_far_past_a_small_turn", Identity.Lerp(Probe.Angles(0f, 0.001f, 0f), 1000f), ourChoice: true);
+        Frame("choice_lerp_past_a_turn_under_the_switch", Identity.Lerp(Probe.Angles(0f, 0.03f, 0f), 10f), ourChoice: true);
+        Frame("choice_lerp_past_a_turn_over_the_switch", Identity.Lerp(Probe.Angles(0f, 0.05f, 0f), 10f), ourChoice: true);
+
+        // A look along its up vector: Studio takes +X for up there.
+        Frame("choice_look_at_along_up_off_x", LookAt(origin, V(0f, 0f, 5f), V(0f, 0f, 1f)), ourChoice: true);
+        Frame("choice_look_at_against_slanted_up", LookAt(origin, V(1f, 1f, 1f), V(-2f, -2f, -2f)), ourChoice: true);
+        Frame("choice_look_along_straight_down", LookAlong(origin, V(0f, -2f, 0f)), ourChoice: true);
     }
 
     private void AddRandom()

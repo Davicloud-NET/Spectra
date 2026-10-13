@@ -135,9 +135,9 @@ public readonly struct CFrame : IEquatable<CFrame>
     public static CFrame LookAlong(Vector3 at, Vector3 direction) => LookAlong(at, direction, Vector3.UnitY);
 
     /// <summary>
-    /// A frame at a point that looks along a direction. A direction along
-    /// <paramref name="up"/> is treated as if up were +Y, and one straight up
-    /// or down keeps the right vector on +X. No direction gives no rotation.
+    /// A frame at a point that looks along a direction. As in Roblox, a
+    /// direction along <paramref name="up"/> takes +X for up, and +Y when it
+    /// runs along X as well. No direction gives no rotation.
     /// </summary>
     public static CFrame LookAlong(Vector3 at, Vector3 direction, Vector3 up) =>
         new(at, LookRotation.Along(direction, up));
@@ -202,7 +202,9 @@ public readonly struct CFrame : IEquatable<CFrame>
     /// <summary>
     /// The frame part of the way to <paramref name="goal"/>. The position
     /// moves in a straight line and the rotation along the shortest arc. An
-    /// alpha below 0 or above 1 carries on along both.
+    /// alpha below 0 or above 1 carries on along both. As in Roblox, two
+    /// rotations about two degrees apart or less are blended in a straight
+    /// line, which past either end turns less than the arc.
     /// </summary>
     public CFrame Lerp(CFrame goal, float alpha) => new(
         Vector3.Lerp(Position, goal.Position, alpha),

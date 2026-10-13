@@ -144,43 +144,68 @@ public sealed class CFrameLookAtTests
             0, 0, 1);
     }
 
-    // Our choice. Roblox's documentation gives no answer for a look along up.
-    // Ours is the identity pitched a quarter turn: right stays on world +X.
+    // Roblox's documentation gives no answer for a look along up. Studio
+    // does: +X is then the up vector. The next four are what it answered.
     [Fact]
-    public void Looking_straight_up_keeps_the_right_vector_on_plus_x()
+    public void Looking_straight_up_takes_plus_x_for_up()
     {
         CFrame frame = CFrame.LookAt(new Vector3(1f, 2f, 3f), new Vector3(1f, 9f, 3f));
 
         frame.ShouldHaveComponents(
             1, 2, 3,
-            1, 0, 0,
+            0, 1, 0,
             0, 0, -1,
-            0, 1, 0);
+            -1, 0, 0);
         frame.LookVector.ShouldBeNear(new Vector3(0f, 1f, 0f));
+        frame.UpVector.ShouldBeNear(Vector3.UnitX);
     }
 
-    // Our choice, as above.
     [Fact]
-    public void Looking_straight_down_keeps_the_right_vector_on_plus_x()
+    public void Looking_straight_down_takes_plus_x_for_up()
     {
         CFrame frame = CFrame.LookAt(Vector3.Zero, new Vector3(0f, -4f, 0f));
 
         frame.ShouldHaveRotation(
-            1, 0, 0,
+            0, 1, 0,
             0, 0, 1,
-            0, -1, 0);
+            1, 0, 0);
         frame.LookVector.ShouldBeNear(new Vector3(0f, -1f, 0f));
+        frame.UpVector.ShouldBeNear(Vector3.UnitX);
     }
 
-    // Our choice: with a look along the given up, the frame is the one the
-    // default up gives.
     [Fact]
-    public void Looking_along_a_given_up_falls_back_to_the_default_up()
+    public void Looking_along_a_given_up_takes_plus_x_for_up()
+    {
+        CFrame.LookAt(Vector3.Zero, new Vector3(0f, 0f, 5f), Vector3.UnitZ).ShouldHaveRotation(
+            0, 1, 0,
+            1, 0, 0,
+            0, 0, -1);
+
+        // Against the up vector is along it too.
+        float third = 1f / MathF.Sqrt(3f), half = MathF.Sqrt(0.5f);
+        CFrame slanted = CFrame.LookAt(Vector3.Zero, new Vector3(1f, 1f, 1f), new Vector3(-2f, -2f, -2f));
+        slanted.LookVector.ShouldBeNear(new Vector3(third, third, third));
+        slanted.RightVector.ShouldBeNear(new Vector3(0f, half, -half));
+    }
+
+    [Fact]
+    public void Looking_along_x_with_x_for_up_takes_plus_y_for_up()
     {
         CFrame.LookAt(Vector3.Zero, new Vector3(5f, 0f, 0f), Vector3.UnitX)
             .ShouldBeNear(CFrame.LookAt(Vector3.Zero, new Vector3(5f, 0f, 0f)));
         CFrame.LookAt(Vector3.Zero, new Vector3(-5f, 0f, 0f), Vector3.UnitX)
             .ShouldBeNear(CFrame.LookAt(Vector3.Zero, new Vector3(-5f, 0f, 0f)));
+    }
+
+    // Our choice: Studio answers an up of no length with a NaN. Here it is +Y.
+    [Fact]
+    public void An_up_of_no_length_is_plus_y()
+    {
+        var target = new Vector3(1f, 2f, 3f);
+
+        CFrame.LookAt(Vector3.Zero, target, Vector3.Zero).ShouldBeNear(CFrame.LookAt(Vector3.Zero, target));
+        CFrame.LookAt(Vector3.Zero, new Vector3(0f, 6f, 0f), Vector3.Zero)
+            .ShouldBeNear(CFrame.LookAt(Vector3.Zero, new Vector3(0f, 6f, 0f)));
     }
 
     // Our choice: with nowhere to look there is no rotation.
