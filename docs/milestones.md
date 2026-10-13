@@ -2,7 +2,7 @@
 
 Every milestone id and where it stands. The order of work is in [ROADMAP.md](../ROADMAP.md).
 
-Status was last checked against the code on 2026-10-05, and is one of: done, partly, in progress, not started, not planned, dropped or unclear.
+Status was last checked against the code on 2026-10-05, and the scripting rows on 2026-10-13. It is one of: done, partly, in progress, not started, not planned, dropped or unclear.
 
 The Design column names a file in this folder. "archive" means [archive/roadmap-2026-10.md](archive/roadmap-2026-10.md), the old long roadmap. It has the reasoning behind each milestone.
 
@@ -46,7 +46,7 @@ Sizes in the roadmap are small, medium and large. They only compare milestones w
 | P8 | Trigger volumes | done for the player; nothing else sets a trigger off | archive |
 | P9 | Entities and connections in the map | done | archive |
 | P10 | Prefabs | not started | archive |
-| P11a | Play and stop | done; stop puts back every node the run moved, in place | archive |
+| P11a | Play and stop | done; stop puts back everything the run changed, from the play journal | archive |
 | P11b | `.spectramapb` | dropped; `.scmap` (D12) replaced it | formats-and-pipeline.md |
 
 ## Shader authoring
@@ -145,13 +145,13 @@ Sizes in the roadmap are small, medium and large. They only compare milestones w
 | Y2 | The physics seam | done | physics.md |
 | Y3 | The static world as convex hulls | done | physics.md |
 | Y4 | One gameplay query surface | partly; the gameplay raycast is in, the rest is unclear | physics.md |
-| Y5 | Character mover | done | physics.md |
+| Y5 | Character mover | done; a script can put a mover written in Luau in its place | physics.md |
 | Y6 | Dynamic bodies | not started | physics.md |
 | Y7 | Kinematic parts, moving platforms | partly; a moving part carries the player and stops when it would squeeze them, and nothing else rides or is pushed | physics.md |
-| Y8 | Touch events | partly; the player against parts, nothing between bodies | physics.md |
+| Y8 | Touch events | partly; the player against parts, for triggers and for a script's `Touched`, and nothing between bodies | physics.md |
 | Y9 | Collision hulls on models | not started | physics.md |
 | Y10 | Play and stop for physics | not started | physics.md |
-| Y11 | Luau bindings | not started | physics.md |
+| Y11 | Luau bindings | partly; `CanCollide`, `CanQuery`, `CanTouch`, `Touched` and the player are bound, rays and bodies are not | physics.md |
 | Y12 | Networked bodies | not started | physics.md |
 | Y13 | Rollback decision | not started | physics.md |
 | Y14 | Physics self-test | not started | physics.md |
@@ -163,15 +163,19 @@ Sizes in the roadmap are small, medium and large. They only compare milestones w
 | Id | Name | Status | Design |
 |---|---|---|---|
 | O0 | One AOT publish of the engine | done; CI publishes on both hosts | roblox-onboarding.md |
-| O1 | Vector and `CFrame` value types | not started | roblox-onboarding.md |
-| O2 | Familiar node API | not started | roblox-onboarding.md |
-| O3 | Attributes, tags, signals | not started | roblox-onboarding.md |
-| O4 | Luau vendored and bound | not started; the spike passed | roblox-onboarding.md, spikes/2026-10-luau-aot.md |
-| O5 | Node handles and generated bindings | not started | roblox-onboarding.md |
+| O1 | Vector and `CFrame` value types | done; `Vector3` is Luau's own vector type | roblox-onboarding.md, data-model.md |
+| O2 | Familiar node API | done for scripts; no `Size`, and `SceneNode` kept its C# surface | roblox-onboarding.md, script-api.md |
+| O3 | Attributes, tags, signals | done another way; tags and attributes are built in the editor and set by scripts for one play session, signals are a script's own, and there is no `ObserveTag` and no attribute that refers to a node | roblox-onboarding.md, script-api.md |
+| O4 | Luau vendored and bound | done; the crash cases run from a published binary on both hosts | roblox-onboarding.md, spikes/2026-10-luau-aot.md |
+| O5 | Node handles and generated bindings | done; one generator writes the binding, `spectra.d.luau` and the reference's data | roblox-onboarding.md, script-api.md |
 | O6 | Command bar | dropped; C7 replaced it | roblox-onboarding.md |
-| O7 | `Instance.new` and parts at runtime | not started | roblox-onboarding.md |
-| O8 | Script payload and lifecycle | not started | roblox-onboarding.md |
-| O9 | Play and stop for scripts | not started | roblox-onboarding.md |
+| O7 | `Instance.new` and parts at runtime | done; a made part is a part brush | roblox-onboarding.md, script-api.md |
+| O8 | Script payload and lifecycle | done; script events run on the fixed tick, and nothing fires once a frame | roblox-onboarding.md, data-model.md |
+| O9 | Play and stop for scripts | done; a play journal puts back what a script changed | roblox-onboarding.md, data-model.md |
+
+The October plan built these in 22 steps under its own numbers: Luau in the tree, the binding, a queue that counts ticks, `CFrame`, the script payload, the runtime, the play journal, the generator, output with a place, the editor, the node API, typed inputs and outputs, inputs as methods and outputs as signals, properties and attributes, the cook and the baked map, touch, the player, tags and attributes on any node, create and destroy, `require`, the mover in Luau, and the docs. `roblox-onboarding.md` has what changed against the August design.
+
+Not built: keys and mouse for scripts, script events once a frame and the camera, entity classes in Luau (D15), Luau in the console (C7), a debugger, native code generation, bytecode in packs, scripts that run while editing (D21), parallel Luau, and a part's colour and transparency from a script.
 
 ## Console
 

@@ -394,6 +394,8 @@ dotnet run --project SpectraEngine.Executable -- --export-script-api=script-api.
 
 `LuauDefinitions.Write` and `ScriptApiJson.Write` are in Core and need no Luau. `LuauScriptApi.Description` is the data, and reading it loads no native library.
 
+The site's script reference is written from the JSON by `site/scripts/script-api.mjs`: a page for each class, library and entity class, and an overview with the globals. `npm --prefix site run api` runs it after the C# reference, and `npm --prefix site run script-api` runs it alone. Handed a path, it reads that file and starts no engine. The pages are not committed. `ScriptReferenceInputTests` holds the format the script reads to `ScriptApiJson.Format`, and the words it takes an entity class's group from.
+
 The syntax of a definitions file has no specification. `luau-lsp` 1.70.1 loads this one under both of its type solvers, entity classes and all, and its `analyze` command reports a wrong call on a node that a script cast to its class. Every construct is written in one place in `LuauDefinitions`, so a correction is one line there and one in `LuauDefinitionsTests`.
 
 ## In a project
@@ -415,7 +417,7 @@ Opening a project brings an old `spectra.d.luau` up to the build and writes noth
 
 `Test/SpectraEngine.Scripting.Tests/Samples/Assets` is the `Assets` folder of a small project. `LuauLspTests` sets a project up in a temporary folder with the code above, copies the samples in, and runs `luau-lsp analyze` on them under the old type solver and under the new one. Its arguments are read from the `.vscode/settings.json` that was written.
 
-- A script under `Scripts` is clean: luau-lsp has to say nothing of it. The file Insert Script writes and the demo's `Assets/Scripts/spinner.luau` are checked with them.
+- A script under `Scripts` or `Guides` is clean: luau-lsp has to say nothing of it. The file Insert Script writes and the demo's `Assets/Scripts/spinner.luau` are checked with them.
 - A script under `Mistakes` has one mistake a line. Each such line ends in an arrow and the words luau-lsp has to say of it, and no other line may be reported:
 
 ```lua
@@ -436,4 +438,6 @@ SPECTRA_LUAU_LSP=/path/to/luau-lsp dotnet run --project Test/SpectraEngine.Scrip
 
 What luau-lsp cannot check is in `AGENTS.md`: a write to a `read` property passes under the old solver, and a name it does not know is a child of the node.
 
-The scripts on the site's page [Write your first script](../site/src/content/docs/guides/write-your-first-script.mdx) are samples too. `FirstScriptGuideTests` compares each block of the page with its sample and plays the samples in a level.
+The scripts on the site's pages are samples too. A block of Luau on a page is the whole text of one sample, and `SitePageScriptTests` holds every page under `site/src/content/docs` to that. A guide's samples are under `Guides`, in a folder for the page. One that asks for a module by a path is under `Scripts`, where the path is the one a reader's project has.
+
+Each page that shows a script has a test class that plays its samples in a level and holds what the page quotes of Output: `FirstScriptGuideTests`, `MovePartGuideTests`, `TalkToLevelGuideTests`, `PlayerGuideTests`, `MakeThingsGuideTests` and `MoverGuideTests`. A new page with a script gets one, and a line in `SitePageScriptTests`.

@@ -1,377 +1,108 @@
 # Roblox to Spectra
 
-A concept map for developers coming from Roblox Studio. Written to be honest first and welcoming second: everything below is marked with what actually exists in the tree today.
+What each Roblox concept is in the engine's code, and how it stands. This page is for work on the engine.
 
-## What this engine is
+What a script author reads is on the site: `site/src/content/docs/start/coming-from-roblox.mdx`. It has every difference a script meets, grouped by what comes up in the first hour, and the list of what is not there yet. A fact about scripts belongs there, and this page only points at the types behind it.
 
-Spectra is a C#/.NET 10 game engine built on a scene graph, with Hammer-style CSG brushes as the authoring primitive for world geometry, an unbounded open world that recompiles asynchronously in 32-unit chunks, three live render backends (OpenGL, D3D11, D3D12), and its own shader language (SpectraShade) that cross-compiles to GLSL and HLSL and hot-reloads on save.
+This page replaces the concept map of August 2026, which was written when the engine had no editor, no scripting and no save format. Other documents cite its rows by name, so the tables keep them: the `Lighting` row, the `NegateOperation` row and the Instance API table.
 
-**The one-line reason a Roblox developer can move over:** the scene graph *is* the DataModel — a tree of named nodes with stable identity, where a node's rigid world transform is exactly a `CFrame` and a brush's local plane extents are exactly `Part.Size` — so the data model you already have in your head transfers almost intact, and the geometry gets better.
-
-**The blunt part.** Today Spectra is an engine library plus a demo executable. There is no editor, no scripting runtime, no save format, no physics, no networking, and no per-part colour — each of those is *designed* in a document under `docs/` and built nowhere. The scene graph, the CSG world compiler, the renderers, and the shader toolchain are real and tested; almost everything a Roblox developer *touches* — Explorer, Properties, Play, `Instance.new`, `:Destroy()`, attributes, signals — is designed but unbuilt. This document marks each item so nothing is oversold.
-
-**Status vocabulary**
+Status is one of three words.
 
 | Status | Meaning |
-| --- | --- |
-| **exists** | In the tree now, working, usually test-covered. |
-| **planned** | Designed and decided, not written. Treat as vapour until it lands. |
-| **deliberate difference** | Spectra does not and will not match Roblox here, on purpose. |
-
----
-
-## The mapping table
-
-### Tree and services
-
-| Roblox concept | Spectra equivalent | Status | Note |
-| --- | --- | --- | --- |
-| `Instance` | `SceneNode` | **exists** | One concrete class. No subclass hierarchy — `Brush` and `MeshRenderer` are optional payload fields on the node. |
-| `Instance` identity | `SceneNode.Id` (`Guid`) | **exists** | Assigned at construction, stable across rename and reparent. Better than Roblox, which has no instance identity at all. |
-| `DataModel` / `game` | `Scene` / `Scene.Root` | **exists** | `Scene` owns the root, camera, selection set, BVH, and the derived static world. |
-| `Workspace` | `Scene.Root` itself; Luau `workspace` aliases it | **exists** (root) / **planned** (alias) | **There is no `Workspace` container.** Spatial content sits directly under `Scene.Root`, which is what `workspace.Wall` will resolve against, so that expression ports character-for-character. What decides whether a node is live world content is the `State` property below, not its ancestry. **And there is deliberately no `World` folder either** — a new project ships a `Baseplate` brush directly under the root, so the port stays `workspace.Baseplate` rather than `workspace.World.Baseplate`. |
-| `Lighting` | **three things, three homes** — a typed `Scene.Environment` settings struct for global properties, asset references on it for sky/atmosphere, and a render-arc post-effect chain | **planned** | **Corrected.** An earlier version of this row said "a `Scene.Lighting` node with attributes". A node implies a transform, a parent, a realm and a subtree brush count, none of which mean anything for fog density. Lights themselves *are* spatial `SceneNode`s carrying a `Light` payload. Nothing reads any of it today. **AMENDED 2026-08-29 by `ROADMAP.md` `R19b`, in step with `realms.md` 7.3:** the struct-not-a-node ruling governs **global** fog. A bounded fog **zone** is a `FogVolume` payload on a spatial `SceneNode`, where a transform and a parent mean exactly what they always mean. Roblox has no analogue, since `Lighting` is global only. |
-| `ServerScriptService` | `Realm = Server` on the script node (or on a folder holding scripts) | **planned** | **Corrected — this and the row below replace a `Storage`-collapse row** that read "deliberate difference, Spectra is single-process". Multiplayer is designed (`docs/networking.md`), so that premise is dead. **And you still get a folder to drag into:** a new project ships `ServerLogic` (`Realm = Server`) as an ordinary node in the map, so the gesture is unchanged — it is content rather than an engine concept, and it is yours to rename, nest or delete. Design: [`docs/realms.md`](realms.md). |
-| `ServerStorage` | **parking is `State = Dormant`; `Realm = Server` only if the template holds no brushes** | **planned** | `ServerStorage` fused *two* properties into one folder, and Spectra separates them — which means the honest answer differs by content. **A template containing BRUSHES must stay `Shared` + `Dormant`**: `realms.md` R15 refuses a brush subtree under a non-`Shared` node (a brush *is* the compiled static world, which every client renders and collides against, so server-only geometry cannot exist), and a `ServerStorage`-shaped `Server` + `Dormant` folder would therefore **reject the commonest template there is**. Author it as `Server` + `Dormant` only for parked *data and non-brush* content. This is exactly why the shipped project template's `Templates` folder is `State = Dormant` with realm left inherited (`Shared`) rather than `Server`. |
-| `ReplicatedStorage` | nothing — `Shared` is the default | **planned** | Shared content needs no marking at all, so the container has no replacement and needs none. For the *habit* of a shared folder, the project template ships `Modules` (shared Luau modules) and `Templates` (parked content you clone) — both ordinary `Shared` nodes. Roblox's "client writes persist locally but never replicate back" survives as an **authority** rule (`networking.md` §4.4), which is stronger. |
-| `ReplicatedFirst` | `JoinPriority = First` on the node | **planned** | Sent ahead of the bulk world-sync channel. `game:IsLoaded()` → a `WorldReady` signal; `RemoveDefaultLoadingScreen()` → `DismissBootScreen()`. |
-| `StarterGui`, `StarterPack`, `StarterPlayerScripts`, `StarterCharacterScripts` | declarative **spawn rules** in `game.spectraproj`: `{ template, phase, destination }` | **planned** | `phase` is `OnJoin` or `OnCharacterSpawn` — the distinction Roblox leaves unwritten in the tree (`StarterPlayerScripts` copies once, `StarterCharacterScripts` copies every death) becomes a word on the rule. `ResetOnSpawn` disappears into `phase`. **`StarterPack`'s destination does not exist**: tools and inventory are an unbuilt subsystem, so that one rule ports with nothing to spawn into. The folders those rules point at ship in the project template as `Interface` and `ClientLogic`, both `Realm = Client`. |
-| `StarterPlayer` (the object) | split: 23 properties → a player-defaults settings block; its two script containers → spawn rules | **planned** | It was never a container; it was a property bag that also parented two containers. **There is no `StarterPlayer` node.** |
-| `RunService` (`Heartbeat`, `PreSimulation`, `PreRender`) | engine frame signals | **planned** | The render loop already has all the phase points; nothing is exposed. Roblox's current names plus the legacy aliases are the plan. |
-| `Players` | a **service and index**, not a tree container | **planned** | A player has no transform, no brush and no realm. Its *contents* stay real nodes: `player.Gui`, `player.Scripts`, `player.Character` live in a per-player subtree, replicated to that one client by a per-client interest filter. This is the split Roblox already makes (`Player` in `Players`, `Character` in `Workspace`), made explicit. |
-| `CollectionService` | per-node tags + a scene reverse index + `ObserveTag` | **planned** | See the Instance API table. The reverse index must take an audience mask, or it enumerates content the caller cannot see. |
-| `SoundService` | `Scene.Audio` settings + `Audio.Play2D(clip)`; spatial sounds are payloads on world nodes | **planned** | A sound is never parented to a service. Audio is a stub in the tree today. |
-| `Teams` | nothing in v1 — a string attribute or a `NodeRef` to a team entity | **deliberate difference** | `Teams` exists largely to drive `TeamColor` on the default leaderboard, which does not exist here, and `BrickColor` is already rejected. Cheap to add later; expensive to ship an empty one. |
-| `Humanoid`, `Terrain`, `Debris`, `CoreGui`, `Chat`, `TestService` | — | **deliberate difference** | Not provided **as objects**. A hollow `Humanoid` would be worse than none — though the *capability* behind it is now designed: [`docs/physics.md`](physics.md) `Y5` ships a kinematic character mover, and its `Y11` explicitly leaves the `CharacterController`-versus-`Humanoid` naming open until the Luau surface lands, because the name bakes into every tutorial the moment it ships; `Terrain` is a deliberate difference because brushes *are* the world; `Debris` is `task.delay` + `Destroy`; `CoreGui` has no analogue in an engine with no platform UI. |
-| `ReplicatedScriptService` | nothing | n/a | Removed from Roblox itself in 2022 (v0.526.0); never had members. Named only to close the question. |
-| — (no Roblox analogue) | `SceneNode.Realm` — `Inherit` / `Shared` / `Server` / `Client` | **planned** | The audience axis, lifted off tree location. Inherited down the subtree; `Shared` is the effective default everywhere. **You do not have to set it by hand:** the shipped project template's folders already declare it, so dragging a script into `ServerLogic` does what dragging it into `ServerScriptService` did. The name is **locked** — the user chose *realm* over *scope* on 2026-08-21, on Garry's Mod / Source precedent (`sv_`/`cl_`/`sh_`) and because `networking.md` already uses *scope* for interest management. |
-| — (no Roblox analogue) | `SceneNode.State` — `Inherit` / `Active` / `Dormant` | **planned** | The liveness axis. `Dormant` means not carved, not drawn, not queried, not ticking — a parked template you can keep next to the thing that clones it. This is `ServerStorage`'s *other* job, and it needs its own property because there is no way to make a brush inert today. The project template's `Templates` folder is `Dormant` already, so parking something is still a drag. |
-| the container set as **organisation** (rather than as a replication mechanism) | the **new-project template tree** — `Baseplate`, `ServerLogic`, `ClientLogic`, `Interface`, `Templates`, `Modules` — shipped as ordinary nodes with their realms already declared | **planned** | Roblox's containers are a bad replication mechanism *and* a genuinely good starter kit; this keeps the second half without the first. **No engine code ever checks for a folder by name**, so every one of them is renameable, deletable, nestable and ignorable — which is the escape hatch the whole redesign exists for. See `realms.md`, "The bare-root objection". |
-
-### Parts and geometry
-
-| Roblox concept | Spectra equivalent | Status | Note |
-| --- | --- | --- | --- |
-| `Part` / `BasePart` | `SceneNode` carrying a `Brush` | **exists** | `Brush.CreateBox(min, max)`; the node's world transform places it. |
-| `MeshPart` | `SceneNode` carrying a `MeshRenderer` | **exists** | Meshes come from code (`Primitives`) — there is no model importer yet. |
-| `UnionOperation` | CSG carve of the whole brush set | **deliberate difference** | Every brush carves every overlapping brush, continuously and non-destructively. There is no union *object* to create or bake, no 5,000-triangle cap and nothing to un-union. **Planned qualifier:** once `BrushKind` ships ([`physics.md`](physics.md) §2.3a, `P7a`) this describes **world** brushes; a `Part` brush renders its own faces and never joins the fusion. |
-| `NegateOperation` | `Brush.Operation = Subtractive` — a **declared bit on the brush**, not a wrapper object | **planned** | **Corrected — this row previously said there is no subtraction in the engine at all**, and offered *"the carve is union-skin extraction, not subtraction: overlapping brushes merge"* as a deliberate difference with no counterpart. That was true of the tree and is no longer the plan. [`docs/negative-brushes.md`](negative-brushes.md) (milestone `P7b`) adds `Brush.Operation { Additive, Subtractive }`, and the compiled solid becomes `⋃{additive} \ ⋃{subtractive}`. The union half of the row is unchanged: two overlapping **additive** brushes still merge, and a part resting on the floor still does not punch a hole in it. **Three differences a Roblox author will feel.** (1) **You Negate a brush in place** — one undoable command flipping one bit, no `NegateOperation` wrapper instance to create, select, or accidentally re-parent, and nothing to Union afterwards. The carve is continuous, so the hole is simply there. (2) **Negation is GLOBAL, not scoped.** Roblox's negate subtracts only inside its own `UnionOperation`; here every subtractive brush cuts every additive brush it overlaps. The consequence to know: **an additive brush placed entirely inside a subtractive one disappears** — there is no "add it back afterwards". The fill-a-hole affordance is a `BrushKind.Part` brush, which never enters the carve and so cannot be cut. A per-brush `CarveScope` matching Roblox's scoping is a strict later refinement and is deliberately not decided. (3) **The inside of a hole wears the NEGATIVE brush's face materials**, not the cut brush's — you texture a hole by texturing the negative. |
-| `Part.Shape` (Ball, Cylinder, Wedge) | convex plane sets | **deliberate difference** | Wedges and prisms are expressible; a true sphere is not a convex plane set. |
-| `Part.Size` | brush local plane extents | **planned** | The semantics are settled doctrine — resize edits the plane offsets, never a scale. The `Size` property itself does not exist; today you build a new `Brush` and assign it. |
-| `Part.CFrame` | the node's rigid world transform | **exists** (transform) / **planned** (`CFrame` type) | `LocalTransform` / `LocalPosition` / `LocalRotation` / `WorldMatrix` exist. A `CFrame` struct does not. |
-| node scale | `SceneNode.LocalScale` | **deliberate difference** | Exists, and must never be used on a brush node — see below. Roblox has no scale concept at all. |
-| `Anchored` | `Anchored = true` is what a brush already is; `false` is a **conversion** | **planned** | **Corrected — an earlier version of this row said `false` would throw.** [`docs/physics.md`](physics.md) §4.2 overruled that: throwing takes away the parts-are-placed-freely pillar to protect an implementation detail. At edit time, setting `Anchored = false` on a brush node is an undoable editor command; at run time it is a physics body. **Amended again by [`physics.md`](physics.md) §2.3a:** the conversion target is no longer an `O7` `MeshRenderer` part but **`BrushKind = Part` on the same node**, through `ConvertBrushKindCommand` — the brush keeps its planes, its per-face materials and its `SceneNode.Id`, so every reference to it survives. It is a conversion rather than a flag because a *world* brush compiles into the fused world by construction and a brush that moves under simulation would re-fuse it every tick. Two disclosed costs: the UV bake is mandatory, and a face's *world-aligned* setting does not survive a round trip. The body itself still needs `Y6`. |
-| `CanCollide` / `CanQuery` | bits in the `PhysicsFlags` byte on the node | **planned** | `docs/physics.md` `Y0` owns them, along with the collision-group registry and the `SceneBvh` box/sphere overlap queries that do not exist yet. One named edge: `CanQuery = false` cannot be honoured on a *static world brush* (it is derived from the carve, and excluding it would change compiled output), so it is refused there with a message; it is legal on dynamic parts and — once `BrushKind` ships — arguably on **part brushes**, whose queries never route through the per-cell BSP. That last half is an open sign-off (`physics.md` §7), because `Y0`'s wording predates the world/part split. |
-| `Material`, `Color3`, `Transparency` | per-face material + per-vertex colour | **planned (large)** | Today the vertex layout is position/normal/uv with no colour channel, and `Scene.StaticWorldMaterial` is a single material for the entire world. Two adjacent brushes cannot be different colours by any route. |
-| texture alignment | Hammer-style per-face UV axes | **planned** | The carve already emits world-space planar UVs on the dominant axis — the correct "world align" base case — but there is no per-face data to align. |
-
-### Values
-
-| Roblox concept | Spectra equivalent | Status | Note |
-| --- | --- | --- | --- |
-| `Vector3` | `System.Numerics.Vector3` | **exists** | In Luau, the plan is to bind to Luau's native `vector` type so position math stays allocation-free. |
-| `CFrame` | `CFrame` readonly struct (position + quaternion) | **planned** | Load-bearing: a type that *cannot* represent scale makes rigidity structural instead of validated. Without it, no Roblox transform code ports. |
-| `Color3` | `Color3` readonly struct | **planned** | Blocked behind per-part appearance. |
-| `Orientation` (YXZ degrees) | `CFrame.Angles(rx, ry, rz)` in radians | **deliberate difference** | Degrees in a radians codebase is a footgun. The editor's Properties panel is planned to show degrees anyway. |
-| `BrickColor` | — | **deliberate difference** | Legacy inside Roblox itself. Not coming. |
-| 1 stud | 1 **spectraunit** (`sunit`) = **1 metre** | **decided 2026-08-21** | One sunit is one metre, so a 32-unit chunk is 32 m and gravity is `9.81 sunit/s²` — the solver runs at exactly the scale it was tuned for. **A ported place must scale, and would have had to under any answer:** Roblox is internally inconsistent about its own stud, documenting 0.28 m/stud while its default gravity implies 0.05 m/stud — a factor of 5.6 between two official numbers — so no choice here could have made porting mechanical. Multiply by **0.28** to follow Roblox's documented figure, or by **0.05** to reproduce its gravity behaviour; pick per project and stay consistent. See [`docs/physics.md`](physics.md) §7 item 1. |
-
-### Instance API
-
-| Roblox concept | Spectra equivalent | Status | Note |
-| --- | --- | --- | --- |
-| `Instance.new("Part")` | `new SceneNode(name)` / `parent.CreateChild(name)` | **exists** (nodes) / **planned** (by class name) | Class-name construction needs a hand-registered class table; there is none. |
-| `.Parent = x` | `parent.AddChild(child)` | **exists** (method) / **planned** (settable `Parent`) | `Parent` is read-only today. `AddChild` has **no cycle guard** — a parent loop recurses to stack exhaustion. |
-| `:GetChildren()` | `node.Children` | **exists** | Allocation-free `IReadOnlyList`, unlike Roblox's fresh table per call. |
-| `:GetDescendants()` | `node.Traverse()` | **exists** | Pre-order, explicit stack. Allocates one `Stack` per call — do not call it per frame. |
-| `:FindFirstChild(name)` | the same in a script, with `FindFirstChildOfClass`, `FindFirstChildWhichIsA` and the three `FindFirstAncestor` forms | **exists** | A number is not taken as a name. Write `tostring(n)`. |
-| `:WaitForChild(name)` | the same in a script: it waits until a child has the name | **exists** | With no timeout it warns after five seconds, in Roblox's words, and keeps waiting. With one it gives `nil` when the time is over. An authored node is there from the first tick, so the wait is for what arrives while the level plays. |
-| `:IsA(className)` | the same in a script, from a table of class names (`NodeClass`) | **exists** | The classes are `Part`, `MeshPart`, the five lights, `Folder`, `Script` and `ModuleScript`, with `BasePart` and `Light` above them. An entity is its own class too, so a door is a `func_door` and a `Part`. |
-| `:Clone()` | `SceneNode.Clone()` | **planned** | Must deep-copy the `Brush` (a `Brush` instance must never be shared between nodes) while sharing the GPU mesh. |
-| `:Destroy()` | `Destroy()` with a `Destroying` signal and a destroyed lock | **planned** | Today: `node.Parent?.RemoveChild(node)`, which detaches, drops the BVH leaf, and auto-deselects — but has no lock and no event. |
-| `workspace.Baseplate.Part` (a child by its name) | the same in a script | **exists** | A member wins over a child of the same name, as in Roblox. A name that is neither is an error, never `nil`. |
-| `Instance:SetAttribute` / `GetAttribute` | typed attribute union on `SceneNode` | **planned** | One mechanism will serve both Roblox attributes and level-entity keyvalues, plus a `NodeRef` type Roblox lacks. |
-| `CollectionService` tags | per-node tags + a scene-wide reverse index | **planned** | Plus `ObserveTag`, which replays already-tagged nodes — the boilerplate every Roblox dev writes by hand. |
-| `RBXScriptSignal` (`Connect`/`Once`/`Wait`/`Disconnect`) | `Signal<T>` with `Connect` returning `IDisposable` | **planned** | Scene-level `NodeAdded` / `NodeRemoved` / `NodeTransformChanged` events **exist** today, with a hard re-entrancy rule: handlers must not mutate the graph. |
-| deferred vs immediate signals | deferred only | **deliberate difference** | Roblox's current default is Immediate. Deferred is where Roblox says it is heading, and it is the only mode compatible with the scene's re-entrancy contract. |
-| `Model` + `PrimaryPart` | any `SceneNode` used as a group | **exists** (grouping) / **deliberate difference** (semantics) | Spectra composes transforms down the tree — move the parent, the children move. Roblox `Model`s do not compose, which is why `PivotTo` exists. There is no `Model` class and no `PrimaryPart`. |
-
-### Scripts and Studio
-
-| Roblox concept | Spectra equivalent | Status | Note |
-| --- | --- | --- | --- |
-| `Script` / `ModuleScript` | a `Script` payload on a node, with **one** axis: `bool IsModule` | **planned** | Nothing exists: no VM, no `Script` type, no scripting project in the solution. |
-| `LocalScript` | a script node declared `Realm = Client` | **planned** | **There is no second script type.** Where the script *runs* is the node's realm, and Roblox agrees this was the mistake — it shipped `Enum.RunContext` in 2022 to unwind exactly this, motivated by *"consolidating Script and LocalScript behavior"*. We have no content, so we do it once. |
-| `Script.RunContext` | `SceneNode.Realm` | **planned** | Roblox's partial fix decoupled run location and left audience coupled to the container, which is why a `RunContext = Client` script in `ServerScriptService` silently does not run. Here there is one axis and it is the node's. |
-| "where does this script run?" | **a script runs on the narrowest side its node exists on, and `Shared` means server** | **planned** | Stated precisely because the tempting slogan — *"where a script exists is where it runs"* — is **false**: a `Shared` node exists on both sides and its runnable script runs on one. `Server` → server. `Client` → every client, one private instance each. `Shared` → the **server**, once. A `Shared` *module* is requirable from both sides and yields **one instance per side**, which is what a `ModuleScript` in `ReplicatedStorage` already does. There is no value meaning "runs on both". |
-| C# gameplay code | compiled C# against `SpectraEngine.Core` | **exists** | This is the only way to write behaviour today: reference the engine and write C#. |
-| Explorer | editor tree panel | **planned** | |
-| Properties | editor property panel driven by descriptor tables (no reflection) | **planned** | |
-| Output | `ILogger`-backed panel with a ring buffer | **planned** (panel) / **exists** (logging spine) | The engine already logs compile stats and snapshot defects through `Microsoft.Extensions.Logging`. |
-| Command Bar | execute Luau against the live edit-mode scene | **planned** | Named explicitly because it is Studio's *tightest* loop — faster than Play — and the easiest thing to get wrong by omitting. |
-| Play / Stop | clone or snapshot the edit scene, run, then discard | **planned** | Will be an **in-memory** structural snapshot, not a serializer round-trip. There is no scene serializer in the tree, and making Play/Stop its first consumer would mean a serializer bug eats your authored scene. |
-| `.rbxl` place file | `.spectramap` | **planned** | No save/load of any kind exists today. |
-
----
-
-## The differences that actually matter
-
-### Brushes are real convex solids, and they carve each other
-
-A brush is an intersection of half-spaces — one outward plane per face — carved against every other brush that overlaps it. That makes it a superset of `Part` *and* `UnionOperation`: you do not create a union, negate a part, and bake the result. You place solids, and the world is the carved result, recompiled continuously. Nothing is destructive; move a brush back and the geometry it removed comes back. The carve is **union-skin extraction** rather than subtraction — it deletes buried *faces*, never solid — so overlapping brushes merge and a brush resting on another does not hollow it out.
-
-**One planned qualifier, and it is the one a Roblox developer will meet first.** Everything in this section describes a **world** brush, which is what every brush is today and what a brush drawn in the editor will keep being. A brush that has to *move under simulation* cannot be in the fusion — every tick would change the overlap set and force a full-world recompile — so `SceneNode.BrushKind` ([`physics.md`](physics.md) §2.3a, milestone `P7a`) declares the other kind: a **`Part`** brush, which keeps its planes, its per-face materials and its editor handles, renders its own faces, and never joins the carve. Converting between the two is one undoable command. Nothing about it is inherited or automatic — a reparent never changes it.
-
-The consequence for muscle memory: **resizing is not scaling.** In Roblox, `Part.Size` writes extents, and that is exactly right — Spectra does the same thing, by rewriting the brush's local plane offsets and producing a new `Brush` for the node. A brush-for-brush swap on a node is already routed through the fast incremental path in the engine today, so resize costs the same as a move. What does not exist yet is the `Size` property that wraps it; right now you construct `Brush.CreateBox(-half, +half)` and assign it.
-
-### Transforms are rigid, and the node transform is the CFrame
-
-A brush node's world transform must be rotation plus translation. No scale, no shear. This is not a style preference: the CSG epsilon scheme assumes unit-length plane normals, and the compile *validates* it — a non-rigid brush placement is rejected at snapshot time, which today means the static world silently freezes at its last good compile and logs a line. So `LocalScale` on a brush node is the one write that looks harmless and is not. Size things with brush extents; place them with position and rotation.
-
-The upside is that a rigid transform is exactly a `CFrame`, which is why shipping a `CFrame` type is a load-bearing decision rather than sugar: a type that cannot represent scale makes the invariant structural instead of validated three stages later.
-
-One place Spectra is genuinely better: **grouping composes.** Parent a set of brush nodes under a group node, move the group, and everything moves — no `PivotTo`, no `PrimaryPart`, no `Model` class. Roblox `Model`s do not compose transforms; Spectra's graph always has.
-
-### The world compiles asynchronously, in chunks, and the map has no edges
-
-Brush edits mark the world dirty; the render thread snapshots placements; a background task carves, snaps, welds, builds per-cell BSP trees and mesh arrays; the render thread swaps in only the chunks whose artifacts changed. The measured cost of a one-brush edit is **~0.05–0.1 ms at 1k, 10k and 50k parts**, half of them 8,000 units from the origin — the benchmark's verdict line reads *world-size independent* and is treated as a standing invariant.
-
-Practically: there is no baseplate, no map extents, no 2048-stud part clamp, and negative or distant chunk cells cost exactly what the origin costs. Brush geometry is stored in brush-local frames, so a brush 10 km out has the same floating-point accuracy as one at the origin. And because a single edit is sub-millisecond at any world size, a gizmo drag can write transforms every frame with the carved world updating live — which Studio cannot do with unions.
-
-The static world is *derived data*. You never author it; you author brush nodes, and it recompiles. There is no equivalent of it in the Explorer tree, and there will not be.
-
-### The scene graph is the single spine
-
-There is one node type. There is no ECS, no component registry, no entity table, and none is planned. Payloads — `Brush`, `MeshRenderer`, and later `Entity` and `Script` — are optional fields on the node. That is closer to Roblox's own model than it first looks: in Roblox, behaviour is an attached `Script` child, not a subclass. `Part : BasePart : Instance` is a class table for `IsA`, not a C# inheritance chain, and in Spectra it will literally be a string table for exactly that reason (reflection is banned by the AOT rule).
-
-### There are no service containers — audience and liveness are properties of the node
-
-**Status: planned. None of this exists in the tree.** The full design is [`docs/realms.md`](realms.md); this section is the part you need to read the mapping table above. Read it as a design decision you will meet later, not as something you can try today.
-
-Roblox encodes **four independent questions** in **one dimension — where in the tree the object sits**:
-
-| the question | how Roblox asks it |
-| --- | --- |
-| who holds this data at all | `ServerStorage`/`ServerScriptService` vs `ReplicatedStorage` vs `Workspace` |
-| when does it arrive on a client | `ReplicatedFirst` vs everything else |
-| is this live world content, or a parked template | `Workspace` vs any storage container |
-| is it copied per player, and when | the four `Starter*` containers |
-
-One dimension cannot carry four values, and the costs are mechanical rather than stylistic. The axes cannot be combined — "shared, but parked" is not expressible at all, and `ServerStorage` and `ServerScriptService` have *identical* audience and differ only in liveness, which is why there are two folders with one word between them and no documentation that says so plainly. The rules are tribal knowledge, because a folder name cannot carry a rule. And the one that costs you every day: **you cannot put a server-only spawner next to the enemies it spawns.** The spawner must live in `ServerScriptService`, the enemies in `Workspace`, the templates in `ServerStorage`. Three folders, one feature, and the tree is organised for the replication system instead of for your game.
-
-Spectra splits it into **two inherited properties you declare on the node where the exception actually is**:
-
-- **`Realm`** — `Inherit` (the default) / `Shared` / `Server` / `Client`. Who holds it. `Shared` is what the root resolves to, so the overwhelming majority of content declares nothing.
-- **`State`** — `Inherit` (the default) / `Active` / `Dormant`. Whether it is live: carved into the world, in the spatial index, drawn, queried, ticking. `Dormant` is a parked template.
-
-**And you still get folders — they are just no longer engine concepts.** A new project ships a template tree of ordinary nodes with the realms already declared: `ServerLogic` (Server), `ClientLogic` and `Interface` (Client), `Templates` (Dormant), `Modules` (shared), and a `Baseplate` brush directly under the root. Dragging a script into `ServerLogic` does exactly what dragging it into `ServerScriptService` did, so you can ship a game without ever opening the `Realm` dropdown — which is the part of Roblox's model that was genuinely good and that a bare property would have thrown away. The difference is that **no engine code ever checks for a folder by name.** The template is a file the editor copies; every folder is renameable, deletable, nestable and ignorable, and the server-only spawner can still sit next to the enemies it spawns.
-
-**The payoff Roblox structurally cannot match:** because realm is *data* rather than *location*, the editor can organise by it on demand — filter the Explorer to everything `Server`, colour by realm, or group the whole project by realm as an alternate view — while the tree itself stays organised for your game. Roblox gets exactly one view of a project, forever, because there location **is** the grouping.
-
-Both inherit down the subtree and both resolve by **narrowing**: a child can be as narrow as its parent or narrower, never wider. A `Server` subtree cannot contain a `Shared` child, because a client that does not hold the parent has no way to compute the child's world transform — its transform is parent-relative, so the only options would be silently reparenting it (server and client then disagree about where a replicated object *is*) or shipping the hidden ancestors' names and transforms (leaking exactly what the declaration existed to hide). Both are refused.
-
-Drag a `Client` subtree under a `Server` parent and it does **not** become server content. `Server ∩ Client` is empty, and the result has a name — **`Inert`** — meaning the subtree exists nowhere as live content, its scripts run nowhere, and the editor badges every affected node. Your *declarations* are untouched, so dragging it back restores it exactly. The alternative — clamping to the ancestor — would turn client code that ran with no authority into server code that runs *with* authority, from a mouse gesture, which is a worse version of the problem this design exists to delete.
-
-Three consequences that will bite if you do not know them up front:
-
-1. **A brush node is always `Shared`.** Marking a brush-bearing subtree `Server` or `Client` is refused at the setter, not excluded with a warning. Brushes carve into the one static world that every peer renders *and collides against*, so a server-only brush would publish its exact shape as the hole it leaves, and the server's collision world would disagree with every client's — you would rubber-band into a wall you cannot see. If you want a region parked, that is `State = Dormant`. If you want something drawn but never carved, that is a `MeshRenderer` node, which lives outside CSG — or, once `BrushKind` ships (`P7a`), a **`Part` brush**, which keeps brush geometry and per-face materials while staying out of the fusion. **That does not relax this rule at `P7a`:** part brushes are refused on non-`Shared` nodes exactly as world brushes are, and the relaxation — for parts carrying no collision a predicted mover consults — arrives only with `CanCollide` (`realms.md` R15).
-2. **Server content is not secret on disk in v1.** The tree stops your own client code from reading it; it does not stop someone unpacking the game. Server node records — names, transforms, attributes, and server script source — ship in the client's pack. Do not put a secret in a server script. (There is a route to on-disk secrecy — a cook-target strip — and it is designed, not built.)
-3. **What you get is orthogonality, not fewer rules.** Honestly counted, the new model is about ten rules and three of them are exceptions. Roblox's containers are eight folders you can *see*, one rule each, learned on demand, in a project that ships them non-empty — which is why Spectra ships a starter tree too, so the folders are still there to see and drag into. What changed is that they no longer *mean* anything to the engine. The defensible claim is not "smaller" — it is that **you can finally put the spawner next to the enemies it spawns.**
-
-#### Porting `game.ServerStorage.Enemy:Clone()`
-
-Be ready for a rewrite, not a shim. **There is deliberately no compatibility layer**, and the reason is not cost: the moment `game.ServerStorage` resolves to a real node, the container model is back *without its rules* — nothing would then stop a brush under it from carving — and you would be running both models at once, which is worse than either. Every future Spectra tutorial would have two right answers. There is also no codemod, because it cannot be made sound for Luau: `game[name]`, `FindFirstChild("ServerStorage")`, string-built paths and `require` chains defeat a regex and a real parser alike, and a codemod that fixes 80% and silently misses 20% fails in production instead of at your keyboard.
-
-What you get instead is the codemod's *value* as diagnostics: `game.ServerStorage`, `game.ReplicatedStorage`, `game.StarterGui` and friends are declared as **deprecated symbols in the generated `spectra.d.luau`**, whose type-level message names the replacement — so under `--!strict` the 20% fails at the type checker. And `game:GetService(name)` **throws**, naming the replacement, rather than returning `nil`: the universal idiom binds the service on one line and indexes it ten lines later, so a `nil` would report the wrong line while the helpful message scrolled past.
-
-```lua
--- Roblox
-local enemy = game.ServerStorage.Enemy:Clone()
-enemy.Parent = workspace
-
--- Spectra as designed: a Dormant template, sitting next to the spawner that uses it
-local enemy = script.Parent.Templates.Enemy:Clone()   -- Templates.State == "Dormant"
-enemy.State  = "Active"
-enemy.Parent = workspace.Arena
-```
-
-**And the honest ergonomic gap:** a `Dormant` subtree is not a prefab. You clone and re-parent it by hand, it has no override mechanism, and its contents are written into the map rather than expanded from a shared definition. Prefabs are on the roadmap, explicitly *off* the critical path, so `Dormant` is the answer for the next several milestones rather than a stopgap that lands next month.
-
-**Finally, the container mapping is the easy third of a port.** The hard two thirds are that your gameplay code references physics, `Humanoid`, `TweenService`, `DataStoreService` and per-part colour — none of which exist here. A migration guide that leads with a slick container table and buries that would be dishonest, so it is stated here instead.
-
-### Two languages: Luau for gameplay, C# for the engine
-
-The plan is a hybrid, weighted Luau-first:
-
-- **Luau** — the real thing, MIT-licensed, vendored and driven through P/Invoke — for gameplay. Not "a Lua dialect": your `--!strict`, `continue`, `+=`, string interpolation, and type annotations all work. It runs on the render thread only, with deferred-only signals, an interrupt watchdog so `while true do end` cannot freeze the editor, and per-script sandboxing. Compiling a `.luau` file at runtime is *native* codegen inside a native library, so an AOT-published game can still load and run editable scripts.
-- **C#** — compiled, engine-facing — for systems, importers, custom entity types, and editor tooling. This is the only language that works today.
-
-Two honest costs. First, the boundary is a cliff, not a ramp: Studio's floor and ceiling are the same language, and here outgrowing Luau means a .NET SDK and a build step. Second, **none of the Luau half exists yet** — no VM, no bindings, no `Script` node. The design's own adversarial review flagged that the interop is harder than it looks: Luau raises errors as C++ exceptions or `longjmp`, which cannot legally unwind through managed frames, so the native shim has to be the error boundary rather than a thin P/Invoke convenience. Expect it to land as a large piece of work, not a weekend.
-
-There is also a runtime split that has no Roblox analogue and will bite early: `Instance.new("Part")` at *runtime* should not become a brush. Attaching a brush changes the world's placement count, which forces the conservative full-walk recompile — a spawn loop would recompile the whole world every frame it runs. Authored parts are brushes; script-spawned parts during play need to be dynamic mesh nodes outside CSG.
-
----
-
-## Side by side
-
-Every Spectra snippet is labelled with whether it runs today.
-
-### Create and parent an object
-
-```lua
--- Roblox
-local p = Instance.new("Part")
-p.Size = Vector3.new(4, 1, 2)
-p.Position = Vector3.new(0, 10, 0)
-p.Parent = workspace
-```
-
-```csharp
-// Spectra, C# — EXISTS TODAY
-var node = scene.Root.CreateChild("Part");
-node.LocalPosition = new Vector3(0, 10, 0);
-// Size lives in the brush's local plane extents: half-extents, centred on
-// the node's origin. 4 x 1 x 2 full extents => -2..2, -0.5..0.5, -1..1.
-node.Brush = Brush.CreateBox(new Vector3(-2f, -0.5f, -1f), new Vector3(2f, 0.5f, 1f));
-```
-
-```csharp
-// Spectra, C# — PLANNED (CreatePart, Size, settable Parent, CFrame, Workspace)
-var part = scene.CreatePart("Part", size: new Vector3(4, 1, 2));
-part.CFrame = new CFrame(new Vector3(0, 10, 0));
-part.Parent = scene.Workspace;
-```
-
-```lua
--- Spectra, Luau — PLANNED (no VM exists)
-local p = Instance.new("Part")
-p.Size = Vector3.new(4, 1, 2)
-p.CFrame = CFrame.new(0, 10, 0)
-p.Parent = workspace
-```
-
-### Move something
-
-```lua
--- Roblox
-part.CFrame = CFrame.new(0, 10, 0) * CFrame.Angles(0, math.rad(45), 0)
-```
-
-```csharp
-// Spectra, C# — EXISTS TODAY
-node.LocalPosition = new Vector3(0, 10, 0);
-node.LocalRotation = Quaternion.CreateFromYawPitchRoll(MathF.PI / 4f, 0f, 0f);
-// Writing either one auto-marks the static world dirty and rides the
-// incremental compile path. Rigid only — never write LocalScale here.
-```
-
-```csharp
-// Spectra, C# — PLANNED
-node.CFrame = new CFrame(new Vector3(0, 10, 0)) * CFrame.Angles(0, MathF.PI / 4f, 0);
-```
-
-Note the transform is *local* today (`LocalPosition` is relative to the parent), while Roblox's `Position` and `CFrame` are world-space. Which name gets which meaning is an open decision, and it must be locked before any content is written against it — getting it wrong is silent, not loud.
-
-### Connect to a signal
-
-```lua
--- Roblox
-local conn = workspace.ChildAdded:Connect(function(child)
-    print(child.Name .. " arrived")
-end)
-conn:Disconnect()
-```
-
-```csharp
-// Spectra, C# — EXISTS TODAY (scene-level events only, no per-node signals)
-scene.NodeAdded += node => logger.LogInformation("{Name} arrived", node.Name);
-// Hard rule: a handler must NOT add, remove, or reparent nodes. Membership
-// events fire in the middle of the ownership walk, and a structural edit
-// there corrupts the traversal. This is a contract, not an enforced guard.
-```
-
-```csharp
-// Spectra, C# — PLANNED (per-node signals, deferred delivery, disposable handle)
-using var conn = node.ChildAdded.Connect(child => Console.WriteLine($"{child.Name} arrived"));
-```
-
-```lua
--- Spectra, Luau — PLANNED
-local conn = workspace.ChildAdded:Connect(function(child) print(child.Name) end)
-conn:Disconnect()
-```
-
-Deferred delivery is a named difference: your handler runs at the next resumption point, not before the next line of the firing function.
-
-### Destroy something
-
-```lua
--- Roblox
-part:Destroy()
-```
-
-```csharp
-// Spectra, C# — EXISTS TODAY (detach only)
-node.Parent?.RemoveChild(node);
-// Detaches, unwinds the subtree brush count, marks the static world dirty,
-// drops the BVH leaf, and auto-deselects. But: no Destroying event, and the
-// node is still usable afterwards — nothing locks it.
-```
-
-```csharp
-// Spectra, C# — PLANNED
-node.Destroy();   // fires Destroying subtree-pre-order, then detaches, then locks
-```
-
-Mass deletion is already cheap in a way worth knowing: 500 deletes in one frame produce one full-walk recompile total, not 500, because the compile pump snapshots once per frame.
-
-### Read and write an attribute
-
-```lua
--- Roblox
-part:SetAttribute("Speed", 16)
-local speed = part:GetAttribute("Speed")
-```
-
-```csharp
-// Spectra — NOTHING EXISTS TODAY.
-// There is no attribute bag on SceneNode. Keep your own
-// Dictionary<Guid, T> keyed on node.Id until the feature lands.
-```
-
-```csharp
-// Spectra, C# — PLANNED (typed overloads, no boxing, AOT-safe union)
-node.SetAttribute("Speed", 16f);
-if (node.TryGetAttribute("Speed", out var v))
-    float speed = v.AsFloat();
-```
-
----
-
-## What Spectra does that Roblox cannot
-
-- **True CSG.** Every brush carves every overlapping brush, live and non-destructively. No 5,000-triangle union cap, no baking, no union objects and no negate-*parts* to manage. **Exists.** *(Planned, two declarations, both of which are declarations and never side effects of moving, parenting or simulating something: a brush may opt out of the fusion with `BrushKind = Part` — `physics.md` §2.3a — and a brush may **remove** solid instead of adding it with `Operation = Subtractive`, which is Negate without a wrapper instance — `negative-brushes.md`.)*
-- **An unbounded world with size-independent edits.** No baseplate, no map extents, no part-position clamp; one-brush edits at ~0.05–0.1 ms whether the world holds 1k or 50k parts. **Exists.**
-- **Custom shaders in a real shader language.** SpectraShade source files compile per backend at runtime and hot-reload on save while the program's identity stays stable, so every material picks up the change. **Exists.**
-- **Three render backends.** OpenGL, D3D11, D3D12, each with forward and wireframe pipelines over one shared draw list. OpenGL is the Linux path. **Exists.**
-- **Native AOT-published games.** `PublishAot` is already set on the executable and on the shader compiler CLI, so the AOT analyzers run on every build of those projects. Caveat, and it is a real one: an end-to-end AOT publish has not been proven, and Silk.NET 2.23 needs explicit `GlfwWindowing.RegisterPlatform()` / `GlfwInput.RegisterPlatform()` calls under NativeAOT that are absent from the tree — expect the first publish to build and then die at window creation.
-- **A tree organised for your game instead of for the replication system.** Audience and liveness are declared on the node where the exception is, so the server-only spawner, the enemies it spawns and the templates it clones can be siblings — which four Roblox containers make impossible. **Planned, not built**, and the honest framing is orthogonality rather than simplicity: it is about ten rules, three of them exceptions, against Roblox's eight visible folders.
-- **Per-face materials with Hammer-style texture alignment.** The differentiator Studio has no answer for — Roblox gives you six-axis decals on box faces and no alignment tooling. **Planned, not built**, and it is the highest-fanout unbuilt item in the engine.
-
----
-
-## What is not built yet
-
-Ordered by how much it will matter to you, not by engineering size.
-
-1. **No editor.** No Explorer, Properties, Output panel, Command Bar, gizmos, selection tools, undo/redo, or Play/Stop. The plan is an Uno Skia-Desktop host that pumps the engine in an embedded mode; none of it exists. Today you author scenes in C# code.
-2. **No scripting runtime.** No Luau VM, no `Script` node, no `Instance.new`, no `task` library, no signals to connect to. C# against the engine library is the only way to write behaviour.
-3. **No per-part appearance.** No `Color3`, no `Material`, no `Transparency`. The static world renders with one material and a vertex layout that has no colour channel. Colouring a part is a Roblox developer's second action, and it currently has no route at all.
-4. **No physics and no character — in the tree.** No `Touched`, no `Anchored`, no `AssemblyLinearVelocity`, no `Humanoid`, no `TweenService`, no walking around. Your existing gameplay code does not partially port — it does not port. **It is, however, no longer undesigned:** [`docs/physics.md`](physics.md) picks the engine (Box3D), turns the compiled brush world into per-chunk convex hulls, and schedules the character mover, `Touched` and the Luau surface as `Y0`–`Y16`. Nothing there is built. The BSP answering point and ray queries today is what makes it reachable rather than speculative.
-5. **Half an Instance API.** A script finds nodes: `FindFirstChild` and its relatives, `GetChildren`, `GetDescendants`, `IsA`, `WaitForChild` and a child by its name. There is no settable `Parent`, `Clone`, `Destroy`, attributes, tags, or per-node signals.
-6. **No `CFrame` or `Color3` value types.** Transform code is `System.Numerics` matrices and quaternions.
-7. **No save or load.** There is no scene serializer anywhere in the tree — no place file, no prefabs, no asset round-trip. An engine without save/load is a demo, and this is the gap the Play/Stop and undo designs both have to route around.
-8. **No networking, and no realms.** No client/server split, no `RemoteEvent`, no replication, no `Players` — and no `Realm`/`State` properties on `SceneNode`, so today there is no audience concept anywhere in the tree and nothing is hidden from anything. Half of Roblox architecture knowledge is inapplicable. Unlike the other entries on this list, this one is now **answered on paper**: [`docs/networking.md`](networking.md) designs the multiplayer arc and [`docs/realms.md`](realms.md) designs the replacement for the service containers. Both are design documents in the sense this page's status vocabulary means by **planned** — decided, written down in detail, and not written in code. Treat them as vapour until they land.
-9. **No model import.** `Silk.NET.Assimp` is referenced; no importer code exists. Meshes come from `Primitives`.
-10. **Thin rendering feature set.** Forward and wireframe only: no shadows, no post-processing, no transparency pass, no offscreen render targets, no PBR, no instancing.
-11. **Sharp edges worth knowing.** `AddChild` has no cycle guard (a parent loop recurses to stack exhaustion). A non-rigid write on a brush node is accepted at the setter and rejected three stages later, freezing the static world at its last good compile with only a log line. `Scene.Raycast` reports no hit for a ray that starts inside a solid, so a camera inside a wall cannot click-select it.
+|---|---|
+| built | In the tree, and tested. |
+| planned | Designed in the document the row names, and not written. |
+| not planned | The engine does it another way on purpose, or not at all. |
+
+## Tree and services
+
+| Roblox | Here | Status | Note |
+|---|---|---|---|
+| `Instance` | `SceneNode`. A script holds one as `Instance` | built | One node type. What a node is comes from what it carries: a brush, a mesh, a light, an entity, a script. `Scene/NodeClass.cs` gives each a class name for `IsA`, from a table |
+| Instance identity | `SceneNode.Id`, a `Guid` | built | Stable across a rename and a new parent. Saves, undo and wires go by it |
+| `DataModel`, `game` | `Scene` in C#. `game` to a script | built | `game:GetService` knows `RunService`, `Workspace`, `Players` and `CollectionService`, and refuses any other name |
+| `Workspace` | `Scene.Root`. `workspace` to a script | built | There is no container: everything in the level is under the root, and its class to a script is `Folder` |
+| `Lighting` | A typed `Scene.Environment` for global settings | planned | A light itself is a node with a `Light` payload, which is built, and a script sets its members. Nothing holds fog or a sky as data yet. A bounded fog zone would be a payload on a node (`R19b`) |
+| `ServerScriptService`, `ServerStorage`, `ReplicatedStorage`, `ReplicatedFirst` | A node's `Realm` and `State` | planned | [`realms.md`](realms.md). A node declares both and a map saves them, and nothing reads them: there is one side and every node is live. A template a script clones sits in the level |
+| `StarterGui`, `StarterPack`, `StarterPlayer` and its script folders | Spawn rules in the project file | planned | [`realms.md`](realms.md) |
+| `RunService` | The fixed tick | built | `PreSimulation` and `Stepped` before the physics step, `PostSimulation` and `Heartbeat` at the end of the tick, 60 a second with the same step. Nothing fires once a frame |
+| `Players` | `Players.LocalPlayer` and its `Character` | built for one player | The character is no node. `IPlayerPresence` is the player as the entity runtime sees it and `PlayerWrites` the one way a script changes it. More than one player is [`networking.md`](networking.md), planned |
+| `CollectionService` | `TagSet` on the node, and a reverse index in the script runtime | built | The index lives for one play session. No `ObserveTag` |
+| `SoundService`, `Sound` | The `point_sound` entity | built | A script plays one through its inputs, as a wire does. [`audio.md`](audio.md) |
+| `Humanoid` | `CharacterSimulation` and its `ICharacterMover` | not planned as an object | The mover is a function a script can replace (`physics.md` §4.5). There is no health and no character model |
+| `Teams`, `Debris`, `CoreGui`, `Chat`, `TestService` | Nothing | not planned | `Debris` is `task.delay` and `Destroy` |
+
+## Parts and geometry
+
+| Roblox | Here | Status | Note |
+|---|---|---|---|
+| `Part`, `BasePart` | A node with a part brush: `BrushKind.Part` | built | It keeps its own faces, moves at no recompile, and is what a script makes, moves and destroys |
+| Level geometry | A node with a world brush, which the editor calls a block | built | Fused into the static world. A script cannot make, move, clone or destroy one, and gets an error that says to convert it |
+| `MeshPart` | A node with a `MeshRenderer` | built | A script has the class and cannot make one. It has no collision shape of its own yet (`Y9`) |
+| `UnionOperation` | The carve of all world brushes | not planned as an object | Overlapping blocks become one solid, live, with nothing to bake |
+| `NegateOperation` | `Brush.Operation = Subtractive`, which the editor calls a cut | built | [`negative-brushes.md`](negative-brushes.md). One bit on the brush and no wrapper. It cuts every block it overlaps and never a part |
+| `Part.Shape` | A convex set of planes | built | Wedges and prisms are such sets. A sphere is not |
+| `Part.Size` | The brush's plane extents: `Brush.WithScaledExtents` | built in the editor | The size tool. A script has no `Size` yet |
+| `Part.CFrame`, `Position` | `SceneNode.CFrame` and `WorldPosition`, with `LocalCFrame` and `LocalPosition` | built | World space to a script, as in Roblox. A node also moves with its parent, which a Roblox part does not |
+| Scale | `SceneNode.LocalScale` | built | Never on a brush or above one. A brush is resized by its planes |
+| `Anchored` | Nothing | planned with `Y6` | No body falls yet, so every part stays where it is put. [`physics.md`](physics.md) |
+| `CanCollide`, `CanQuery`, `CanTouch` | Flags on the node | built | A script sets them on a part. `CanQuery` does not follow `CanCollide` |
+| `Touched` | `TouchTracker`, for the player against parts | built for the player | A trigger entity and a script's `Touched` hear one pass. Nothing touches but the player (`Y8`) |
+| `Material`, `Color`, `Transparency` | A material for each face of a brush | built in the editor | A script cannot set them. `Visible` draws or hides a part. Blended transparency is `R10` |
+| Texture alignment | UV axes for each face | built | Saved in the map |
+| 1 stud | 1 unit is 1 metre | built | Decided 2026-08-21. A ported number has to be scaled: a `WalkSpeed` of 16 is 4.5 here |
+
+## Values
+
+| Roblox | Here | Status | Note |
+|---|---|---|---|
+| `Vector3` | `System.Numerics.Vector3`. Luau's own vector type to a script | built | |
+| `CFrame` | `Scene/CFrame.cs` | built | A position and a rotation, no scale. Roblox's meaning for every operation, held to answers from Studio (`data-model.md` §2.3) |
+| `Color3` | `Scene/Color3.cs` | built | A colour as a person picks one. The engine lights in linear values, and each store converts at its own door |
+| `Orientation` in degrees | `CFrame.fromOrientation` in radians | not planned | The Properties panel shows degrees |
+| `BrickColor`, `Enum`, `UDim2`, `Vector2`, `TweenInfo` | Nothing | not planned | Nothing a script can reach takes one |
+
+## Instance API
+
+| Roblox | Here | Status | Note |
+|---|---|---|---|
+| `Instance.new` | `TreeWrites.TryMake`, by `MadeNodes` | built | A part, a folder and the five lights. Anything else is cloned |
+| `Parent = x` | `TreeWrites.TrySetParent` | built for scripts | Guards a cycle, the root and a destroyed node. In C# `SceneNode.Parent` is read only, with `AddChild` and `RemoveChild` |
+| `GetChildren`, `GetDescendants`, `FindFirstChild` and its relatives, `IsA` | The binding's `NodeApi`, over `SceneNode.Children` and `Traverse` | built | |
+| `WaitForChild` | A thread that waits in the entity runtime's queue | built | It yields until the child arrives |
+| `workspace.Door` | `ObjectMembers` looks a name that is no member up among the children | built | |
+| `Clone`, `Destroy` | `TreeWrites.TryClone`, `TryDestroy` | built for scripts | `SceneNode.Clone` copies the brush and shares the mesh. Stop takes clones away and brings destroyed nodes back |
+| Attributes | `AttributeSet` on the node, `AttributeTable` in the script runtime | built | Six kinds of value. A script also reads its entity's keyvalues through `GetAttribute`. No kind refers to a node |
+| Tags | `TagSet` on the node, `TagTable` in the script runtime | built | |
+| `RBXScriptSignal` | `ScriptSignal` in the binding | built for scripts | An entity's outputs, a part's touch, the tick, a change of a tag or an attribute. There is no signal type in C#, and `ChildAdded`, `Changed` and `Destroying` are not built |
+| Deferred signals | The entity runtime's queue | built | A connected function never runs inside the call that fired |
+| `Model`, `PrimaryPart` | Any node with children | not planned as a class | Transforms compose down the tree, so a group moves as one |
+
+## Scripts and Studio
+
+| Roblox | Here | Status | Note |
+|---|---|---|---|
+| `Script`, `ModuleScript` | `SceneNode.Script`: a path to a `.luau` file, `IsEnabled`, `IsModule` | built | [`data-model.md`](data-model.md) §3. `require` takes a path or a module node |
+| `LocalScript`, `RunContext` | The node's realm | planned | [`realms.md`](realms.md) §6.2. There is one side today |
+| Gameplay in the engine's own language | An entity class in C#, with its parsing and registration from a source generator | built | Entity classes in Luau are `D15`, planned |
+| Explorer, Properties, Output | The scene tree, the Properties panel and the Output panel | built | |
+| Command Bar | Luau in the console, `C7` | planned | [`console.md`](console.md) |
+| Play and Stop | `PlaySession` and the play journal | built | Stop puts back what the run changed. No snapshot and no reload of the level |
+| `.rbxl` | `.smap`, a folder of JSON | built | [`formats-and-pipeline.md`](formats-and-pipeline.md) §2.6. A baked `.scmap` is what a game ships |
+| Studio's script editor | Visual Studio Code with `luau-lsp` | built | The editor writes `spectra.d.luau` and the settings that point at it |
+
+## The service containers
+
+Roblox says where a thing is held, when it arrives and whether it is live by where it sits in the tree. The design here makes those two properties of the node, `Realm` and `State`, inherited down the tree, and ships the folders a Roblox developer expects as ordinary nodes of a project template. None of it is built beyond the two declarations, which a map saves. [`realms.md`](realms.md) is the design and has the mapping of every container.
+
+Until then a level has one side. Every node is live, every script runs once when the level starts, and a template sits in the level.
+
+## What Spectra does that Roblox does not
+
+- Blocks carve each other live and without baking, and a cut removes solid from them.
+- The world has no edges, and an edit costs the same in a large world as in a small one.
+- A face has its own material and its own texture axes.
+- Entities are wired with no code, and a script uses the same inputs and outputs.
+- A project is plain files, and a level is JSON that diffs.
+- A game is a NativeAOT executable that reads packs.
+- Shaders are written in the engine's own shader language and reload on save.

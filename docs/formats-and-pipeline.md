@@ -1092,7 +1092,9 @@ MyGame/
     Lobby.smap/             ← map bundles (§2.6 amendment): map.json
     Arena.smap/
   spectra.d.luau            ← generated API definitions (O5); regenerated, never hand-edited
-  .vscode/                  ← shipped by the project template: luau-lsp wired to spectra.d.luau
+  .luaurc                   ← the alias `assets` for ./Assets, for require and for luau-lsp
+  .vscode/                  ← luau-lsp wired to spectra.d.luau. These three are written by the
+                              editor when a script is first opened, not by a template
   .gitignore  .gitattributes ← shipped by the template (cook output, *.user.json, eol rules)
   cooked/                   ← scook output; derived, gitignored, never authored
 ```
@@ -1103,7 +1105,7 @@ Three rules this layout binds:
 
 1. **No authored artifact is ever binary, and editor state is never load-bearing.** Studio's binary place file is the named counter-example (`roblox-pitfalls.md` §1): it is why that platform needed Rojo. Here the project file, the map bundles, the materials, the scripts and the shader sources are all text; binary exists only in `cooked/` as derived output. This is `roblox-pitfalls.md` law 3 applied to the project as a whole.
 2. **Per-user editor state lives in `*.user.json` sidecars, gitignored, exactly Visual Studio's `.csproj.user` convention.** The editor's viewport camera, selection, expanded-tree state and window layout go to `<bundle>/editor.user.json` (per map) and `MyGame.spectraproj.user` (per project); losing one loses nothing but a camera position. Shared, deliberate editor settings (the map's grid size) stay in `map.json`'s reserved `editor` key. The split exists because a per-user camera in a shared file is merge noise on every save, which is a small copy of the Team Create lesson.
-3. **VS Code is the blessed external editor, and the loop closes without the Spectra editor in the middle.** The template's `.vscode/` wires `luau-lsp` to the generated `spectra.d.luau`, scripts are real `.luau` files under `Assets/`, and the running editor watches the project tree, so an edit saved from VS Code hot-applies exactly as a texture edit already does through the existing watcher path. A second editor is not a sync product here; it is a text editor pointed at a folder.
+3. **VS Code is the blessed external editor, and the loop closes without the Spectra editor in the middle.** The template's `.vscode/` wires `luau-lsp` to the generated `spectra.d.luau`, scripts are real `.luau` files under `Assets/`, and the running editor watches the project tree, so an edit saved from VS Code hot-applies exactly as a texture edit already does through the existing watcher path. A second editor is not a sync product here; it is a text editor pointed at a folder. *(As built a script is read when a level starts to play, so an edit runs on the next Play and not before.)*
 
 **AS BUILT (2026-08-29).** `SpectraEngine.Core/Projects/` implements the manifest and the layout: `ProjectFormat` (constants and the folder names), `SpectraProject` (the document), `ProjectReader`, `ProjectWriter`, and `ProjectLayout` (open, save, scaffold, discover). `EngineInfo.ProjectFormatVersion` and `MinimumReadableProjectVersion` land with the reader that enforces them. Oracle: `ProjectTests`. Verified end to end on the demo, which exports itself as a standalone project (`--save-project`) and then runs entirely out of that folder (`--project`): content root, materials, textures, models and the startup map all resolved from it, offscreen probe PASS, editing self-test PASS, zero errors.
 
@@ -1120,7 +1122,7 @@ Three rules this layout binds:
 
 *What `--save-project` does and does not do.* It creates the layout, copies **the whole content root** into `Assets/`, writes the scene as one map, lists it and sets it as `startupMap`. The whole-tree copy is deliberately blunt: working out which files a map actually needs means parsing every material for its textures and every model for its material library, which is the cook's dependency walk (`D4`) with its own correctness rules. A worse guess at it here would ship projects missing one texture nobody noticed; copying everything is wrong in a way that costs disk rather than correctness.
 
-*Not built here.* Nothing about `.vscode/` or `spectra.d.luau`: both depend on arcs that do not exist yet, and `.vscode/` in particular would ship a config pointing at a generated file nobody generates.
+*Not built in August.* Nothing about `.vscode/` or `spectra.d.luau`: both depended on arcs that did not exist then. The next paragraph has them as built.
 
 **AS BUILT (2026-10-13): `spectra.d.luau`, `.luaurc` and `.vscode/`.** No template ships them and a new project has none. The editor writes them beside `Assets/` when a script of the project is first opened from it: `spectra.d.luau`, a `.luaurc` with the alias `assets` for `./Assets`, `.vscode/settings.json` and `.vscode/extensions.json`. Only `spectra.d.luau` is ever written again, when its text is not the build's. The other three are the person's once they exist. A script is read when a level starts to play, so an edit saved from VS Code runs on the next Play and not before. `docs/script-api.md` has the rules under "In a project".
 

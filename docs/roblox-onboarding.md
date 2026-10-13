@@ -1,5 +1,54 @@
 # Roblox Onboarding — the engineering plan
 
+## What is built
+
+As of 2026-10-13 scripting is built. A script is a `.luau` file on a node. It runs while a level plays and reaches nodes, entities, the player, tags and attributes the way a Roblox script does. It makes and destroys nodes, and the player's mover can be written in it.
+
+The text below is the design of August 2026, kept for its reasoning. It was built by the Luau plan of October 2026, in 22 steps, and not as written. Each milestone below has a note that says how it stands, and each decision in §5 has its answer.
+
+What a script author reads is on the site: `site/src/content/docs/start/coming-from-roblox.mdx`, the guides beside it, and the script reference that `npm run api` writes. How a member is added to the script API is in [`script-api.md`](script-api.md).
+
+| Milestone | Stands |
+|---|---|
+| `O0` AOT publish | Built. CI publishes on both hosts. |
+| `O1` `CFrame` | Built. `CFrame` is in `SpectraEngine.Core/Scene`, held to a table of answers from Roblox Studio. `Vector3` is Luau's own vector type. |
+| `O2` Node API | Built for scripts, through the binding. `SceneNode` itself kept its C# surface. No `Size`. |
+| `O3` Attributes, tags, signals | Built another way. See the table below. |
+| `O4` Luau and the shim | Built. `external/luau`, `native/luau`, `SpectraEngine.Scripting.Luau`. |
+| `O5` Handles and generated bindings | Built. One generator writes the binding and the data that `spectra.d.luau` and the reference come from. |
+| `O6` Command Bar | Dropped. `C7` in [`console.md`](console.md) took its place and is not built. |
+| `O7` `Instance.new` | Built. A made part is a part brush and costs no recompile. |
+| `O8` Script payload and lifecycle | Built. Script events run on the fixed tick, not at three points of a frame. |
+| `O9` Play and Stop | Built with a play journal, not a snapshot. |
+
+What changed against the design:
+
+| The August design | As built |
+|---|---|
+| Scripts run at three points in a frame and get the frame's time step | The simulation is a fixed tick, 60 a second, with no renderer. `Stepped` and `Heartbeat` fire on the tick with the same step, so none, one or several times in a frame. There is no `RenderStepped` |
+| A new queue for deferred signals, with a re-entrancy depth of 10 | The entity runtime's queue. A connected function, a thread that waits and a wire are events in one queue that counts ticks, so there is one order and one trace. A budget for each tick names a runaway loop |
+| Play snapshots the graph and Stop restores it | The play journal. It keeps the first value of everything a level changes and puts it back at Stop: where a node is, its name, a light's and a part's members, which node is under which, the player's tuning and mover. A test compares the saved bytes before Play and after Stop on random scripts |
+| About 60 hand-written calls into Luau | A small C++ shim is the boundary. A Luau error is raised from native code, after the managed frame is gone, or a NativeAOT build dies at a later garbage collection. The crash cases run from a published binary |
+| No physics, no entities, no editor, no native code in the repo | All four exist. Box3D was the pattern for the native library |
+| `Instance.new("Part")` recompiles the world, so a spawned part is a mesh node outside CSG | A part brush costs no recompile. `Instance.new("Part")` makes one |
+| Units and where script source lives: open | One unit is a metre. A script is a file under `Assets/`, named by its content path |
+| `workspace.Baseplate.Part` is impossible without reflection | A child by its name works. A name that is no member of a node is looked up among its children |
+| `WaitForChild` returns at once or throws | In Luau it yields until the child arrives, as in Roblox, and warns after five seconds with no timeout |
+| Attributes are one typed bag for Roblox attributes and entity keyvalues, with a `NodeRef` kind | A node has an `AttributeSet` of six kinds, built in the editor. A script reads an entity's keyvalues through `GetAttribute` beside them. What a script sets lives in the runtime for one play session. No kind refers to a node |
+| Tags with a scene reverse index and `ObserveTag` | A node has a `TagSet`, built in the editor. The script runtime keeps the reverse index for one play session. No `ObserveTag` |
+| `Signal<T>` on `SceneNode`, with `ChildAdded`, `Changed` and `Destroying` | No signal type in C#. A script's signals are an entity's outputs, a part's touch, the tick, and a change of a tag or an attribute. The tree's own signals are not built |
+| An input is a call and an output an event, by name | An input is a method and an output a signal, typed from the class's `.sentdef`. What a script sends and hears shows in `ent_watch` and the Logic view beside the wires |
+| `Destroy` makes every later use of the node an error | A destroyed node behaves as in Roblox: its `Parent` is nil and cannot be set |
+| `ScriptKind { Server, Client, Module }` | `Script.IsModule`, and `IsEnabled` |
+| A module is a node, and `require` never reads the disk | `require` takes a path by Luau's rules, over the content sources: `./`, `../`, `@self`, and `@assets` for the content root. A module node works too |
+| An Output sink with a ring buffer for a later panel | A script's message is data: severity, text, script, line, stack. The editor's Output panel opens the file at the line |
+| Luau.CodeGen: open | Interpreter only |
+| A pack holds bytecode with the source as a fallback | A pack holds the source, and the game compiles it at load. Luau does not keep its bytecode readable between versions |
+
+Not built, and in no plan yet: keys and mouse for scripts beyond what the player's command carries, script events once a frame and the camera, a label on screen, animated models, saving, server and client scripts, entity classes written in Luau, Luau in the console, a debugger, native code generation, bytecode in packs, scripts that run while editing, parallel Luau, a part's colour and transparency from a script.
+
+The August design follows.
+
 > How a Roblox developer becomes productive in Spectra.
 > Companion to `ROADMAP.md`, which owns the engine arcs (editor interaction `E*`, persistence/entities `P*`, foundations `F*`, shaders `S*`, rendering `R*`, Uno hosting `H*`). This document owns one arc — call it **`O*`** — and references roadmap milestones by id instead of restating them.
 > Sizes are relative (**S / M / L**), never calendar. Status is marked explicitly: **exists**, **planned**, **decision needed**. Nothing here was built or run — another workflow holds the tree — so every claim about what exists was read out of source, and every claim about what will happen is labelled as a prediction.
@@ -19,7 +68,7 @@ This reads as a continuation rather than a pivot because the alignment is alread
 - **The change events an editor and a script layer need already exist**: `Scene.NodeAdded`, `NodeRemoved`, `NodeTransformChanged`, plus a dynamic `SceneBvh`, `Scene.Raycast`, `QueryFrustum`, a `SelectionSet`, and `Camera.ScreenPointToRay` for screen picking.
 - **The headline capability has no Studio equivalent.** The static world compiles asynchronously and chunked, and a single-brush edit costs ~0.05–0.09 ms independent of world size. Studio's `UnionOperation` is baked, capped, and cannot update while you drag. Spectra's carved world can.
 
-What does **not** exist today, verified in the tree, and therefore shapes everything below: no scripting runtime of any kind (no `lua`/`luau` reference anywhere in the solution); no `Script` or `Entity` payload on `SceneNode`; no settable `Parent`, no `Destroy`, no `FindFirstChild`, no `IsA`/`ClassName`, no attributes, no tags, no `Clone`; no `CFrame` and no per-node signals; no scene serializer (the only `Serialize` hits in Core are D3D12 root signatures and the compiled-shader blob writer); and no per-part appearance — `Scene.StaticWorldMaterial` is one `Material` for the entire carved world and `VertexAttribute.StandardLayout` is 8 floats (position, normal, uv) with no colour channel, so two adjacent brushes cannot currently be different colours by any route. That last gap is owned by `ROADMAP.md` `F1`/`E7`, not by this plan, but it is the single most visible thing a migrating developer hits, so it is named here too.
+*(Written in August 2026, and true then. See "What is built" at the top.)* What does **not** exist today, verified in the tree, and therefore shapes everything below: no scripting runtime of any kind (no `lua`/`luau` reference anywhere in the solution); no `Script` or `Entity` payload on `SceneNode`; no settable `Parent`, no `Destroy`, no `FindFirstChild`, no `IsA`/`ClassName`, no attributes, no tags, no `Clone`; no `CFrame` and no per-node signals; no scene serializer (the only `Serialize` hits in Core are D3D12 root signatures and the compiled-shader blob writer); and no per-part appearance — `Scene.StaticWorldMaterial` is one `Material` for the entire carved world and `VertexAttribute.StandardLayout` is 8 floats (position, normal, uv) with no colour channel, so two adjacent brushes cannot currently be different colours by any route. That last gap is owned by `ROADMAP.md` `F1`/`E7`, not by this plan, but it is the single most visible thing a migrating developer hits, so it is named here too.
 
 This document also answers an open sign-off in `docs/archive/roadmap-2026-10.md` §11 item 12 — *"Is C#-plus-rebuild acceptable for gameplay logic, or is a scripting VM eventually needed?"* The answer below is **a VM, and it is Luau**, which means `P4`'s `Entity` base class must be designed knowing a VM is coming.
 
@@ -64,7 +113,7 @@ Compiling a `.luau` file at runtime is **native codegen inside a native library*
 
 ### 2.4 What a Roblox developer will still find worse than Studio
 
-Ranked, to be documented rather than discovered:
+Ranked, to be documented rather than discovered. *(As built, items 1, 3 and 7 no longer hold as written: the player walks, collides and touches parts, a face has a material, and a child is found by its name. Items 2, 4, 6 and 8 stand. The list a script author reads is the site's page Coming from Roblox.)*
 
 1. **No physics, at all.** `Touched`, `Anchored`, `AssemblyLinearVelocity`, `Humanoid`, `Animator`, `TweenService` — none exist. Existing gameplay code does not partially port; it does not port. The BSP is already a query structure (`ContainsPoint`, `Raycast`), so a minimal trigger/overlap service answering `Touched`-shaped queries is closer than it looks and would disproportionately reduce this — `P8` in `ROADMAP.md` is that work under a different name.
 2. **No multiplayer.** No `LocalScript` boundary, no `RemoteEvent`, no `Players`, no replication, no FilteringEnabled mental model. This is a Roblox developer's second question.
@@ -85,6 +134,8 @@ Ten milestones, in dependency order. `O0`–`O3` are pure C# engine work with no
 
 ### O0 — Prove one AOT publish of the engine as it stands — **S**
 
+> **Built.** The engine publishes under NativeAOT, and CI does it on Windows and Linux.
+
 **Scope.** Publish `SpectraEngine.Executable` with NativeAOT, run the demo on all three backends, record every trim/AOT warning as an inventory. Add `<IsAotCompatible>true</IsAotCompatible>` to `SpectraEngine.Core` so the library is analysed on *build*, not only when an exe publishes.
 
 **Corrected premise — the tree is better off than a first read suggests, and worse in a specific place.** `<PublishAot>true</PublishAot>` is *already set* on `SpectraEngine.Executable/SpectraEngine.Executable.csproj` (line 5) and on `SpectraShade.Compiler.CLI/SpectraShade.Compiler.CLI.csproj` (line 8). So the SDK's AOT/trim analysers have been running on those projects' builds all along — the constraint is partly machine-enforced already, and `IsAotCompatible` on Core is the missing third piece.
@@ -100,6 +151,8 @@ Ten milestones, in dependency order. `O0`–`O3` are pure C# engine work with no
 ---
 
 ### O1 — The value-type layer: `Vector3` policy and `CFrame` — **M**
+
+> **Built, October 2026.** `CFrame` is `SpectraEngine.Core/Scene/CFrame.cs`, with `SceneNode.CFrame` and `LocalCFrame`. Its meanings are pinned by tests against plain matrices and against answers taken from Roblox Studio (`docs/data-model.md` §2.3). `Vector3` crosses as Luau's vector type and `CFrame` as userdata.
 
 **Without this, no Roblox code ports at all.** `part.CFrame = CFrame.new(0,10,0) * CFrame.Angles(0, math.pi/2, 0)` is beginner-level Roblox and today has no landing surface — there is no `CFrame` in the tree and no decision about how `Vector3` crosses into script. This is why it is second, not late.
 
@@ -117,6 +170,8 @@ Ten milestones, in dependency order. `O0`–`O3` are pure C# engine work with no
 ---
 
 ### O2 — The familiarity API on `SceneNode`/`Scene` — **M**
+
+> **Built for scripts, October 2026, and not on `SceneNode`.** The binding has `FindFirstChild` and its relatives, `GetChildren`, `GetDescendants`, `IsA`, `ClassName`, `GetFullName`, `WaitForChild`, `Clone`, `Destroy` and a settable `Parent` with the three guards. `IsA` goes by `Scene/NodeClass.cs`, a table and no reflection. A script changes the tree through `TreeWrites`, which records for Stop. In C# `SceneNode.Parent` is still read only. `Size` is not built, and `Destroy` fires no `Destroying`.
 
 **Scope.** The Roblox surface as a thin, honest layer over the graph. Do not restructure the engine to imitate Roblox and do not rename `SceneNode` to `Instance` — Roblox is already PascalCase-methods, so ~90% of the surface (`FindFirstChild`, `GetChildren`, `GetDescendants`, `Clone`, `Destroy`, `IsA`, `WaitForChild`) transfers character-for-character.
 
@@ -138,6 +193,8 @@ Ten milestones, in dependency order. `O0`–`O3` are pure C# engine work with no
 
 ### O3 — Attributes, tags, and the deferred signal system — **M**
 
+> **Built another way, October 2026.** See the table at the top: `AttributeSet` and `TagSet` on the node for what a builder sets, tables in the script runtime for what scripts set while a level plays, and the entity runtime's queue for every deferred call. There is no `Signal<T>` in C#, no `NodeRef` attribute and no `ObserveTag`.
+
 **Scope.**
 - **One keyvalue mechanism for both Roblox Attributes and Source entity keyvalues.** They are the same feature wearing different hats: named typed values on a tree element, driving both property panels and gameplay logic. Building two would be a design failure. A closed `AttributeValue` readonly-struct discriminated union over Roblox's supported type set (Bool, Int, Double, String, Vector2, Vector3, Color3, CFrame, NumberRange…) **plus a `NodeRef` type Roblox lacks**, wrapping the node's existing `Guid`. Typed setter overloads so call sites never box; a lazily allocated dictionary per node so a 50k-part world pays one null field.
   - `NodeRef` is the important addition. Roblox has no attribute type for instance references and forces developers into `ObjectValue` child instances — a workaround, not a feature to copy — while the no-code entity wiring in `P4`–`P6` is unusable without it. Storing a `Guid` survives `Destroy`, serializes trivially, and is exactly what `Clone`'s internal-reference remap needs.
@@ -155,6 +212,8 @@ Ten milestones, in dependency order. `O0`–`O3` are pure C# engine work with no
 ---
 
 ### O4 — Native Luau: vendoring, the shim, and the error boundary — **L**
+
+> **Built, October 2026.** `external/luau` is the submodule, `native/luau` the shim, `SpectraEngine.Scripting.Luau` the binding. Managed code reaches Luau through calls that return a status, and a host function fails by returning one. A script that runs for three seconds without a pause, or with the scripts holding more than 256 MB, is stopped at its line and switched off. `--script=<file>` on the demo is the proof with no scene. No Luau.CodeGen.
 
 **Scope.** Vendor `luau-lang/luau` as a submodule. CMake build of Luau.VM + Luau.Compiler behind a flat-C shim into one shared library per RID. `[LibraryImport]` bindings. A `LuauHost` owning state creation, `luaL_sandbox` + per-*script* `luaL_sandboxthread`, bytecode compile, `lua_pcall`-only invocation, the `lua_callbacks` interrupt watchdog, and a structured `IScriptOutput` sink.
 
@@ -174,6 +233,8 @@ Ten milestones, in dependency order. `O0`–`O3` are pure C# engine work with no
 
 ### O5 — Node handle bridge, generated bindings, `spectra.d.luau` — **L**
 
+> **Built, October 2026.** `ScriptApiGenerator` sits in `SpectraEngine.Entities.Generator`, the one analyzer project. It writes the binding and a description of the API as data. `LuauDefinitions` writes `spectra.d.luau` from the description and `ScriptApiJson` the JSON the site's reference is made from. `luau-lsp` checks the definitions file against sample scripts under both of its solvers, in CI. `Position` is world space, with `LocalPosition` beside it.
+
 **Scope.** Nodes cross into Luau as **tagged full userdata** holding a `(slot, generation)` handle into a host-side table — never a raw pointer, never a reflection-driven wrapper. The generation counter is what makes `Destroy` safe: a stale handle fails the check and errors with *"attempt to index a destroyed node"*, which is precisely how a destroyed Roblox `Instance` behaves, with no leaked references and no dangling managed roots. Cache one handle per node so identity comparison works — `part.Parent == workspace` must be true, and Roblox developers write that constantly.
 
 Property dispatch is a **generated switch on interned names**. One source generator emits the C# binding, the `__index`/`__newindex` switch, and the `spectra.d.luau` definition file from one source of truth — which is what makes `luau-lsp` autocomplete and `--!strict` checking work against Spectra out of the box via its `--definitions:@name=PATH` mechanism. Hand-written bindings drift from the C# API within weeks, and a drifting definition file is *worse* than none, because autocomplete then lies.
@@ -190,6 +251,8 @@ Also here: `O1`'s value types bound for real — `Vector3` on Luau's native vect
 
 ### O6 — The Command Bar — **S**
 
+> **Dropped.** `console.md` `C7` took its place, and that is not built. A line that starts with `>` is refused.
+
 **Studio's tightest iteration loop is not Play — it is the Command Bar.** Type Luau, press Enter, it executes immediately against the live **edit-mode** scene with no Play cycle at all. Plugins run in edit mode too. Any plan that is Play-only measures itself against the wrong baseline and its honest iteration comparison against Studio is worse than it claims.
 
 **Scope.** One editor-owned `lua_State`, `lua_pcall` against the live scene, output into the `O4` sink. Multi-line entry, history, and — because the whole point is the live graph — the selection exposed as a global so `for _, p in selection do p.CFrame = ... end` works. Edit-mode script execution becomes a first-class concept rather than an afterthought.
@@ -203,6 +266,8 @@ Also here: `O1`'s value types bound for real — `Vector3` on Luau's native vect
 ---
 
 ### O7 — `Instance.new` and the Part-vs-Brush runtime split — **L**
+
+> **Built, October 2026.** `Instance.new("Part")` makes a part brush, which costs no recompile. It also makes a `Folder` and the five lights, and anything else is cloned from a node of the level. A world brush is never made, cloned, moved or destroyed by a script. `CsgBench openworld` has a case that spawns and destroys parts on every tick and still reports "world-size independent".
 
 **The design that only optimises scripted brush *moves* is optimising the wrong operation.** `Instance.new("Part")` is the most common script operation in all of Roblox, and it falls off the incremental compile path **by construction**. Verified in `SceneNode.cs`: the `Brush` setter takes `if (had != has) Owner?.MarkStaticWorldDirty();` on attach or detach — because attach/detach changes the placement *count*, which shifts every later slot, so the retained snapshot cannot patch it. `MarkStaticWorldDirty` sets `_snapshotForceFull = true` and the next compile takes the O(world) full-walk path. **A spawn loop therefore full-recompiles the world on every frame it runs**, and the world-size-independence pillar does not cover it.
 
@@ -228,6 +293,8 @@ Also here: `O1`'s value types bound for real — `Vector3` on Luau's native vect
 
 ### O8 — Script payload, lifecycle, and the frame-phase pump points — **M**
 
+> **Built, October 2026, on the tick.** `SceneNode.Script` names a `.luau` file and has `IsEnabled` and `IsModule`. One Luau state for each play session, one thread with globals of its own for each script. `PlaySession` calls the scripts before the physics step (`PreSimulation`, `Stepped`) and at the end of the tick (`PostSimulation`, `Heartbeat`), with the fixed step. Nothing fires once a frame, so there is no `PreRender`. `task.wait` and its relatives count whole ticks in the entity runtime's queue.
+
 **Scope.**
 - **A script is a NODE with a `Script` payload** (`SceneNode.Script`), not a component bolted onto the node it drives — so `script.Parent` is literally the parent node, exactly as in Roblox. This falls out for free: the BVH only tracks nodes carrying `MeshRenderer` or `Brush`, so a script-only node is automatically invisible to the spatial index and irrelevant to the static world. The setter is the simplest of the payload setters — assign, notify the owner — and must **not** call the spatial-component hook or `MarkStaticWorldDirty`. **`Script` carries exactly one axis: `bool IsModule`** (Roblox's `ModuleScript` versus everything else). `Script.Disabled`. Module `require` caching keyed on `SceneNode.Id` (stable across reparent and rename), so a moved module does not re-execute — matching Roblox.
   - *Superseded, 2026-08-21 — this bullet previously specified `ScriptKind { Server, Client, Module }`, shipping Server + Module and "reserving Client so the naming never has to change".* **That reservation is spent, not honoured.** `docs/realms.md` §6.2 and R11 collapse run location into the node's `Realm`: a client script is a script node declared `Realm = "Client"`, a server script is one that resolves to `Server`, and there is no second script *type* to select — so `ScriptKind` loses both `Server` and `Client` and what remains is the `IsModule` flag above. `docs/networking.md` §8 `N15` and its item 4 record the same correction from the other side. Design authority: `realms.md`.
@@ -248,6 +315,8 @@ Also here: `O1`'s value types bound for real — `Vector3` on Luau's native vect
 
 ### O9 — Play / Stop — **M**, and honestly gated
 
+> **Built, October 2026, with a journal.** No snapshot is taken at Play. The play journal keeps the first value of everything a level changes and Stop puts each back, so a world brush never leaves the scene and nothing recompiles. The Luau state is made when the entity runtime starts and closed when it stops, so Stop, a map load and the restart after a crash all end every script. A script is read fresh on every Play, and there is no reload while a level plays.
+
 **Scope.** `EditorMode { Edit, Play, Paused }`. On Play: a fresh `lua_State` (one `lua_close` and one new state is a deterministic, total teardown of every coroutine, ref and connection — which is *precisely* the thing a collectible ALC cannot guarantee) plus a state capture. On Stop: restore, discard the VM.
 
 **The plan this replaces, and why.** An earlier design had Play/Stop **serialize** the authored graph using the scene file format. That plan has no substrate: there is **no scene serializer in the tree** — verified, the only `Serialize` hits in Core are D3D12 root-signature serialization and the compiled-shader blob writer — and `ROADMAP.md`'s `P2` schedules the first one. Worse, its stated benefit inverts the risk: *"Play/Stop continuously exercises the save/load path so serialization bugs surface on every playtest"* means **every serializer bug becomes destruction of the user's authored scene on Stop.** Studio restores from an in-memory snapshot specifically so that stopping a playtest cannot eat your place file. Making Play/Stop the serializer's first consumer is the highest-blast-radius way to test it.
@@ -266,10 +335,10 @@ Also here: `O1`'s value types bound for real — `Vector3` on Luau's native vect
 
 ### Deferred, named so they are not forgotten
 
-- **`luau-lsp` integration** — wire the `O5`-generated `spectra.d.luau` via `--definitions:@name=PATH`, plus `luau-analyze` in CI so type errors fail the build. **No editor dependency at all** — it ships against VS Code immediately and gives external-editor users a real workflow. Do this the moment `O5` lands; it is nearly free.
-- **Output panel** — the ring-buffer sink already exists from `O4`; only the panel is blocked, on `H1`.
+- **`luau-lsp` integration** — *built: the editor writes `spectra.d.luau`, `.luaurc` and the two `.vscode` files when a script is first opened, and CI checks the sample scripts with `luau-lsp analyze`.* Wire the `O5`-generated `spectra.d.luau` via `--definitions:@name=PATH`, plus `luau-analyze` in CI so type errors fail the build. **No editor dependency at all** — it ships against VS Code immediately and gives external-editor users a real workflow. Do this the moment `O5` lands; it is nearly free.
+- **Output panel** — *built: a script's line in Output opens its file at the line.* The ring-buffer sink already exists from `O4`; only the panel is blocked, on `H1`.
 - **Luau debugger** — `lua_singlestep`/`lua_breakpoint`/`lua_getlocal`. **L**, self-contained, and it has one trap worth writing down now: a breakpoint halts the render thread, which drives shutdown and the main loop's exit condition, so a naive stop-the-world breakpoint freezes the editor exactly like the infinite loop `O4` defends against. The debugger must break into a pump loop that keeps presenting frames, not a blocking wait.
-- **A minimal trigger/overlap service** giving scripts a `Touched` equivalent. The per-cell BSP already answers `ContainsPoint` and `Raycast`; `ROADMAP.md` `P8` is this work.
+- **A minimal trigger/overlap service** giving scripts a `Touched` equivalent. *Built for the player: `Touched` and `TouchEnded` on a part.* The per-cell BSP already answers `ContainsPoint` and `Raycast`; `ROADMAP.md` `P8` is this work.
 - **The compiled-C# game-assembly path** — a game project template, and a registration *scope* object that owns and reverses every engine-event subscription. That constraint must be decided before the C# extension API has users; retrofitting it later breaks every extension written against it.
 
 ---
@@ -301,22 +370,22 @@ The shortest path to a usable editor in `docs/archive/roadmap-2026-10.md` §4 is
 
 Each of these blocks something concrete. They were all open when this document was written; an item that a later document has since answered is **marked SETTLED in place, with the answer and its owner**, rather than deleted — a question that silently disappears reads as an oversight, and the record of what decided it is the useful part.
 
-1. **Must a shipped, AOT-published game be able to load and run editable scripts (mods, user content, post-ship patching)?** This is the single argument that makes Luau *decisive* rather than merely preferred — and nobody has actually asked for it. If shipped games are frozen and that is fine, the case weakens to familiarity plus teardown, which is still a good case but a different one. Answer before `O4`.
+1. **SETTLED 2026-10-11: a pack carries script source and the game compiles it at load.** So a shipped game runs scripts it was not published with. *(Was:)* **Must a shipped, AOT-published game be able to load and run editable scripts (mods, user content, post-ship patching)?** This is the single argument that makes Luau *decisive* rather than merely preferred — and nobody has actually asked for it. If shipped games are frozen and that is fine, the case weakens to familiarity plus teardown, which is still a good case but a different one. Answer before `O4`.
 
-2. **Does the AOT constraint bind the EDITOR, or only shipped games?** If editor = JIT, the compiled-C# reload path is legal there and C# stays a real second language. If the editor must also be AOT-published, that path is impossible and Luau becomes mandatory rather than preferred. `CLAUDE.md` does not distinguish, and the distinction is load-bearing.
+2. **SETTLED: the editor is published under NativeAOT too, so Luau is the only language that changes without a rebuild.** *(Was:)* **Does the AOT constraint bind the EDITOR, or only shipped games?** If editor = JIT, the compiled-C# reload path is legal there and C# stays a real second language. If the editor must also be AOT-published, that path is impossible and Luau becomes mandatory rather than preferred. `CLAUDE.md` does not distinguish, and the distinction is load-bearing.
 
-3. **`Position`: Roblox parity (world-space, with `LocalPosition` beside it) or engine clarity (local, with `WorldPosition` beside it)?** The pillar argues parity; engineering argues clarity; the wrong choice fails *silently* under any non-identity parent. Must be locked in `O5`, before any content is written against it.
+3. **SETTLED 2026-10-11: Roblox parity.** `Position` and `CFrame` are world space, with `LocalPosition` and `LocalCFrame` beside them. *(Was:)* **`Position`: Roblox parity (world-space, with `LocalPosition` beside it) or engine clarity (local, with `WorldPosition` beside it)?** The pillar argues parity; engineering argues clarity; the wrong choice fails *silently* under any non-identity parent. Must be locked in `O5`, before any content is written against it.
 
-4. **What does `Instance.new("Part")` produce during Play — a dynamic `MeshRenderer` node outside CSG, or a brush?** Brush means a full-world recompile per spawning frame. Dynamic means script-spawned parts do not carve, which is a real semantic difference from authored parts. Blocks `O7`.
+4. **SETTLED: a part brush**, which costs no recompile since `P7a`. *(Was:)* **What does `Instance.new("Part")` produce during Play — a dynamic `MeshRenderer` node outside CSG, or a brush?** Brush means a full-world recompile per spawning frame. Dynamic means script-spawned parts do not carve, which is a real semantic difference from authored parts. Blocks `O7`.
 
 5. **SETTLED 2026-08-21 — multiplayer is in the plan, on server-authoritative state replication with client prediction.** *(Was: is multiplayer in the eventual plan, and on what model? It decides whether `ScriptKind.Client`, `LocalScript` and a `RemoteEvent`/`Players` surface are real designs or placeholders.)* [`docs/networking.md`](networking.md) answers the model and owns the `N*` arc; `RemoteEvent`/`Players` are real designs there (`N15`). The `ScriptKind.Client` half of the question is answered *against* the reservation: [`docs/realms.md`](realms.md) §6.2 puts run location on the node's `Realm`, so a client script is a node declared `Realm = "Client"` and `ScriptKind` collapses to `bool IsModule` — see the correction under `O8` above. **Nothing in this list still turns on it.**
 
-6. **Own the interop from day one, or prototype against `NuLua.Luau` and swap?** Owning it is the risk-correct call (the lineage archived once already, two months ago) but it front-loads a cross-platform native build *before any scripting value is demonstrable*. This is a velocity-versus-risk call, not a technical one.
+6. **SETTLED: owned from day one**, as a submodule and a shim. *(Was:)* **Own the interop from day one, or prototype against `NuLua.Luau` and swap?** Owning it is the risk-correct call (the lineage archived once already, two months ago) but it front-loads a cross-platform native build *before any scripting value is demonstrable*. This is a velocity-versus-risk call, not a technical one.
 
-7. **Ship Luau.CodeGen (the native JIT) in `O4`, or interpreter-only first?** CodeGen sidesteps the .NET AOT rule entirely — it is native codegen inside a native library — and makes `--!native`/`@native` work exactly as a Roblox developer expects. It also roughly doubles the native build's per-RID complexity for performance nobody has yet demonstrated a need for.
+7. **SETTLED: interpreter only.** Native code generation is in no plan. *(Was:)* **Ship Luau.CodeGen (the native JIT) in `O4`, or interpreter-only first?** CodeGen sidesteps the .NET AOT rule entirely — it is native codegen inside a native library — and makes `--!native`/`@native` work exactly as a Roblox developer expects. It also roughly doubles the native build's per-RID complexity for performance nobody has yet demonstrated a need for.
 
-8. **Where does script source live — `.luau` files on disk, or embedded in the scene file?** Files are git-friendly, `luau-lsp`-friendly and hot-reload-friendly and are almost certainly correct; embedding is the `.rbxl` mental model a Roblox developer arrives with. If files, the `Script` payload holds a path and `O9`'s snapshot must decide whether it captures the path or the content.
+8. **SETTLED 2026-10-11: `.luau` files under `Assets/`**, named on the node by content path. *(Was:)* **Where does script source live — `.luau` files on disk, or embedded in the scene file?** Files are git-friendly, `luau-lsp`-friendly and hot-reload-friendly and are almost certainly correct; embedding is the `.rbxl` mental model a Roblox developer arrives with. If files, the `Script` payload holds a path and `O9`'s snapshot must decide whether it captures the path or the content.
 
-9. **Is the sandbox adversarial or mistake-containing?** Everything above is designed for mistake-containment and says so. An adversarial boundary (running scripts from strangers) needs a separate process and syscall filtering, not `luaL_sandbox` — a completely different architecture, decided now or not at all.
+9. **SETTLED 2026-10-11: it stops mistakes, not attackers.** *(Was:)* **Is the sandbox adversarial or mistake-containing?** Everything above is designed for mistake-containment and says so. An adversarial boundary (running scripts from strangers) needs a separate process and syscall filtering, not `luaL_sandbox` — a completely different architecture, decided now or not at all.
 
-10. **Is 1 Spectra unit = 1 Roblox stud?** Every number in every Roblox tutorial and forum post the developer copies depends on it, and it must be settled before `Size` ships or content exists. This overlaps `docs/archive/roadmap-2026-10.md` §11 item 13 (the default editing grid) — answer them together, not separately.
+10. **SETTLED 2026-08-21: no. One unit is one metre.** A number from a Roblox script is too big here: a `WalkSpeed` of 16 is 4.5. *(Was:)* **Is 1 Spectra unit = 1 Roblox stud?** Every number in every Roblox tutorial and forum post the developer copies depends on it, and it must be settled before `Size` ships or content exists. This overlaps `docs/archive/roadmap-2026-10.md` §11 item 13 (the default editing grid) — answer them together, not separately.

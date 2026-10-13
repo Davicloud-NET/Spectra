@@ -10,6 +10,9 @@ As of 2026-10-05 these parts exist. Everything else below is still a design.
 - The demo's `--command="<line>"`, and `--console`, which reads lines from its terminal.
 - The editor's Console panel, which forwards any line it does not know to the engine.
 - The console key during play: it frees the mouse and opens the panel, and a click in the view takes the mouse back.
+- What a script prints, as console lines that carry the script's file and line as data (`ConsoleLine.Place`). The Output panel opens the file there.
+
+Luau runs a level's scripts since 2026-10-13, and it does not run in the console. `C7` below is still a design, and a line that starts with `>` is refused.
 
 Two things were built differently from the text below. There is one console per engine: `SpectraConsole` is an instance that `Engine` owns, not a static facade. And the command that prints an entity is `ent_show`, not `ent_dump`.
 
