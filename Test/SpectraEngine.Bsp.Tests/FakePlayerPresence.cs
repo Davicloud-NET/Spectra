@@ -30,6 +30,7 @@ internal sealed class FakePlayerPresence : IPlayerPresence, ITunedPlayer
             state.Yaw = Yaw;
             state.Grounded = StandsOn != default;
             state.GroundNodeId = StandsOn;
+            state.SlideContacts.Add(RanInto);
             return state;
         }
     }
@@ -53,4 +54,10 @@ internal sealed class FakePlayerPresence : IPlayerPresence, ITunedPlayer
 
     // The part a mover would say the player stands on. None unless a test sets it.
     public Guid StandsOn { get; set; }
+
+    // The part a mover would say its slide stopped at. None unless a test sets it.
+    public Guid RanInto { get; set; }
+
+    // How far off anything solid a mover of this player would stop it.
+    public float SkinWidth { get; set; } = 0.010f;
 }

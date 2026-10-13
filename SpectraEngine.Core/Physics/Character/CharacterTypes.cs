@@ -187,6 +187,12 @@ public struct CharacterState
     // from the command.
     public float Yaw;
 
+    /// <summary>
+    /// The parts the slide of the last tick stopped at. Each counts as
+    /// touched, wherever the rest of the tick carried the character.
+    /// </summary>
+    public CharacterSlideContacts SlideContacts;
+
     public static CharacterState AtFeet(Vector3 feet) => new()
     {
         Position = feet,

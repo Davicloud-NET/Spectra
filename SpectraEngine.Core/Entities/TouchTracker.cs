@@ -27,8 +27,9 @@ public sealed class TouchTracker
     /// </summary>
     public const float ExitMargin = 0.05f;
 
-    // A sensor has CanQuery off, and a world brush never senses.
-    private static readonly SceneQueryFilter SensorFilter =
+    // A sensor has CanQuery off, and a world brush never senses. Neither
+    // does a subtractive brush, which a filter leaves out unless it is asked.
+    internal static readonly SceneQueryFilter SensorFilter =
         new() { IgnoreQueryFlags = true, ExcludeStaticWorldBrushes = true };
 
     private readonly EntityWorld _world;

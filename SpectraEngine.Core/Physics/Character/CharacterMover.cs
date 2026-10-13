@@ -43,6 +43,7 @@ public static class CharacterMover
 
         bool wasGrounded = state.Grounded;
         state.SteppedUpBy = 0f;
+        state.SlideContacts = default;
 
         source.BeginTick(TickVolume(in state, tuning, dt), in filter);
 
@@ -143,12 +144,17 @@ public static class CharacterMover
 
             float fraction = source.SweepCapsule(
                 CapsuleAt(in state, tuning), remaining, in filter,
-                out CharacterContactPlane plane, out _);
+                out CharacterContactPlane plane, out CharacterContactSource blocker);
 
             state.Position += remaining * fraction;
 
             if (fraction >= 1f)
                 break;
+
+            // Kept for the touch pass: the rest of the slide may end the
+            // tick clear of a part it stopped at. D is how near it stopped.
+            if (blocker.Node is { } stoppedAt && plane.Plane.D <= tuning.SkinWidth * 2f)
+                state.SlideContacts.Add(stoppedAt.Id);
 
             // Set from any blocking sweep, not from running out of iterations:
             // a riser stops the slide in one iteration.

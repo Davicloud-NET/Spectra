@@ -11,17 +11,18 @@ namespace SpectraEngine.Core.Entities;
 // TouchSignal. TouchTracker runs the pass and hands over what is near.
 internal sealed class PartTouches
 {
-    // For a player that hands out no tuning: the mover's own skin.
-    private const float DefaultSkin = 0.010f;
-
     private readonly EntityWorld _world;
 
     // In the order the touches began.
     private readonly List<Touch> _touches = [];
     private readonly List<Change> _changes = [];
     private long _pass;
-    private float _solidReach = 2f * DefaultSkin;
+    private float _solidReach;
+
+    // What the mover says of the last tick: the part the player stands on
+    // and the parts its slide stopped at.
     private Guid _ground;
+    private CharacterSlideContacts _ranInto;
 
     public PartTouches(EntityWorld world) => _world = world;
 
@@ -42,54 +43,78 @@ internal sealed class PartTouches
         _pass = 0;
     }
 
-    // What the mover knows is taken from it: the part the player stands on,
-    // and how far off anything solid it stops the player.
+    // What the mover knows is taken from it. The part the player stands on
+    // and the parts its slide stopped at are touched, wherever the tick left
+    // the player: off a corner the slide ends well clear of what it hit.
     public void BeginPass(IPlayerPresence? player)
     {
         _pass++;
         _changes.Clear();
         _ground = default;
+        _ranInto = default;
         if (player is not { IsPresent: true })
             return;
 
+        // The mover stops a skin off and counts as contact what is within two.
+        _solidReach = 2f * player.SkinWidth;
+
         CharacterState state = player.State;
-        if (state.Grounded)
+        _ranInto = state.SlideContacts;
+        if (state.Grounded && !_ranInto.Contains(state.GroundNodeId))
             _ground = state.GroundNodeId;
 
-        // The mover counts as contact what is within two skins.
-        _solidReach = 2f * ((player as ITunedPlayer)?.Tuning.SkinWidth ?? DefaultSkin);
+        Hold(_ground);
+        for (int i = 0; i < _ranInto.Count; i++)
+            Hold(_ranInto[i]);
     }
 
-    // Whether the pass has to measure the node: it is touched, or a script
-    // listens to it.
-    public bool Watches(SceneNode node) => IndexOf(node.Id) >= 0 || IsHeard(node.Id);
+    // Whether the pass has to measure the node: it is touched or a script
+    // listens to it, and the mover has not answered for it already.
+    public bool Watches(SceneNode node) =>
+        node.Id != _ground && !_ranInto.Contains(node.Id) && (IndexOf(node.Id) >= 0 || IsHeard(node.Id));
 
-    // The node is near the player and has CanTouch on. The distance is from
-    // the capsule's surface to its shape.
+    // A node Watches said yes to, with CanTouch on. The distance is from the
+    // capsule's surface to its shape.
     public void Measured(SceneNode node, float distance)
     {
         // The mover never lets the player into what is solid, so a solid
-        // part is touched from where the mover stops. Anything else is
-        // touched by overlap, as a trigger is.
+        // part is touched from where the mover counts it as contact.
+        // Anything else is touched by overlap, as a trigger is.
         float reach = node.CanCollide && node.Brush is not null ? _solidReach : 0f;
-        bool isStoodOn = _ground != default && node.Id == _ground;
+        Decide(node, distance <= reach, distance <= reach + TouchTracker.ExitMargin);
+    }
 
+    // By its id: the slide may have left the player out of reach of the
+    // pass's own search. What that search leaves out is left out here.
+    private void Hold(Guid id)
+    {
+        if (id == default || !_world.Scene.TryFindById(id, out SceneNode? node))
+            return;
+
+        if (node.CanTouch && TouchTracker.SensorFilter.Accepts(node))
+            Decide(node, isTouching: true, isHolding: true);
+    }
+
+    // A touch that goes on is marked as seen while it holds. One that is
+    // not going on starts when the node is touched and a script listens.
+    private void Decide(SceneNode node, bool isTouching, bool isHolding)
+    {
         int at = IndexOf(node.Id);
         if (at >= 0)
         {
-            if (isStoodOn || distance <= reach + TouchTracker.ExitMargin)
+            if (isHolding)
                 _touches[at] = new Touch(node.Id, node.Name, _pass);
 
             return;
         }
 
-        if ((isStoodOn || distance <= reach) && IsHeard(node.Id))
+        if (isTouching && IsHeard(node.Id))
             _changes.Add(new Change(node.Id, node.Name, true, OldestListener(node.Id)));
     }
 
     // Queues a call for each listener of every touch the pass found started
-    // or ended. Ends go first, and each kind goes in the order the parts
-    // were first listened to, which is the same on every run.
+    // or ended. Ends go first, and each kind goes by the oldest listener a
+    // part has, which is the same on every run.
     public void EndPass(in TouchVisitor visitor)
     {
         // Not seen: out of reach, gone, switched off, or nobody walks.

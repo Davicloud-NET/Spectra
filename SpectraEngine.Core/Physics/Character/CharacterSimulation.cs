@@ -53,6 +53,9 @@ public sealed class CharacterSimulation : IPlayerPresence, ITunedPlayer
     /// <summary>Movement constants. An edit takes effect next tick.</summary>
     public CharacterTuning Tuning { get; }
 
+    /// <inheritdoc/>
+    public float SkinWidth => Tuning.SkinWidth;
+
     /// <summary>The brush-plane source, for its counters.</summary>
     public BrushPlaneCollisionSource Collision { get; }
 
@@ -183,6 +186,10 @@ public sealed class CharacterSimulation : IPlayerPresence, ITunedPlayer
     {
         // Around the mover, not in it: a replaced mover is still carried.
         CarryWithGround();
+
+        // Here as well as in the mover: a replaced mover that never writes
+        // them would leave the parts of a tick long past as touched.
+        _state.SlideContacts = default;
         Mover.Tick(ref _state, in command, _source, Tuning, deltaTime);
         _state.GroundOrigin = TryFindGround(out Scene.SceneNode? ground) ? ground.WorldPosition : default;
 

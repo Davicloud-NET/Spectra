@@ -24,6 +24,14 @@ public interface IPlayerPresence
     /// </summary>
     CharacterState State { get; }
 
+    /// <summary>
+    /// How far off anything solid the player's mover stops it, in units. A
+    /// solid part within twice this is touched. A host whose mover keeps
+    /// another gap than the engine's says so here.
+    /// </summary>
+    // What CharacterTuning starts with.
+    float SkinWidth => 0.010f;
+
     /// <summary>Puts the player at rest with its feet at a point.</summary>
     /// <param name="feet">Where the feet go, in world space.</param>
     /// <param name="yaw">The facing to take, in radians, or null to keep looking the same way.</param>
