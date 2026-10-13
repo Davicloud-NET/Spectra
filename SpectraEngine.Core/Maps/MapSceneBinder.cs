@@ -41,11 +41,8 @@ public static class MapSceneBinder
     }
 
     // The oldest reader that can open and re-save this scene without losing data.
-    // Per document: only a shaped light (spot, rect, disc), an entity, a node
-    // flag that is off, a script, a declared realm or state, or a tag or an
-    // attribute raises the floor, since an older editor would drop those on
-    // save. So does an attribute name an older reader refuses. Light kind is
-    // tested, not its numbers. Takes the max of what applies.
+    // Per document, and the highest of what the scene holds. A light's kind is
+    // tested, not its numbers.
     private static int RequiredReaderVersion(Scene.Scene scene)
     {
         int floor = EngineInfo.MinimumReadableMapVersion;

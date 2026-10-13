@@ -10,12 +10,34 @@ namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
 /// The version a save stamps and the reader a map asks for: a map asks for
-/// the newest thing it holds, a map of each earlier format still loads, and
-/// one that asks for more than this build reads is refused by its version.
+/// the newest thing it holds, a map stamped with an earlier version still
+/// loads, and one that asks for more than this build reads is refused by its
+/// version.
 /// </summary>
 public sealed class MapFormatFloorTests
 {
     private const string Stamp = "\"spectramap\": 7";
+
+    // Hand-written, as format 6 saved it: such a name under a floor of 6.
+    private const string SavedByFormat6 = """
+        {
+          "spectramap": 6,
+          "minimumReadableVersion": 6,
+          "engine": "1.0.0",
+          "scene": {
+            "name": "S"
+          },
+          "nodes": [
+            {
+              "id": "3f2a1c88-4b6d-4a19-9d0e-77c1f0a2b3e4",
+              "name": "Brick",
+              "transform": {"p":[0,0,0]},
+              "attributes": {"Damage":25,"ui/hud.title-2":true},
+              "children": []
+            }
+          ]
+        }
+        """;
 
     private static string Saved(Scene scene) =>
         Encoding.UTF8.GetString(MapWriter.Write(MapSceneBinder.FromScene(scene)));
@@ -96,16 +118,17 @@ public sealed class MapFormatFloorTests
         MapSceneBinder.FromScene(scene).MinimumReadableVersion.ShouldBe(EngineInfo.NodeTagsMapVersion);
     }
 
-    // Format 6 could be saved with such a name and a floor of 6.
     [Fact]
     public void A_map_saved_with_such_a_name_and_a_floor_of_6_loads_and_its_next_save_asks_for_7()
     {
-        string now = Saved(WithAttribute("a.b"));
-        string before = now
-            .Replace(Stamp, "\"spectramap\": 6")
-            .Replace("\"minimumReadableVersion\": 7", "\"minimumReadableVersion\": 6");
+        string before = SavedByFormat6.ReplaceLineEndings("\n") + "\n";
+        byte[] beforeBytes = Encoding.UTF8.GetBytes(before);
+        string after = before
+            .Replace("\"spectramap\": 6", Stamp)
+            .Replace("\"minimumReadableVersion\": 6", "\"minimumReadableVersion\": 7");
 
-        Saved(Loaded(before)).ShouldBe(now);
+        MapWriter.Write(MapReader.Read(beforeBytes)).ShouldBe(beforeBytes, "read and written, it keeps its bytes");
+        Saved(Loaded(before)).ShouldBe(after);
     }
 
     [Theory]
@@ -115,7 +138,7 @@ public sealed class MapFormatFloorTests
     [InlineData(4)]
     [InlineData(5)]
     [InlineData(6)]
-    public void A_map_of_each_earlier_format_loads_to_the_same_nodes(int version)
+    public void A_map_stamped_with_each_earlier_version_loads_to_the_same_nodes(int version)
     {
         string now = Saved(HoldingWhatCameWith(version));
         now.ShouldContain($"\"minimumReadableVersion\": {version}");
@@ -125,7 +148,7 @@ public sealed class MapFormatFloorTests
         MapDocument document = MapReader.Read(oldBytes);
 
         document.FormatVersion.ShouldBe(version);
-        MapWriter.Write(document).ShouldBe(oldBytes, "read and written, an old file keeps its bytes");
+        MapWriter.Write(document).ShouldBe(oldBytes, "read and written, the file keeps its stamp");
         Saved(Loaded(old)).ShouldBe(now, "a save stamps the engine's version and nothing else is new");
     }
 
@@ -145,7 +168,9 @@ public sealed class MapFormatFloorTests
     [Fact]
     public void A_map_stamped_8_that_asks_for_a_reader_of_7_is_read()
     {
-        string newer = Saved(WithAttribute("a.b")).Replace(Stamp, "\"spectramap\": 8");
+        string saved = Saved(WithAttribute("a.b"));
+        saved.ShouldContain("\"minimumReadableVersion\": 7");
+        string newer = saved.Replace(Stamp, "\"spectramap\": 8");
 
         Loaded(newer).Root.Children[0].Children[0].Attributes.Contains("a.b").ShouldBeTrue();
     }

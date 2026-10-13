@@ -45,10 +45,8 @@ namespace SpectraEngine.Core
         // newer reader raises its own minimum.
         public const int MinimumReadableMapVersion = 1;
 
-        // Declared by a document carrying a light shape, an entity payload, a
-        // node flag that is off, a script, a realm or state on a node, or a
-        // tag or an attribute on one. An older editor would drop those on its
-        // next save. The last is for an attribute name an older reader refuses.
+        // What a document declares when it carries the thing named. An older
+        // editor would drop it on its next save, or refuse the file for it.
         public const int LightShapeMapVersion = 2;
         public const int EntityMapVersion = 3;
         public const int NodeFlagsMapVersion = 4;
