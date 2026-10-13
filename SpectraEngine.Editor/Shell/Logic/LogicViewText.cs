@@ -136,6 +136,10 @@ public static class LogicViewText
     public static string Truncated(int listed, int total) =>
         $"Showing the first {Number(listed)} of {Number(total)} entities.";
 
+    /// <summary>What to say when the level's scripts made more wires than the view was given.</summary>
+    public static string ScriptWiresCut(int listed) =>
+        $"Scripts made more than {Number(listed)} wires. The rest are not shown.";
+
     /// <summary>What the view says in place of a graph, or empty when it has one.</summary>
     public static string Empty(LogicEmptyReason reason) => reason switch
     {
@@ -176,7 +180,12 @@ public static class LogicViewText
         ArgumentNullException.ThrowIfNull(card);
 
         if (!card.IsStub)
-            return $"{card.Name}, {card.DisplayName}";
+        {
+            // The card's own line of its scripts may be cut short too.
+            string scripts = LogicText.ScriptsInside(card.ScriptNames);
+            string named = $"{card.Name}, {card.DisplayName}";
+            return scripts.Length == 0 ? named : $"{named}. {scripts}.";
+        }
 
         return card.Name.Length == 0 ? card.DisplayName + "." : $"{card.Name}. {card.DisplayName}.";
     }

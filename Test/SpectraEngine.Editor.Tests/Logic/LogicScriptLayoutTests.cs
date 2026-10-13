@@ -94,6 +94,23 @@ public sealed class LogicScriptLayoutTests
     }
 
     [Fact]
+    public void A_lane_keeps_room_for_dashes_on_both_sides_of_a_scripts_label()
+    {
+        LogicScene scene = Arrange(Graph(Designed()));
+
+        foreach (LogicSceneEdge edge in scene.Edges.Where(edge => edge.Edge.IsScript))
+        {
+            Rect label = edge.LabelBounds.ShouldNotBeNull();
+            double words = Ruler.Width(edge.Label.Text, LogicTextStyle.Label);
+            double lane = scene.Card(edge.Edge.To.Name).Bounds.X - scene.Card(edge.Edge.From.Name).Bounds.Right;
+
+            lane.ShouldBeGreaterThanOrEqualTo(words + 2 * LogicMetrics.ScriptLaneMargin, edge.Label.Text);
+            (label.X - edge.Start.X).ShouldBeGreaterThan(LogicMetrics.LaneMargin, edge.Label.Text);
+            (edge.End.X - label.Right).ShouldBeGreaterThan(LogicMetrics.LaneMargin, edge.Label.Text);
+        }
+    }
+
+    [Fact]
     public void A_script_that_hears_an_entity_and_sends_to_it_keeps_the_rule()
     {
         LogicScene scene = Arrange(Graph(Running(
@@ -174,6 +191,7 @@ public sealed class LogicScriptLayoutTests
 
             scene.Cards.Count(card => card.Card.IsScript).ShouldBeGreaterThan(0, $"seed {seed}");
             LogicSceneCheck.FirstTextProblem(scene).ShouldBeNull($"seed {seed}");
+            LogicSceneCheck.FirstCardCrossing(scene).ShouldBeNull($"seed {seed}");
         }
     }
 

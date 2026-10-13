@@ -77,7 +77,7 @@ internal sealed class LogicWirePens
             double width = Math.Max(_widths[look], least);
 
             _pens[look] = new ImmutablePen(
-                _brushes[look], width, Dashes((LogicWireLook)look, width), PenLineCap.Round, PenLineJoin.Round);
+                _brushes[look], width, Dashes((LogicWireLook)look), PenLineCap.Round, PenLineJoin.Round);
             _glows[look] = new ImmutablePen(_glow, width + _glowWidth, null, PenLineCap.Round, PenLineJoin.Round);
         }
 
@@ -96,13 +96,19 @@ internal sealed class LogicWirePens
         _widths[(int)look] = width;
     }
 
-    // A dash style counts in pen widths.
-    private ImmutableDashStyle? Dashes(LogicWireLook look, double width) => look switch
+    // A dash style counts in pen widths, and these count in the look's own.
+    // So far out, where a pen is held thicker, its dashes and gaps grow with
+    // it, and the round caps do not close the gaps.
+    private ImmutableDashStyle? Dashes(LogicWireLook look)
     {
-        LogicWireLook.Broken => new ImmutableDashStyle([_brokenDash / width, _brokenGap / width], 0),
-        LogicWireLook.Waiting => new ImmutableDashStyle([_waitingDash / width, _waitingGap / width], 0),
-        LogicWireLook.Script or LogicWireLook.ScriptFiring =>
-            new ImmutableDashStyle([_scriptDash / width, _scriptGap / width], 0),
-        _ => null,
-    };
+        double width = _widths[(int)look];
+        return look switch
+        {
+            LogicWireLook.Broken => new ImmutableDashStyle([_brokenDash / width, _brokenGap / width], 0),
+            LogicWireLook.Waiting => new ImmutableDashStyle([_waitingDash / width, _waitingGap / width], 0),
+            LogicWireLook.Script or LogicWireLook.ScriptFiring =>
+                new ImmutableDashStyle([_scriptDash / width, _scriptGap / width], 0),
+            _ => null,
+        };
+    }
 }

@@ -9,13 +9,15 @@ namespace SpectraEngine.Editor.Shell.Logic;
 
 // The level's wiring on its way to the screen: the graph, the part of it on
 // show, that part laid out, and how each wire looks. Each stage is built from
-// the one before, and only when what it is built from changed.
+// the one before, and only when what it is built from changed: the level,
+// its scripts, the scope and the selection.
 internal sealed class LogicArrangement
 {
     private static readonly IReadOnlySet<Guid> NoSelection = FrozenSet<Guid>.Empty;
 
     private readonly ILogicTextMeasure _ruler;
     private readonly LogicWireFaces _faces = new();
+    private readonly LogicSelection _selection = new();
     private List<int> _ringed = [];
     private List<int> _ringedBefore = [];
 
@@ -25,6 +27,7 @@ internal sealed class LogicArrangement
     private bool _showsScripts = true;
     private LogicScope _scope = new() { Mode = LogicScopeMode.AroundSelection };
     private bool _graphStale;
+    private bool _scriptsStale;
     private bool _scopeStale;
     private bool _selectionStale;
     private bool _wiresStale;
@@ -35,6 +38,8 @@ internal sealed class LogicArrangement
     public LogicGraphInfo? Info => _info;
 
     public LogicScope Scope => _scope;
+
+    public LogicSelection Selection => _selection;
 
     public LogicGraph? Graph { get; private set; }
 
@@ -99,7 +104,8 @@ internal sealed class LogicArrangement
         if (scripts is { Wires.Count: 0 })
             scripts = null;
 
-        _graphStale |= !ReferenceEquals(scripts, _scripts);
+        // A graph that says nothing of scripts is the same whatever they do.
+        _scriptsStale |= _showsScripts && !ReferenceEquals(scripts, _scripts);
         _scripts = scripts;
     }
 
@@ -116,17 +122,21 @@ internal sealed class LogicArrangement
         _scopeStale = true;
     }
 
-    public void SelectionChanged() => _selectionStale = true;
+    // The selected nodes, as a snapshot lists them.
+    public void SetSelection(IReadOnlyList<Guid> ids) => _selectionStale |= _selection.Take(ids);
 
     public void PlayChanged() => _wiresStale = true;
 
     // Rebuilds what is stale and nothing else.
-    public LogicArrangementChange Refresh(LogicSelection selection, LogicPlayState play)
+    public LogicArrangementChange Refresh(LogicPlayState play)
     {
+        LogicSelection selection = _selection;
         LogicArrangementChange change = LogicArrangementChange.None;
         bool layoutStale = false;
+        bool byScripts = _scriptsStale && !_graphStale && !_scopeStale && !_selectionStale
+            && play.IsPlaying == _laidOutPlaying;
 
-        if (_graphStale)
+        if (_graphStale || _scriptsStale)
         {
             Graph = _info is null ? null : LogicGraph.Build(_info, _schemas, _scripts, _showsScripts);
             _scopeStale = true;
@@ -156,13 +166,14 @@ internal sealed class LogicArrangement
         {
             Arrange(selection, play);
             change |= LogicArrangementChange.Scene | LogicArrangementChange.Looks;
+            change |= byScripts ? LogicArrangementChange.ByScripts : LogicArrangementChange.None;
         }
         else if ((_wiresStale || _selectionStale) && _faces.Refresh(play, selection))
         {
             change |= LogicArrangementChange.Looks;
         }
 
-        _graphStale = _scopeStale = _selectionStale = _wiresStale = false;
+        _graphStale = _scriptsStale = _scopeStale = _selectionStale = _wiresStale = false;
         return change;
     }
 
@@ -249,7 +260,8 @@ internal sealed class LogicArrangement
         }
 
         // While a level runs every label keeps room for anything it may come
-        // to say, so the scene is laid out once for the whole run.
+        // to say, so no count moves a card. A connection a script makes or
+        // ends is another graph, and that is laid out again.
         _laidOutPlaying = play.IsPlaying;
         LogicScopedGraph drawn = _laidOutPlaying ? LogicLabelRoom.Reserve(Shown, _ruler) : Shown;
 

@@ -15,9 +15,12 @@ public sealed class LogicScene
         Edges = edges;
         Size = size;
 
+        // The entity's card, for a node that also has one as a script.
         foreach (LogicSceneCard card in cards)
         {
-            if (!card.Card.IsStub)
+            if (card.Card.IsEntity)
+                _byNode[card.Card.NodeId] = card;
+            else if (card.Card.IsScript)
                 _byNode.TryAdd(card.Card.NodeId, card);
         }
     }
@@ -31,7 +34,10 @@ public sealed class LogicScene
     /// <summary>How much room the scene takes. Everything with text in it lies inside.</summary>
     public Size Size { get; }
 
-    /// <summary>The card of an entity, or null when the scene does not show it.</summary>
+    /// <summary>
+    /// The card of an entity or of a script, or null when the scene does not
+    /// show it. The entity's, for a node that has both.
+    /// </summary>
     public LogicSceneCard? CardOf(Guid nodeId) => _byNode.GetValueOrDefault(nodeId);
 
     /// <summary>The room the cards of these entities take together, or null when none is on show.</summary>

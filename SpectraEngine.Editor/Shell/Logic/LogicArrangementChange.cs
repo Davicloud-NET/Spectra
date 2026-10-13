@@ -16,4 +16,8 @@ internal enum LogicArrangementChange
 
     // A drawing would differ.
     Looks = 4,
+
+    // Nothing differs but what the level's scripts hear and send. That comes
+    // and goes by itself, with nobody asking for another picture.
+    ByScripts = 8,
 }

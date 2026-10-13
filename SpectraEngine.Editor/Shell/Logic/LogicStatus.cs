@@ -94,7 +94,7 @@ public sealed record LogicStatus(
             wires,
             LogicViewText.GoingNowhere(counts.WiresGoingNowhere),
             unwired,
-            TruncatedText(info))
+            TruncatedText(info, scoped.Graph))
         {
             GoingNowhereSender = FirstGoingNowhere(scoped),
             UnwiredShort = LogicViewText.UnwiredShort(unwiredCount, counts.UnwiredCards),
@@ -117,6 +117,11 @@ public sealed record LogicStatus(
         return null;
     }
 
-    private static string TruncatedText(LogicGraphInfo info) =>
-        info.IsTruncated ? LogicViewText.Truncated(info.Entities.Count, info.TotalEntities) : "";
+    private static string TruncatedText(LogicGraphInfo info, LogicGraph? graph = null)
+    {
+        if (info.IsTruncated)
+            return LogicViewText.Truncated(info.Entities.Count, info.TotalEntities);
+
+        return graph is { HasMoreScriptWires: true } ? LogicViewText.ScriptWiresCut(LogicScriptWiring.MaxWires) : "";
+    }
 }

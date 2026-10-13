@@ -74,7 +74,7 @@ public sealed class LogicGraphInfo
         for (int i = 0; i < nodes.Count && scripts.Count < MaxScripts; i++)
         {
             if (Runs(nodes[i]))
-                scripts.Add(new LogicScriptInfo(nodes[i].Id, nodes[i].Name, EntityAbove(nodes[i])));
+                scripts.Add(new LogicScriptInfo(nodes[i].Id, nodes[i].Name, EntityOf(nodes[i])));
         }
 
         return [.. scripts];
@@ -82,12 +82,13 @@ public sealed class LogicGraphInfo
 
     private static bool Runs(SceneNode node) => node.Script is { IsEnabled: true, IsModule: false };
 
-    private static Guid EntityAbove(SceneNode script)
+    // A script may sit on the node of the entity itself.
+    private static Guid EntityOf(SceneNode script)
     {
-        for (SceneNode? above = script.Parent; above is not null; above = above.Parent)
+        for (SceneNode? node = script; node is not null; node = node.Parent)
         {
-            if (above.Entity is not null)
-                return above.Id;
+            if (node.Entity is not null)
+                return node.Id;
         }
 
         return Guid.Empty;
@@ -133,7 +134,7 @@ public sealed class LogicGraphInfo
             LogicScriptInfo script = Scripts[seen++];
             if (nodes[i].Id != script.NodeId
                 || !string.Equals(nodes[i].Name, script.Name, StringComparison.Ordinal)
-                || EntityAbove(nodes[i]) != script.EntityId)
+                || EntityOf(nodes[i]) != script.EntityId)
             {
                 return false;
             }

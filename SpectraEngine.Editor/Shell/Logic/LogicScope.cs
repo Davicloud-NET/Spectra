@@ -11,7 +11,9 @@ public sealed class LogicScope
 
     /// <summary>
     /// How many wires away from a selected entity a card may be and still
-    /// show. Zero shows the selected entities alone.
+    /// show. A script's card costs no step: what a script hears from one
+    /// entity and sends to another is one wire between the two. Zero shows
+    /// the selected cards and the scripts that reach them.
     /// </summary>
     public int Steps { get; init; } = 2;
 
@@ -66,40 +68,45 @@ public sealed class LogicScope
     {
         var shown = new bool[graph.Cards.Count];
         var steps = new int[graph.Cards.Count];
-        var reached = new Queue<LogicCard>();
+
+        // Nearest first: a card reached for no step goes to the front.
+        var reached = new LinkedList<LogicCard>();
 
         foreach (LogicCard card in graph.Cards)
         {
             if (!card.IsStub && selection.Contains(card.NodeId))
             {
                 shown[card.Index] = true;
-                reached.Enqueue(card);
+                reached.AddLast(card);
             }
         }
 
-        while (reached.Count > 0)
+        while (reached.First is { } next)
         {
-            LogicCard card = reached.Dequeue();
-            if (steps[card.Index] >= Steps)
-                continue;
+            LogicCard card = next.Value;
+            reached.RemoveFirst();
 
             foreach (LogicEdge edge in graph.Leaving(card))
-                Reach(edge.To, steps[card.Index] + 1);
+                Reach(edge.To, steps[card.Index]);
 
             foreach (LogicEdge edge in graph.Arriving(card))
-                Reach(edge.From, steps[card.Index] + 1);
+                Reach(edge.From, steps[card.Index]);
         }
 
         return shown;
 
-        void Reach(LogicCard card, int distance)
+        void Reach(LogicCard card, int from)
         {
-            if (shown[card.Index])
+            int distance = from + (card.IsScript ? 0 : 1);
+            if (distance > Steps || (shown[card.Index] && steps[card.Index] <= distance))
                 return;
 
             shown[card.Index] = true;
             steps[card.Index] = distance;
-            reached.Enqueue(card);
+            if (card.IsScript)
+                reached.AddFirst(card);
+            else
+                reached.AddLast(card);
         }
     }
 

@@ -27,7 +27,6 @@ public sealed class LogicViewModel : ObservableObject
 
     private readonly LogicArrangement _arrangement;
     private readonly LogicPlayState _play = new();
-    private readonly LogicSelection _selection = new();
     private readonly LogicShownEntities _shown = new();
     private readonly LogicViewPlace _place;
 
@@ -181,7 +180,7 @@ public sealed class LogicViewModel : ObservableObject
         set
         {
             _place.Resize(value);
-            _place.FitIfAsked(Scene, _selection.Ids);
+            _place.FitIfAsked(Scene, _arrangement.Selection.Ids);
         }
     }
 
@@ -244,9 +243,7 @@ public sealed class LogicViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        if (_selection.Take(snapshot.SelectedIds))
-            _arrangement.SelectionChanged();
-
+        _arrangement.SetSelection(snapshot.SelectedIds);
         _arrangement.SetInfo(snapshot.LogicGraph);
         _arrangement.SetScripts(snapshot.LogicPlay?.Scripts);
         Refresh(TakePlay(snapshot.LogicPlay));
@@ -259,8 +256,7 @@ public sealed class LogicViewModel : ObservableObject
     /// </summary>
     public void Reset()
     {
-        _selection.Clear();
-        _arrangement.SelectionChanged();
+        _arrangement.SetSelection([]);
         _arrangement.SetInfo(null);
         _arrangement.SetScripts(null);
 
@@ -276,7 +272,7 @@ public sealed class LogicViewModel : ObservableObject
     public bool IsSelected(LogicCard card)
     {
         ArgumentNullException.ThrowIfNull(card);
-        return _selection.Contains(card);
+        return _arrangement.Selection.Contains(card);
     }
 
     /// <summary>Whether the filter leaves a card out.</summary>
@@ -351,19 +347,22 @@ public sealed class LogicViewModel : ObservableObject
 
     private void Refresh(bool redraw = false)
     {
-        LogicArrangementChange change = _arrangement.Refresh(_selection, _play);
+        LogicArrangementChange change = _arrangement.Refresh(_play);
 
         if (change.HasFlag(LogicArrangementChange.Shown))
             TakeShown();
 
+        // What scripts connect is no picture the user asked for, so it does
+        // not follow the selection: the graph stays where the user put it.
+        bool follows = IsAroundSelection && !change.HasFlag(LogicArrangementChange.ByScripts);
         if (change.HasFlag(LogicArrangementChange.Scene) && Scene is { Cards.Count: > 0 } scene)
-            _place.LaidOut(_shown.Ids, scene.Size, followsSelection: IsAroundSelection);
+            _place.LaidOut(_shown.Ids, scene.Size, follows);
 
         redraw |= Wiring.Take(_arrangement.Info, Shown, Scene, IsPlaying);
         if (redraw || change.HasFlag(LogicArrangementChange.Looks))
             Redraw?.Invoke();
 
-        _place.FitIfAsked(Scene, _selection.Ids);
+        _place.FitIfAsked(Scene, _arrangement.Selection.Ids);
 
         // Wired cards keep their places, so the card a selection gives an
         // entity with no wires lands past them, perhaps out of sight.

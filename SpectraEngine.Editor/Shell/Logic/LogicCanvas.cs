@@ -35,8 +35,9 @@ public sealed class LogicCanvas : Control
     private bool _moved;
     private bool _clicks;
 
-    // The entity whose card the first press of a double click was on.
-    private Guid? _firstPressed;
+    // The card the first press of a double click was on. By now it may be
+    // of a graph that is gone, and still says which node and whether a script.
+    private LogicCard? _firstPressed;
 
     /// <summary>Creates the canvas.</summary>
     public LogicCanvas()
@@ -165,11 +166,11 @@ public sealed class LogicCanvas : Control
 
         if (e.ClickCount == 1)
         {
-            _firstPressed = _clicks ? EntityOf(_pressHit.Card) : null;
+            _firstPressed = _clicks && _pressHit.Card is { Card.IsStub: false } pressed ? pressed.Card : null;
             if (_clicks)
                 model.Wiring.Press(_pressPoint, _pressHit);
         }
-        else if (_clicks && e.ClickCount == 2 && _firstPressed is Guid entity)
+        else if (_clicks && e.ClickCount == 2 && _firstPressed is { } first)
         {
             // The second press frames the card the first was on, wherever
             // that card is by now: the first click may have selected it, and
@@ -179,10 +180,10 @@ public sealed class LogicCanvas : Control
             _pans = false;
 
             // A script has no place in the level to frame. Its code is what there is to see.
-            if (model.Graph?.CardOf(entity) is { IsScript: true })
-                OpenScriptRequested?.Invoke(entity);
+            if (first.IsScript)
+                OpenScriptRequested?.Invoke(first.NodeId);
             else
-                FrameRequested?.Invoke(entity);
+                FrameRequested?.Invoke(first.NodeId);
         }
 
         Focus();

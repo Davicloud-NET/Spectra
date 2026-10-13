@@ -14,6 +14,11 @@ internal static class LogicCardOrder
             return Math.Sign(byName);
 
         int byStub = ((int)a.Stub).CompareTo((int)b.Stub);
-        return byStub != 0 ? byStub : a.NodeId.CompareTo(b.NodeId);
+        if (byStub != 0)
+            return byStub;
+
+        // A node that carries an entity and a script has a card for each.
+        int byNode = a.NodeId.CompareTo(b.NodeId);
+        return byNode != 0 ? byNode : a.IsScript.CompareTo(b.IsScript);
     }
 }

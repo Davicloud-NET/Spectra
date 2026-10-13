@@ -30,6 +30,18 @@ public sealed class LogicGraphInfoScriptTests
     }
 
     [Fact]
+    public void A_script_on_the_node_of_an_entity_is_inside_that_entity()
+    {
+        SceneNode door = Entity(_scene.Root, "Door7");
+        door.Script = new Script("Scripts/door.luau");
+
+        LogicGraphInfo info = LogicGraphInfo.Capture(_scene);
+
+        info.Entities.ShouldHaveSingleItem().NodeId.ShouldBe(door.Id);
+        info.Scripts.ShouldBe([new LogicScriptInfo(door.Id, "Door7", door.Id)]);
+    }
+
+    [Fact]
     public void A_script_that_is_switched_off_and_a_module_are_not_listed()
     {
         SceneNode button = Entity(_scene.Root, "KeyButton");

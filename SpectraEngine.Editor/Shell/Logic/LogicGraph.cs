@@ -28,9 +28,13 @@ public sealed class LogicGraph
         _arriving = new List<LogicEdge>?[cards.Count];
         _leaving = new List<LogicEdge>?[cards.Count];
 
+        // A node that carries an entity and a script has a card for each,
+        // and its id finds the entity's.
         foreach (LogicCard card in cards)
         {
-            if (!card.IsStub)
+            if (card.IsEntity)
+                _byNode[card.NodeId] = card;
+            else if (card.IsScript)
                 _byNode.TryAdd(card.NodeId, card);
         }
 
@@ -88,6 +92,9 @@ public sealed class LogicGraph
     /// <summary>How many scripts have a card: the ones that hear or send something right now.</summary>
     public int ScriptCardCount { get; internal init; }
 
+    /// <summary>Whether the level's scripts made more wires than the snapshot listed.</summary>
+    public bool HasMoreScriptWires { get; internal init; }
+
     /// <summary>How many wires the level has.</summary>
     public int WireCount { get; internal init; }
 
@@ -108,7 +115,8 @@ public sealed class LogicGraph
 
     /// <summary>
     /// The card of an entity or of a script, or null when the node is neither
-    /// an entity the level lists nor a script with a card.
+    /// an entity the level lists nor a script with a card. The entity's, for
+    /// a node that has both.
     /// </summary>
     public LogicCard? CardOf(Guid nodeId) => _byNode.GetValueOrDefault(nodeId);
 
