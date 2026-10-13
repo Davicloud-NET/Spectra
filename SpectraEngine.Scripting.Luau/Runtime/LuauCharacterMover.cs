@@ -3,15 +3,10 @@ using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-/// <summary>
-/// A mover written in Luau: it calls a script's function on every tick
-/// with the state, the command, the collision, the tuning and the step,
-/// and the player gets the state the function leaves. When the function
-/// fails, waits or is stopped, the built-in mover moves the player on that
-/// same tick and on every tick after.
-/// </summary>
-// The function works on a copy of the state. A tick it did not finish
-// leaves the player's own state untouched for the built-in mover.
+// A mover written in Luau: every tick it calls a script's function with the
+// state, the command, the collision, the tuning and the step. The function
+// works on a copy of the state. When it fails, waits or is stopped, the
+// built-in mover moves the player on that same tick, from the state as it was.
 internal sealed class LuauCharacterMover : ICharacterMover
 {
     public const string TookOver = "The built-in mover took over.";
@@ -24,8 +19,8 @@ internal sealed class LuauCharacterMover : ICharacterMover
     private readonly Action _failed;
     private bool _isOut;
 
-    /// <param name="handed">What the function is called with before the step, in its order.</param>
-    /// <param name="failed">Told once, when the built-in mover takes over.</param>
+    // `handed` is what the function is called with before the step, in its
+    // order. `failed` is told once, when the built-in mover takes over.
     public LuauCharacterMover(
         LuauHost host, MoverCall call, MoverFrame frame, MoverCollision collision, LuauReference[] handed, Action failed)
     {
@@ -37,10 +32,9 @@ internal sealed class LuauCharacterMover : ICharacterMover
         _failed = failed;
     }
 
-    /// <summary>The script whose function this calls. Null when no script handed it over.</summary>
+    // The script whose function this calls.
     public LuauScript? Script => _call.Script;
 
-    /// <inheritdoc/>
     public void Tick(
         ref CharacterState state,
         in CharacterCommand command,
@@ -54,7 +48,8 @@ internal sealed class LuauCharacterMover : ICharacterMover
         DefaultCharacterMover.Instance.Tick(ref state, in command, source, tuning, deltaTime);
     }
 
-    /// <summary>Lets the function and its thread go, for a mover another took the place of.</summary>
+    // For a mover another took the place of: lets its function and its
+    // thread go.
     public void LetGo()
     {
         _isOut = true;
@@ -78,9 +73,12 @@ internal sealed class LuauCharacterMover : ICharacterMover
                 state = _frame.Result;
                 return true;
             }
+
+            LetGo();
         }
         catch (Exception e) // boundary: nothing the tick calls may throw
         {
+            _isOut = true;
             failure = new ScriptMessage(
                 ScriptSeverity.Error, $"The mover failed: {e.Message}", _call.Script?.Name ?? string.Empty, 0);
         }
@@ -89,21 +87,18 @@ internal sealed class LuauCharacterMover : ICharacterMover
             _frame.Close();
         }
 
-        _isOut = true;
-        _call.LetGo();
-
         // Nothing to say when the level stopped under the call.
         if (failure is { } said)
-        {
-            _failed();
             Say(in said);
-        }
 
         return false;
     }
 
+    // The slot first: the built-in mover is in the mover's place before the
+    // line is told, whatever the sink then does.
     private void Say(in ScriptMessage failure)
     {
+        _failed();
         if (_host.IsClosed)
             return;
 

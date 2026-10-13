@@ -3,10 +3,9 @@ using SpectraEngine.Core.Physics.Character;
 namespace SpectraEngine.Scripting.Tests;
 
 // A walk over the demo's course that asks a mover for everything it does:
-// out of the start room through its door, up a staircase, through a
-// doorway and off the terrace, a sprint, up a ramp and off its platform,
-// into the side of a part, a jump onto it, off it again, and a slide along
-// a wall into a corner. The same commands for whoever moves the player.
+// through the start room's door, up a staircase, through a doorway, off the
+// terrace, a sprint, up a ramp, off its platform, into the side of a part,
+// a jump onto it and off again, and a slide along a wall into a corner.
 internal static class MoverCourse
 {
     // The yaw is (cos, 0, sin), so 0 walks +X and a quarter turn walks +Z.

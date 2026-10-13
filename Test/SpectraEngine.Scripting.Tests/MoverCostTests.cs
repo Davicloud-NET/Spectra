@@ -21,6 +21,9 @@ public sealed class MoverCostTests
     private const int Ticks = 60;
     private const int Runs = 3;
 
+    // Many, so the last ones run the code the runtime has compiled in full.
+    private const int TimedRuns = 12;
+
     private const string Nothing = "an empty loop";
 
     // What a mover does in one round, by what it is called in the table.
@@ -119,6 +122,11 @@ public sealed class MoverCostTests
     [Fact(Explicit = true)]
     public void The_cost_of_a_tick_and_of_every_crossing_is_written_down()
     {
+        // Once for nothing: the first walk runs code the runtime has not
+        // compiled in full yet, and would be timed several times too slow.
+        CourseTick(level => level);
+        PlateTick(level => level);
+
         var table = new StringBuilder();
         table.AppendLine("One tick of the player's mover on the demo's course: the middle tick, the mean and the worst.");
         Row(table, "the built-in mover", CourseTick(level => level));
@@ -193,7 +201,7 @@ public sealed class MoverCostTests
     private static TimedMover BestOf(bool hasCourse, Func<MoverLevel, MoverLevel> prepare, Action<MoverLevel> walk)
     {
         TimedMover? best = null;
-        for (int run = 0; run < Runs + 2; run++)
+        for (int run = 0; run < TimedRuns; run++)
         {
             using MoverLevel level = prepare(new MoverLevel(hasCourse));
 

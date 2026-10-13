@@ -10,11 +10,10 @@ using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.CrashCases;
 
-// A level that plays with a mover in Luau. It sweeps, slides and is refused
-// a wrong write on every tick, which is an error raised out of a host
-// function inside a thread the host resumes. Then it goes wrong in one of
-// the ways a mover can, and the built-in mover has to take the tick over.
-// Every line a script prints or the host reports runs the collector.
+// A level that plays with a mover in Luau. Every tick it sweeps, slides and
+// is refused a wrong write: an error raised out of a host function inside a
+// thread the host resumes. Then it goes wrong in one of the ways a mover
+// can, and the built-in mover takes over. Every line runs the collector.
 internal static class MoverCase
 {
     private const int Ticks = 240;
