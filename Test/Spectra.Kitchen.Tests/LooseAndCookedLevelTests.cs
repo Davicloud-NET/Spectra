@@ -20,7 +20,7 @@ public class LooseAndCookedLevelTests
 {
     // Long enough for the deepest script to ask everything, wait and count
     // three heartbeats.
-    private const int Ticks = 60;
+    private const int Ticks = 90;
 
     private static readonly Lazy<Played> BothRuns = new(PlayBoth);
 
@@ -41,6 +41,7 @@ public class LooseAndCookedLevelTests
         {
             played.Loose.ShouldContain(line => line.Contains($"{asker} | heartbeat | 3 beats of "), asker);
             played.Loose.ShouldContain(line => line.Contains($"{asker} | waited | "), asker);
+            played.Loose.ShouldContain(line => line.EndsWith($"{asker} | asked | everything", StringComparison.Ordinal), asker);
         }
 
         // A dropped line is a warning. The one error is the script with no file.
@@ -260,6 +261,110 @@ public class LooseAndCookedLevelTests
 
         cooked.ShouldBe(loose);
         loose.ShouldContain("too many arguments to 'Trigger' (no value expected, got 1 value)");
+    }
+
+    // A light comes through the pack as a record of its own. What a script
+    // reads of it has to be what the level was built with.
+    [Theory]
+    [InlineData("Sun | has Enabled | true")]
+    [InlineData("Sun | has Brightness | 3.5")]
+    [InlineData("Lamp | has Brightness | 12")]
+    [InlineData("Lamp | has Range | 6.5")]
+    [InlineData("Lamp | has Color | 1, 0.797738, 0.484529")]
+    [InlineData("Spot | has Range | 9.25")]
+    [InlineData("Panel | has Brightness | 6")]
+    [InlineData("Panel | has Range | 5")]
+    [InlineData("Disc | has Enabled | false")]
+    [InlineData("Disc | has Range | 4")]
+    [InlineData("Disc | after the light | true 1 ff6d2d 1, 0.425575, 0.174595")]
+    [InlineData("Lamp | after the light | false 6 ffa63e 1, 0.649849, 0.242265")]
+    public void A_light_reads_and_takes_the_same_in_both_levels(string said)
+    {
+        Played played = Play();
+
+        played.Loose.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+        played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("Sun | has Range | ", "Range is not a valid member of DirectionalLight \"Sun renamed\"")]
+    [InlineData("Sun | reach | ", "Range is not a valid member of DirectionalLight \"Sun renamed\"")]
+    [InlineData("Crate | has Brightness | ", "Brightness is not a valid member of Part \"Crate renamed\"")]
+    [InlineData("Floor | has Enabled | ", "Enabled is not a valid member of Part \"Floor renamed\"")]
+    [InlineData("Lamp | has Visible | ", "Visible is not a valid member of PointLight \"Lamp renamed\"")]
+    [InlineData("Shelf | hide | ", "Visible is not a valid member of Folder \"Shelf renamed\"")]
+    [InlineData("Relay | walk through | ", "CanCollide is not a valid member of logic_relay \"Relay renamed\"")]
+    public void A_member_of_another_class_is_refused_in_the_same_words_in_both_levels(string asked, string words)
+    {
+        Played played = Play();
+
+        string loose = played.Loose.Single(line => line.Contains(asked));
+        string cooked = played.Cooked.Single(line => line.Contains(asked));
+
+        cooked.ShouldBe(loose);
+        loose.ShouldEndWith(words);
+    }
+
+    // The switches are bits of a node's record in the pack. A mesh the pack
+    // does not bind and a brush entity keep theirs.
+    [Theory]
+    [InlineData("Crate | has CanCollide | true")]
+    [InlineData("Crate | after the switches | false false false false")]
+    [InlineData("Prop | after the switches | false false false false")]
+    [InlineData("Door | after the switches | false false false false")]
+    [InlineData("Leaf | walk through | done")]
+    [InlineData("Bulb | hide | done")]
+    [InlineData("Floor | has Visible | true")]
+    [InlineData("Floor | after the switches | true true true true")]
+    [InlineData("Doorway | after the switches | true true true true")]
+    [InlineData("Plank | after the switches | true true true true")]
+    public void A_part_and_a_mesh_read_and_take_the_same_switches_in_both_levels(string said)
+    {
+        Played played = Play();
+
+        played.Loose.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+        played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+    }
+
+    // Baked, a world brush has no brush on its node. It still says it is one.
+    [Theory]
+    [InlineData("Floor", "walk through", "CanCollide")]
+    [InlineData("Floor", "hide", "Visible")]
+    [InlineData("Doorway", "hide from rays", "CanQuery")]
+    [InlineData("Plank", "stop touching", "CanTouch")]
+    public void A_world_brush_refuses_a_switch_in_the_same_words_in_both_levels(string node, string asked, string member)
+    {
+        Played played = Play();
+
+        string loose = played.Loose.Single(line => line.Contains($"{node} | {asked} | "));
+        string cooked = played.Cooked.Single(line => line.Contains($"{node} | {asked} | "));
+
+        cooked.ShouldBe(loose);
+        loose.ShouldEndWith(
+            $"{node} renamed cannot change its {member}: it is a world brush, fused into the level, and only " +
+            "parts can change while a level plays. Convert the brush to a part.");
+    }
+
+    // A keyvalue is text in the map and in the pack. Its type comes from the
+    // class, which both levels run with.
+    [Theory]
+    [InlineData("Door | attribute speed | number 100")]
+    [InlineData("Door | attribute movedir | Vector3 0, 1, 0")]
+    [InlineData("Door | attribute startopen | boolean false")]
+    [InlineData("Door | attribute wait | number 4")]
+    [InlineData("Door | attribute tag | nil nil")]
+    [InlineData("Relay | attribute startdisabled | boolean false")]
+    [InlineData("Relay | attribute tag | string first")]
+    [InlineData("Relay | attribute spawnflags | string 1")]
+    [InlineData("Relay | attribute nothing | nil nil")]
+    [InlineData("Start | attribute speed | nil nil")]
+    [InlineData("Crate | attribute speed | nil nil")]
+    public void An_attribute_reads_the_same_in_both_levels(string said)
+    {
+        Played played = Play();
+
+        played.Loose.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+        played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
     }
 
     // Skips where Luau is not built. The level is cooked and played once for

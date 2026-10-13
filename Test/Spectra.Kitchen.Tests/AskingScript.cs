@@ -146,5 +146,39 @@ internal static class AskingScript
         	target:Open()
         	say("sent Open", target.OnOpen == target.OnOpen)
         end
+
+        -- A light's members, the switches of a part, and what a builder typed
+        -- into an entity. A node that has no such member answers with the error.
+        local function ask(what, read)
+        	local _, answer = pcall(read)
+        	say(what, answer)
+        end
+
+        for _, member in { "Enabled", "Brightness", "Color", "Range", "CanCollide", "CanQuery", "CanTouch", "Visible" } do
+        	ask("has " .. member, function() return target[member] end)
+        end
+
+        attempt("switch the light", function() target.Enabled = not target.Enabled end)
+        attempt("dim", function() target.Brightness /= 2 end)
+        attempt("tint", function() target.Color = target.Color:Lerp(Color3.fromRGB(255, 128, 0), 0.5) end)
+        attempt("reach", function() target.Range += 1.5 end)
+        ask("after the light", function()
+        	return `{target.Enabled} {target.Brightness} {target.Color:ToHex()} {target.Color}`
+        end)
+
+        attempt("walk through", function() target.CanCollide = not target.CanCollide end)
+        attempt("hide from rays", function() target.CanQuery = not target.CanQuery end)
+        attempt("stop touching", function() target.CanTouch = not target.CanTouch end)
+        attempt("hide", function() target.Visible = not target.Visible end)
+        ask("after the switches", function()
+        	return `{target.CanCollide} {target.CanQuery} {target.CanTouch} {target.Visible}`
+        end)
+
+        for _, name in { "speed", "movedir", "startopen", "wait", "startdisabled", "tag", "spawnflags", "nothing" } do
+        	local value = target:GetAttribute(name)
+        	say("attribute " .. name, typeof(value) .. " " .. tostring(value))
+        end
+
+        say("asked", "everything")
         """;
 }

@@ -31,7 +31,7 @@ internal static class AskedLevel
     public static readonly string[] Askers =
     [
         "Root", "Floor", "Doorway", "Crate", "Ask", "Door", "Relay", "Start", "Sun", "Spot", "Bulb",
-        "Shelf", "Plank", "Props", "Prop", DoorInGerman, "Leaf", "Later", "Rules",
+        "Shelf", "Plank", "Props", "Prop", DoorInGerman, "Leaf", "Later", "Rules", "Lamp", "Panel", "Disc",
     ];
 
     public static TempProject Write()
