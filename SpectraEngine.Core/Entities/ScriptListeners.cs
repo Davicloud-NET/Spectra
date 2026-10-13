@@ -18,7 +18,7 @@ public sealed class ScriptListeners
 {
     // A list stays once it is empty: a thread that waits for a signal in a
     // loop adds and removes one listener each time round.
-    private readonly Dictionary<Port, List<long>> _byPort = [];
+    private readonly Dictionary<Port, Heard> _byPort = [];
 
     // What fired while the level spawned, when no script ran yet to listen.
     private readonly HashSet<Port> _missed = [];
@@ -39,25 +39,38 @@ public sealed class ScriptListeners
     public int TouchListenerCount { get; private set; }
 
     /// <summary>
+    /// Goes up each time a listener is added or removed. A view that lists
+    /// them reads it to tell whether its list still holds.
+    /// </summary>
+    public long Version { get; private set; }
+
+    /// <summary>
     /// Adds a listener to what <paramref name="node"/> fires under
     /// <paramref name="name"/>. Listeners of one name are called in the order
     /// they were added.
     /// </summary>
     /// <param name="listener">What the runtime wants handed back for each fire.</param>
-    public void Add(SceneNode node, string name, long listener)
+    public void Add(SceneNode node, string name, long listener) => Add(node, name, listener, default);
+
+    /// <summary>The same, for a listener whose script is known.</summary>
+    /// <param name="listener">What the runtime wants handed back for each fire.</param>
+    /// <param name="by">The script that listens and where it connected. Only a view reads it.</param>
+    public void Add(SceneNode node, string name, long listener, in ScriptPlace by)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(name);
 
         var port = new Port(node.Id, name);
-        if (!_byPort.TryGetValue(port, out List<long>? listeners))
+        if (!_byPort.TryGetValue(port, out Heard? heard))
         {
-            listeners = [];
-            _byPort.Add(port, listeners);
+            heard = new Heard();
+            _byPort.Add(port, heard);
         }
 
-        listeners.Add(listener);
+        heard.Listeners.Add(listener);
+        heard.By.Add(by);
         Count++;
+        Version++;
         if (!TouchSignal.IsOne(name))
             return;
 
@@ -80,10 +93,17 @@ public sealed class ScriptListeners
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(name);
 
-        if (!_byPort.TryGetValue(new Port(node.Id, name), out List<long>? listeners) || !listeners.Remove(listener))
+        if (!_byPort.TryGetValue(new Port(node.Id, name), out Heard? heard))
             return false;
 
+        int at = heard.Listeners.IndexOf(listener);
+        if (at < 0)
+            return false;
+
+        heard.Listeners.RemoveAt(at);
+        heard.By.RemoveAt(at);
         Count--;
+        Version++;
         if (TouchSignal.IsOne(name))
             TouchListenerCount--;
 
@@ -113,6 +133,23 @@ public sealed class ScriptListeners
         return _missed.Count > 0 && _missed.Remove(new Port(node.Id, name));
     }
 
+    /// <summary>
+    /// Adds every listener to <paramref name="into"/>, for a view that shows
+    /// who listens. Listeners of one node and name come in the order they
+    /// were added. The order of the nodes and names is none to show.
+    /// </summary>
+    public void CopyTo(List<ScriptListener> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+
+        foreach (KeyValuePair<Port, Heard> port in _byPort)
+        {
+            List<ScriptPlace> by = port.Value.By;
+            for (int i = 0; i < by.Count; i++)
+                into.Add(new ScriptListener(port.Key.Node, port.Key.Name, by[i]));
+        }
+    }
+
     internal void NoteMissedFire(SceneNode node, string name) => _missed.Add(new Port(node.Id, name));
 
     // The list itself. Queueing an event runs no script, so it holds still
@@ -121,7 +158,12 @@ public sealed class ScriptListeners
 
     // By the node's id, for a node that may have left the scene since.
     internal List<long>? Find(Guid node, string name) =>
-        Count > 0 && _byPort.TryGetValue(new Port(node, name), out List<long>? listeners) ? listeners : null;
+        Count > 0 && _byPort.TryGetValue(new Port(node, name), out Heard? heard) ? heard.Listeners : null;
+
+    // Who listens to a node and a name, in the order of Find's list. Null
+    // when nobody does. A trace reads it inside the dispatch.
+    internal List<ScriptPlace>? WhoHears(SceneNode node, string name) =>
+        Count > 0 && _byPort.TryGetValue(new Port(node.Id, name), out Heard? heard) ? heard.By : null;
 
     internal void Clear()
     {
@@ -130,6 +172,16 @@ public sealed class ScriptListeners
         _toldNoTouch.Clear();
         Count = 0;
         TouchListenerCount = 0;
+        Version++;
+    }
+
+    // The listeners of one node and name, and who each is. The two lists run
+    // side by side.
+    private sealed class Heard
+    {
+        public List<long> Listeners { get; } = [];
+
+        public List<ScriptPlace> By { get; } = [];
     }
 
     private readonly record struct Port(Guid Node, string Name);

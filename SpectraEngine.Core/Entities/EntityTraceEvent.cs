@@ -95,6 +95,12 @@ public readonly struct EntityTraceEvent
     public int SenderLine { get; init; }
 
     /// <summary>
+    /// The node of the script that sent the input. Empty for an input no
+    /// script sent, and when the sender did not say which node it is.
+    /// </summary>
+    public Guid SenderNode { get; init; }
+
+    /// <summary>
     /// How many listeners of scripts a fired output queued a call for: the
     /// connected functions and waiting threads the queue had room for. Zero
     /// for every other kind.
@@ -126,6 +132,7 @@ public readonly struct EntityTraceEvent
         Sequence = queued.Sequence,
         SenderScript = queued.SenderScript ?? "",
         SenderLine = queued.SenderLine,
+        SenderNode = queued.SenderNode,
     };
 
     // Counts the wires as they stand, so build it before they fire.

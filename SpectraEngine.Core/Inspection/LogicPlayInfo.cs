@@ -22,4 +22,13 @@ public sealed class LogicPlayInfo
 
     /// <summary>The newest events, oldest first.</summary>
     public IReadOnlyList<LogicEventInfo> Recent { get; init; } = [];
+
+    /// <summary>
+    /// What the level's scripts hear and have sent. The same instance for as
+    /// long as they hear and have sent the same.
+    /// </summary>
+    public LogicScriptWiring Scripts { get; init; } = LogicScriptWiring.None;
+
+    /// <summary>What each of <see cref="LogicScriptWiring.Wires"/> has carried, in their order.</summary>
+    public IReadOnlyList<LogicScriptActivity> ScriptActivity { get; init; } = [];
 }

@@ -41,4 +41,23 @@ public readonly record struct LogicEventInfo
 
     /// <summary>The argument sent with it.</summary>
     public string Parameter { get; init; }
+
+    /// <summary>
+    /// The node of the script that sent the input, or that heard the output
+    /// when <see cref="Kind"/> is <see cref="EntityTraceKind.OutputFired"/>.
+    /// Empty for what no script had a part in.
+    /// </summary>
+    public Guid ScriptId { get; init; }
+
+    /// <summary>That script's name.</summary>
+    public string ScriptName { get; init; }
+
+    /// <summary>The file of the line that sent the input or connected to the output, as a content path.</summary>
+    public string ScriptFile { get; init; }
+
+    /// <summary>The line in <see cref="ScriptFile"/>, or 0 when it is not known.</summary>
+    public int ScriptLine { get; init; }
+
+    /// <summary>Whether a script sent or heard it.</summary>
+    public bool IsOfScript => ScriptId != Guid.Empty;
 }

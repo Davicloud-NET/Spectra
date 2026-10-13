@@ -7,7 +7,7 @@ internal static class ScriptEvents
 {
     // For one entity and due at once, as door:Open() is.
     public static EntityEvent Input(
-        long tick, long sequence, Entity target, string input, string parameter, string script, int line) => new()
+        long tick, long sequence, Entity target, string input, string parameter, in ScriptPlace by) => new()
         {
             Tick = tick,
             Sequence = sequence,
@@ -17,8 +17,9 @@ internal static class ScriptEvents
             Input = input,
             Parameter = parameter,
             Output = "",
-            SenderScript = script,
-            SenderLine = line,
+            SenderScript = by.File,
+            SenderLine = by.Line,
+            SenderNode = by.Node,
         };
 
     public static EntityEvent Signal(

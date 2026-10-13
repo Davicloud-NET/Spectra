@@ -1,3 +1,5 @@
+using System;
+
 namespace SpectraEngine.Core.Entities;
 
 // Thinks, inputs and what scripts wait for share one record and one order.
@@ -49,4 +51,7 @@ internal struct EntityEvent
 
     // Who touches, for a touch on its way to a listener: a TouchVisitor's id.
     public int Visitor;
+
+    // The node of that script. Empty when it is not known.
+    public Guid SenderNode;
 }

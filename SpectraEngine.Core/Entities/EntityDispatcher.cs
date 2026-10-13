@@ -152,9 +152,9 @@ internal sealed class EntityDispatcher
 
     // An input a script sent to one entity. It waits with what scripts made
     // and takes no room from the wires. False when it will not come.
-    public bool QueueScriptInput(Entity target, string input, string parameter, string script, int line)
+    public bool QueueScriptInput(Entity target, string input, string parameter, in ScriptPlace by)
     {
-        EntityEvent sent = ScriptEvents.Input(_world.TickNumber, _sequence++, target, input, parameter, script, line);
+        EntityEvent sent = ScriptEvents.Input(_world.TickNumber, _sequence++, target, input, parameter, by);
         if (!TryPush(_scripts, sent))
             return false;
 

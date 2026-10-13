@@ -14,11 +14,20 @@ public sealed class LogicGraphInfo
     /// <summary>How many entities one capture will list.</summary>
     public const int MaxEntities = 4000;
 
+    /// <summary>How many scripts one capture will list.</summary>
+    public const int MaxScripts = 4000;
+
     /// <summary>The entities, in the order they joined the scene.</summary>
     public IReadOnlyList<LogicEntityInfo> Entities { get; init; } = [];
 
     /// <summary>How many entities the scene has, listed or not.</summary>
     public int TotalEntities { get; init; }
+
+    /// <summary>
+    /// The scripts that run when the level plays, in the order they joined
+    /// the scene: every script that is switched on and is no module.
+    /// </summary>
+    public IReadOnlyList<LogicScriptInfo> Scripts { get; init; } = [];
 
     /// <summary>Whether the scene has more entities than <see cref="Entities"/> carries.</summary>
     public bool IsTruncated => TotalEntities > Entities.Count;
@@ -35,7 +44,7 @@ public sealed class LogicGraphInfo
         IReadOnlyList<SceneNode> nodes = scene.EntityNodes;
         int listed = Math.Min(nodes.Count, MaxEntities);
 
-        if (previous is not null && previous.Describes(nodes, listed))
+        if (previous is not null && previous.Describes(nodes, listed) && previous.DescribesScripts(scene.ScriptNodes))
             return previous;
 
         var entities = new LogicEntityInfo[listed];
@@ -51,7 +60,37 @@ public sealed class LogicGraphInfo
                 entity is { Connections.Count: > 0 } ? entity.Connections.ToArray() : []);
         }
 
-        return new LogicGraphInfo { Entities = entities, TotalEntities = nodes.Count };
+        return new LogicGraphInfo
+        {
+            Entities = entities,
+            TotalEntities = nodes.Count,
+            Scripts = CaptureScripts(scene.ScriptNodes),
+        };
+    }
+
+    private static LogicScriptInfo[] CaptureScripts(IReadOnlyList<SceneNode> nodes)
+    {
+        var scripts = new List<LogicScriptInfo>();
+        for (int i = 0; i < nodes.Count && scripts.Count < MaxScripts; i++)
+        {
+            if (Runs(nodes[i]))
+                scripts.Add(new LogicScriptInfo(nodes[i].Id, nodes[i].Name, EntityAbove(nodes[i])));
+        }
+
+        return [.. scripts];
+    }
+
+    private static bool Runs(SceneNode node) => node.Script is { IsEnabled: true, IsModule: false };
+
+    private static Guid EntityAbove(SceneNode script)
+    {
+        for (SceneNode? above = script.Parent; above is not null; above = above.Parent)
+        {
+            if (above.Entity is not null)
+                return above.Id;
+        }
+
+        return Guid.Empty;
     }
 
     // Runs on every publish while a view is open, so it allocates nothing.
@@ -77,6 +116,30 @@ public sealed class LogicGraphInfo
         }
 
         return true;
+    }
+
+    // The same, for the scripts.
+    private bool DescribesScripts(IReadOnlyList<SceneNode> nodes)
+    {
+        int seen = 0;
+        for (int i = 0; i < nodes.Count && seen < MaxScripts; i++)
+        {
+            if (!Runs(nodes[i]))
+                continue;
+
+            if (seen == Scripts.Count)
+                return false;
+
+            LogicScriptInfo script = Scripts[seen++];
+            if (nodes[i].Id != script.NodeId
+                || !string.Equals(nodes[i].Name, script.Name, StringComparison.Ordinal)
+                || EntityAbove(nodes[i]) != script.EntityId)
+            {
+                return false;
+            }
+        }
+
+        return seen == Scripts.Count;
     }
 
     private static bool SameWires(List<EntityConnection>? live, IReadOnlyList<EntityConnection> seen)

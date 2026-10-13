@@ -239,7 +239,7 @@ public sealed class WireActivityTraceTests
     }
 
     [Fact]
-    public void What_a_script_sent_is_on_no_wire_and_is_not_among_the_recent_events()
+    public void What_a_script_with_no_node_sent_is_on_no_wire_and_is_not_among_the_recent_events()
     {
         SceneNode door = EntityRuntime.Place(_scene.Root, "door", "recorder");
         EntityWorld world = Started();

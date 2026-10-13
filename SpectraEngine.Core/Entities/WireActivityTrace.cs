@@ -5,8 +5,9 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Entities;
 
 /// <summary>
-/// Counts what each wire does while a level runs, for a view that lights the
-/// wiring. Prints nothing. Render thread only.
+/// Counts what each wire does while a level runs, and what its scripts hear
+/// and send, for a view that lights the wiring. Prints nothing. Render
+/// thread only.
 /// </summary>
 public sealed class WireActivityTrace : IEntityTrace
 {
@@ -23,13 +24,15 @@ public sealed class WireActivityTrace : IEntityTrace
     private readonly List<Counts> _wires = [];
     private readonly Dictionary<long, Wait> _waiting = [];
     private readonly List<long> _overdue = [];
-    private readonly LogicEventInfo[] _recent = new LogicEventInfo[RecentCapacity];
+    private readonly LogicEventRing _recent = new(RecentCapacity);
+    private readonly ScriptWireActivity _scripts = new();
 
-    private long _eventCount;
     private long _tick;
     private float _time;
     private long _version;
     private long _capturedVersion = -1;
+    private long _recentVersion;
+    private long _capturedRecent = -1;
 
     /// <summary>
     /// Forgets everything. Call when a level starts, and when this trace is
@@ -41,23 +44,32 @@ public sealed class WireActivityTrace : IEntityTrace
         _byWire.Clear();
         _wires.Clear();
         _waiting.Clear();
-        _eventCount = 0;
+        _recent.Clear();
+        _scripts.Clear();
         _tick = 0;
         _time = 0f;
         _version++;
+        _recentVersion++;
     }
 
     /// <inheritdoc/>
     public void Record(in EntityTraceEvent traced)
     {
-        // What a script sent is on no wire, and the view has no place for
-        // its sender. A script may send every tick, and listed here that
-        // would push what the wires did out of the recent events.
+        // What a script sent is on no wire of the level.
         if (traced.SenderScript.Length > 0)
+        {
+            RecordSent(traced);
             return;
+        }
 
         switch (traced.Kind)
         {
+            case EntityTraceKind.OutputFired:
+                if (traced.ListenersQueued > 0)
+                    RecordHeard(traced);
+
+                return;
+
             case EntityTraceKind.InputQueued:
                 if (CountsFor(traced) is { } fired)
                 {
@@ -126,31 +138,34 @@ public sealed class WireActivityTrace : IEntityTrace
     /// </summary>
     /// <param name="previous">The last capture, or null.</param>
     /// <param name="states">The state lines to send along.</param>
-    public LogicPlayInfo Capture(LogicPlayInfo? previous, IReadOnlyList<LogicEntityState> states)
+    /// <param name="world">
+    /// The level that runs, whose listeners say what its scripts hear. With
+    /// none the capture says nothing of scripts.
+    /// </param>
+    public LogicPlayInfo Capture(
+        LogicPlayInfo? previous, IReadOnlyList<LogicEntityState> states, EntityWorld? world = null)
     {
         ArgumentNullException.ThrowIfNull(states);
 
-        if (previous is not null && _capturedVersion == _version)
-        {
-            return new LogicPlayInfo
-            {
-                Tick = _tick,
-                Time = _time,
-                Wires = previous.Wires,
-                Recent = previous.Recent,
-                States = states,
-            };
-        }
-
+        bool wiresHold = previous is not null && _capturedVersion == _version;
+        bool recentHolds = previous is not null && _capturedRecent == _recentVersion;
         _capturedVersion = _version;
+        _capturedRecent = _recentVersion;
+
+        LogicScriptWiring scripts = LogicScriptWiring.None;
+        IReadOnlyList<LogicScriptActivity> scriptActivity = [];
+        if (world is { IsActive: true })
+            _scripts.Capture(world, previous, out scripts, out scriptActivity);
 
         return new LogicPlayInfo
         {
             Tick = _tick,
             Time = _time,
-            Wires = CopyWires(),
-            Recent = CopyRecent(),
+            Wires = wiresHold && previous is not null ? previous.Wires : CopyWires(),
+            Recent = recentHolds && previous is not null ? previous.Recent : _recent.Copy(),
             States = states,
+            Scripts = scripts,
+            ScriptActivity = scriptActivity,
         };
     }
 
@@ -192,17 +207,80 @@ public sealed class WireActivityTrace : IEntityTrace
         return copy;
     }
 
-    private LogicEventInfo[] CopyRecent()
+    // A view draws what a script sent from the script's node, so a sender
+    // that did not say which node it is leaves no mark.
+    private void RecordSent(in EntityTraceEvent traced)
     {
-        int held = (int)Math.Min(_eventCount, RecentCapacity);
-        var copy = new LogicEventInfo[held];
-        long oldest = _eventCount - held;
+        if (traced.SenderNode == Guid.Empty || traced.Target is not { } target)
+            return;
 
-        for (int i = 0; i < held; i++)
-            copy[i] = _recent[(oldest + i) % RecentCapacity];
+        if (traced.Kind == EntityTraceKind.InputQueued)
+        {
+            _scripts.Sent(traced, target.Node.Id);
+            return;
+        }
 
-        return copy;
+        _recent.AddOrRenew(new LogicEventInfo
+        {
+            Tick = traced.Tick,
+            Kind = traced.Kind,
+            SourceName = "",
+            Output = "",
+            Wire = -1,
+            TargetId = target.Node.Id,
+            TargetName = target.TargetName,
+            Input = traced.Input,
+            Parameter = traced.Parameter,
+            ScriptId = traced.SenderNode,
+            ScriptName = NameOf(target, traced.SenderNode),
+            ScriptFile = traced.SenderScript,
+            ScriptLine = traced.SenderLine,
+        });
+
+        _recentVersion++;
     }
+
+    // An output fired and scripts listen to it. Each is called later in the
+    // drain, and one that disconnects before then is still listed here.
+    private void RecordHeard(in EntityTraceEvent traced)
+    {
+        if (traced.Source is not { } source
+            || source.World.Listeners.WhoHears(source.Node, traced.Output) is not { } hearing)
+        {
+            return;
+        }
+
+        for (int i = 0; i < hearing.Count; i++)
+        {
+            ScriptPlace by = hearing[i];
+            if (!by.HasNode)
+                continue;
+
+            _scripts.Heard(source.Node.Id, traced.Output, by, traced.Tick);
+            _recent.AddOrRenew(new LogicEventInfo
+            {
+                Tick = traced.Tick,
+                Kind = EntityTraceKind.OutputFired,
+                SourceId = source.Node.Id,
+                SourceName = source.TargetName,
+                Output = traced.Output,
+                Wire = -1,
+                TargetName = "",
+                Input = "",
+                Parameter = "",
+                ScriptId = by.Node,
+                ScriptName = NameOf(source, by.Node),
+                ScriptFile = by.File,
+                ScriptLine = by.Line,
+            });
+
+            _recentVersion++;
+        }
+    }
+
+    // The name of a script's node, read from the scene the entity is in.
+    private static string NameOf(Entity inLevel, Guid script) =>
+        inLevel.World.Scene.TryFindById(script, out Scene.SceneNode? node) ? node.Name : "";
 
     // Null for an input no wire sent: there is no wire to count it on.
     private Counts? CountsFor(in EntityTraceEvent traced)
@@ -223,9 +301,8 @@ public sealed class WireActivityTrace : IEntityTrace
 
     private void Remember(in EntityTraceEvent traced)
     {
-        _recent[_eventCount % RecentCapacity] = new LogicEventInfo
+        _recent.Add(new LogicEventInfo
         {
-            Number = _eventCount,
             Tick = traced.Tick,
             Kind = traced.Kind,
             SourceId = traced.Source?.Node.Id ?? Guid.Empty,
@@ -236,9 +313,11 @@ public sealed class WireActivityTrace : IEntityTrace
             TargetName = traced.Target?.TargetName ?? traced.TargetName,
             Input = traced.Input,
             Parameter = traced.Parameter,
-        };
+            ScriptName = "",
+            ScriptFile = "",
+        });
 
-        _eventCount++;
+        _recentVersion++;
     }
 
     private sealed class Counts(Guid node, int wire)

@@ -496,10 +496,22 @@ public sealed class EntityWorld
     /// <exception cref="InvalidOperationException">The world is not active.</exception>
     public bool QueueScriptInput(Entity target, string input, string parameter, string script, int line)
     {
+        ArgumentNullException.ThrowIfNull(script);
+        return QueueScriptInput(target, input, parameter, new ScriptPlace(Guid.Empty, script, line));
+    }
+
+    /// <summary>The same, for a sender whose node is known. A view draws the input from that node.</summary>
+    /// <param name="target">Who receives it. An entity that is gone by then gets nothing.</param>
+    /// <param name="input">The input's name. The caller has checked it against the class.</param>
+    /// <param name="parameter">The argument as a wire carries it. Empty for none.</param>
+    /// <param name="by">The script that sent it and the line that did, which a trace names as the sender.</param>
+    /// <returns>False when the input was not queued and will not come: the queue is full.</returns>
+    /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    public bool QueueScriptInput(Entity target, string input, string parameter, in ScriptPlace by)
+    {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(parameter);
-        ArgumentNullException.ThrowIfNull(script);
         ThrowIfStopped(nameof(QueueScriptInput));
 
         if (!ReferenceEquals(target.World, this))
@@ -508,7 +520,7 @@ public sealed class EntityWorld
                 "The entity belongs to another entity world, or to none.", nameof(target));
         }
 
-        return _dispatcher.QueueScriptInput(target, input, parameter, script, line);
+        return _dispatcher.QueueScriptInput(target, input, parameter, by);
     }
 
     /// <summary>

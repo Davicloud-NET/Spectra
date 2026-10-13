@@ -383,7 +383,7 @@ public sealed class Engine
             _logicStatesTick = world.TickNumber;
         }
 
-        return _publishedLogicPlay = _wireActivity.Capture(_publishedLogicPlay, _logicStates);
+        return _publishedLogicPlay = _wireActivity.Capture(_publishedLogicPlay, _logicStates, world);
     }
 
     // Returns the previous array when the selection has not changed.
