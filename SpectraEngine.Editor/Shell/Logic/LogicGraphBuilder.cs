@@ -96,16 +96,31 @@ internal sealed class LogicGraphBuilder
         for (int i = 0; i < _entities.Count; i++)
             _entityByNode.TryAdd(_entities[i].NodeId, i);
 
+        scripts.Links.RemoveAll(link => !CanDraw(link));
+
         foreach (LogicScriptLink link in scripts.Links)
         {
-            if (!_entityByNode.TryGetValue(link.Entity, out int entity))
-                continue;
-
+            int entity = _entityByNode[link.Entity];
             if (link.IsSend)
                 Mark(ref _received[entity], link.Port);
             else
                 Mark(ref _sent[entity], link.Port);
         }
+    }
+
+    // The graph draws inputs and outputs of entities. A script also listens
+    // to what is neither, such as a touch, and to nodes that are no entity.
+    private bool CanDraw(LogicScriptLink link)
+    {
+        if (!_entityByNode.TryGetValue(link.Entity, out int entity))
+            return false;
+
+        EntitySchema? schema = null;
+        if (_catalog?.TryGetSchema(_entities[entity].ClassName, out schema) != true || schema is null)
+            return true;
+
+        IReadOnlyList<string> declared = link.IsSend ? schema.InputNames : schema.OutputNames;
+        return declared.Contains(link.Port);
     }
 
     // A card for each script that hears or sends something, in scene order.
@@ -117,7 +132,7 @@ internal sealed class LogicGraphBuilder
         _cardOfScript = new LogicCard?[scripts.Scripts.Count];
         var linked = new bool[_cardOfScript.Length];
         foreach (LogicScriptLink link in scripts.Links)
-            linked[link.Script] |= _entityByNode.ContainsKey(link.Entity);
+            linked[link.Script] = true;
 
         for (int i = 0; i < linked.Length; i++)
         {
@@ -138,10 +153,10 @@ internal sealed class LogicGraphBuilder
 
         foreach (LogicScriptLink link in scripts.Links)
         {
-            if (!_entityByNode.TryGetValue(link.Entity, out int index) || _cardOfScript[link.Script] is not { } script)
+            if (_cardOfScript[link.Script] is not { } script)
                 continue;
 
-            LogicCard entity = CardOf(index);
+            LogicCard entity = CardOf(_entityByNode[link.Entity]);
             edges.Add(new LogicEdge(
                 link.IsSend ? script : entity,
                 link.IsSend ? entity : script,

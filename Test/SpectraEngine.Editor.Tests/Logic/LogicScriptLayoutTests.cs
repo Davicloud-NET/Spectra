@@ -1,4 +1,5 @@
 using Avalonia;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Editor.Shell.Logic;
 using System;
@@ -193,14 +194,26 @@ public sealed class LogicScriptLayoutTests
             int count = 1 + random.Next(5);
             for (int i = 0; i < count; i++)
             {
-                Guid entity = entities[random.Next(entities.Length)].NodeId;
+                LogicEntityInfo entity = entities[random.Next(entities.Length)];
                 string file = $"Scripts/{(random.Next(2) == 0 ? script.Name : "ASharedModuleWithALongName")}.luau";
+                int line = 1 + random.Next(900);
                 wires.Add(random.Next(2) == 0
-                    ? Hears(script.NodeId, entity, "OnTrigger", file, 1 + random.Next(900))
-                    : Sends(script.NodeId, entity, "Open", file, 1 + random.Next(900)));
+                    ? Hears(script.NodeId, entity.NodeId, Port(random, entity, isOutput: true), file, line)
+                    : Sends(script.NodeId, entity.NodeId, Port(random, entity, isOutput: false), file, line));
             }
         }
 
         return LogicGraph.Build(Level(entities, scripts), LogicFixture.Catalog, Running([.. wires]));
+    }
+
+    // A port the entity's class has, since a script can name no other. A
+    // class nobody knows takes any name.
+    private static string Port(Random random, LogicEntityInfo entity, bool isOutput)
+    {
+        if (!LogicFixture.Catalog.TryGetSchema(entity.ClassName, out EntitySchema? schema))
+            return isOutput ? "OnMystery" : "Mystery";
+
+        IReadOnlyList<string> names = isOutput ? schema.OutputNames : schema.InputNames;
+        return names[random.Next(names.Count)];
     }
 }

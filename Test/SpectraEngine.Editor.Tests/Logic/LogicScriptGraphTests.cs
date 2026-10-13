@@ -136,6 +136,31 @@ public sealed class LogicScriptGraphTests
     }
 
     [Fact]
+    public void What_a_script_hears_that_is_no_output_of_the_entitys_class_is_not_drawn()
+    {
+        LogicGraph graph = Graph(Running(
+            Hears(Main, Door, "Touched"),
+            Sends(Main, Door, "Destroy"),
+            Hears(Beep, Door, "OnOpen")));
+
+        graph.Cards.Where(card => card.IsScript).ShouldHaveSingleItem().Name.ShouldBe("Beep");
+        graph.Edges.Where(edge => edge.IsScript).ShouldHaveSingleItem().Output.ShouldBe("OnOpen");
+        graph.Card("Door7").Outputs.ShouldAllBe(port => port.IsDeclared);
+        graph.Card("Door7").Inputs.ShouldAllBe(port => port.IsDeclared);
+    }
+
+    [Fact]
+    public void On_an_entity_of_a_class_nobody_knows_every_port_a_script_names_is_drawn()
+    {
+        LogicGraphInfo level = Level([LogicFixture.Entity(40, "Crate", "prop_mystery")], Scripts());
+
+        LogicGraph graph = LogicGraph.Build(
+            level, LogicFixture.Catalog, Running(Hears(Main, LogicFixture.Id(40), "OnBroken")));
+
+        graph.Edges.ShouldHaveSingleItem().Output.ShouldBe("OnBroken");
+    }
+
+    [Fact]
     public void A_graph_that_shows_no_scripts_has_no_script_cards_and_names_none_inside()
     {
         LogicGraph graph = Graph(Designed(), showsScripts: false);
