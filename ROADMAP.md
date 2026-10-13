@@ -10,7 +10,7 @@ The old roadmap is [docs/archive/roadmap-2026-10.md](docs/archive/roadmap-2026-1
 
 ## Now
 
-The no-code loop just landed, and Luau scripting right after it: build a level, wire it, script it, play it, hear it. Before the next big thing starts I want it to hold up when a person actually uses it.
+The no-code loop just landed, and Luau scripting right after it: build a level, wire it, script it, play it, hear it. Before asset import starts I want it to hold up when a person actually uses it.
 
 - Entity icons, in the 3D view and in the panels. You should be able to tell what an entity is by looking at it.
 - Trying it all by hand. The tests cover what the door, the lift, the triggers and the console do. They can't tell me how riding a lift or standing in a closing door feels, where focus goes when the console opens mid-play, or whether the Make entity menus make sense.
