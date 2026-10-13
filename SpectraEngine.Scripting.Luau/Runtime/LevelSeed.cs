@@ -1,6 +1,7 @@
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
+using System.Runtime.CompilerServices;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
@@ -10,8 +11,11 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // tables' copy and nothing writes to a node, so Stop has nothing to put back.
 internal sealed class LevelSeed(LuauHost host, EntityWorld world, TagTable tags, AttributeTable attributes)
 {
-    // The nodes that were read. Only one with a tag or an attribute is kept.
-    private readonly HashSet<SceneNode> _read = [];
+    private static readonly object WasRead = new();
+
+    // The nodes that were read. Only one with a tag or an attribute is
+    // noted, and weakly: once the tables let a node go, this does not hold it.
+    private readonly ConditionalWeakTable<SceneNode, object> _read = new();
 
     // Every node of the level. No signal fires: no script has run yet.
     public void ReadLevel()
@@ -27,7 +31,7 @@ internal sealed class LevelSeed(LuauHost host, EntityWorld world, TagTable tags,
     {
         TagSet built = node.Tags;
         AttributeSet set = node.Attributes;
-        if ((built.Count == 0 && set.Count == 0) || !_read.Add(node))
+        if ((built.Count == 0 && set.Count == 0) || !_read.TryAdd(node, WasRead))
             return;
 
         for (int i = 0; i < built.Count; i++)
@@ -46,9 +50,6 @@ internal sealed class LevelSeed(LuauHost host, EntityWorld world, TagTable tags,
                 attributes.Set(node, attributes.NameOf(name), set[i].Value);
         }
     }
-
-    // For whoever takes a node out of the tables for good.
-    public void Forget(SceneNode node) => _read.Remove(node);
 
     public void Clear() => _read.Clear();
 
