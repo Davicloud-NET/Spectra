@@ -73,6 +73,7 @@ public sealed class StopPromiseTests
             ShouldBeAMix(taken, WritesPerPlay + (nodes.Length * ScriptWrites.Settable.Count), run);
             coverage.ShouldBeWhole(run);
             ShouldHaveChangedTheTree(tree, door, run);
+            ShouldHaveOneWorldBrush(level, random.Homes[1], run);
             level.Errors.ShouldBeEmpty(run);
 
             level.Stop();
@@ -131,11 +132,23 @@ public sealed class StopPromiseTests
         level.Errors.ShouldBeEmpty(run);
         new ScriptWrites(level.Entities).Tree.MadeCount.ShouldBeGreaterThan(0, $"{run}: no script made a node");
         level.Scene.Root.Traverse().Count().ShouldNotBe(built.Length, $"{run}: the scripts left the tree as it was");
+        ShouldHaveOneWorldBrush(level, random.Homes[1], run);
 
         level.Stop();
 
         new LevelState(level.Scene).ShouldBe(before, run);
         level.Scene.Root.Traverse().ShouldBe(built, run);
+    }
+
+    // Whatever was written, made, cloned and moved, the level's ground is
+    // still its one world brush, where it was: no write made another, took
+    // it away or turned a part into one.
+    private static void ShouldHaveOneWorldBrush(ScriptLevel level, SceneNode ground, string run)
+    {
+        SceneNode[] world = [.. level.Scene.Root.Traverse().Where(node => node.IsStaticWorldBrush)];
+        world.ShouldBe([ground], run);
+        ground.Parent.ShouldBeSameAs(level.Scene.Root, run);
+        level.Scene.StaticWorldDirty.ShouldBeFalse(run);
     }
 
     // The root and the level's world brush, which no script can move.

@@ -127,9 +127,13 @@ internal sealed class EntityMembers
         if (!_world.IsActive)
             return stack.Fail($"{input.Name} was not sent: the level has stopped");
 
+        // An entity whose node left the level stays until the tick ends, and
+        // takes nothing by then.
         if (_world.Index is not { } index
             || !index.TryGetByNodeId(node.Id, out Entity? entity)
-            || !ReferenceEquals(entity.Node, node))
+            || !ReferenceEquals(entity.Node, node)
+            || !_world.Scene.TryFindById(node.Id, out SceneNode? inLevel)
+            || !ReferenceEquals(inLevel, node))
         {
             return stack.Fail($"{input.Name} was not sent: the entity of \"{node.Name}\" is not running");
         }

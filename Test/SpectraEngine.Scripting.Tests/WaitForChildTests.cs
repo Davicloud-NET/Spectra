@@ -6,8 +6,9 @@ namespace SpectraEngine.Scripting.Tests;
 
 /// <summary>
 /// WaitForChild: the child at once when it is there, and otherwise a wait
-/// until a child gets the name or the time is over. No script can add a node
-/// yet, so the test adds it through the scene.
+/// until a child gets the name or the time is over. Here the test adds the
+/// node through the scene. A script that makes the child is in
+/// <see cref="ParentScriptTests"/>.
 /// </summary>
 public sealed class WaitForChildTests
 {
