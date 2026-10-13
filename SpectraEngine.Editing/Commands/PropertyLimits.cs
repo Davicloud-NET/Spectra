@@ -32,14 +32,36 @@ public static class PropertyLimits
     };
 
     /// <summary>Why a node cannot be built with this tag, as a sentence, or null when it can.</summary>
-    public static string? TagRefusal(string tag) => TagName.IsValid(tag) ? null : TagName.Refusal(tag) + ".";
+    // The rule's own words count bytes, which suits a file and a script. A
+    // builder cannot count them, so the panel gets words of its own.
+    public static string? TagRefusal(string tag)
+    {
+        if (TagName.IsValid(tag))
+            return null;
+
+        return tag.Length == 0 ? "A tag cannot be empty." : TextRefusal("tag", "A tag", tag, TagLimits.MaxBytes);
+    }
 
     /// <summary>Why an attribute cannot have this name, as a sentence, or null when it can.</summary>
     public static string? AttributeNameRefusal(string name) =>
         AttributeName.IsValid(name) ? null : AttributeName.Refusal(name) + ".";
 
     /// <summary>Why an attribute cannot hold this value, as a sentence, or null when it can.</summary>
-    public static string? AttributeValueRefusal(in MemberValue value) => AttributeValueRule.Refusal(in value);
+    public static string? AttributeValueRefusal(in MemberValue value)
+    {
+        if (AttributeValueRule.Refusal(in value) is not { } whyNot)
+            return null;
+
+        return value.Kind == MemberValueKind.Text
+            ? TextRefusal("text", "An attribute", value.Text, AttributeLimits.MaxTextBytes)
+            : whyNot;
+    }
+
+    // Text is refused for half a surrogate pair, or else for its length.
+    private static string TextRefusal(string what, string holder, string text, int maxBytes) =>
+        TextRule.IsWellFormed(text)
+            ? $"This {what} is too long. {holder} has room for {maxBytes} letters, or fewer with accents and symbols."
+            : $"This {what} has a character that cannot be saved.";
 
     /// <summary>What to say when a node has no room for one more tag.</summary>
     public static string FullOfTags => $"A node has at most {TagLimits.MaxPerNode} tags.";

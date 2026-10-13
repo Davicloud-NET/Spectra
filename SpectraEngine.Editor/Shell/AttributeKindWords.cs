@@ -25,8 +25,8 @@ public static class AttributeKindWords
 
     /// <summary>What each kind is to a script, for the dropdown's tooltip.</summary>
     public const string Help =
-        "What the value is. A script reads Text as a string, True or false as a boolean, Three numbers as a " +
-        "Vector3, Color as a Color3, and Position and rotation as a CFrame.";
+        "What the value is. A script reads Text as a string, Number as a number, True or false as a boolean, " +
+        "Three numbers as a Vector3, Color as a Color3, and Position and rotation as a CFrame.";
 
     /// <summary>The label of a kind, or empty for no kind.</summary>
     public static string LabelOf(MemberValueKind kind)

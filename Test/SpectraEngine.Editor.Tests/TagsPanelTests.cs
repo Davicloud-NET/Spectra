@@ -135,7 +135,7 @@ public sealed class TagsPanelTests
         brick.Tags.Count.ShouldBe(0);
         rig.Tags.AddField.Text.ShouldBe(tooLong, "what was typed stays, to be put right");
         rig.Tags.AddField.Rejection.ShouldBe(
-            "Not added: A tag of 257 bytes is too long. A tag is 1 to 256 bytes of text.");
+            "Not added: This tag is too long. A tag has room for 256 letters, or fewer with accents and symbols.");
 
         // Typing again takes the reason away, and a tag that fits goes on.
         rig.Type(rig.Tags.AddField, "Lava");

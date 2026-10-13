@@ -86,7 +86,7 @@ public sealed class TagsAndAttributesSheetTests(RibbonSession session)
             sheet.Shown<TextBlock>().Where(text => text.Classes.Contains("rejection")).Select(text => text.Text)
                 .ShouldBe(
                 [
-                    "Not added: A tag of 257 bytes is too long. A tag is 1 to 256 bytes of text.",
+                    "Not added: This tag is too long. A tag has room for 256 letters, or fewer with accents and symbols.",
                     "Not renamed: There is an attribute called 'Damage' already.",
                     "Not applied: expected a number.",
                     "Not added: 'two words' is not a valid attribute name. An attribute's name is 1 to 100 " +
