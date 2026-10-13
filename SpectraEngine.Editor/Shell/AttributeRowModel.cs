@@ -181,9 +181,7 @@ public sealed class AttributeRowModel : ObservableObject
     internal void Refresh(in AttributePanelRow row, int selectionCount)
     {
         IsPartial = row.Count < selectionCount;
-        PartialNote = IsPartial
-            ? $"On {row.Count} of {selectionCount}. A new value goes on all {selectionCount}."
-            : string.Empty;
+        PartialNote = PartialRowNote.Of(in row, selectionCount);
         IsTakenByEntity = row.IsTakenByEntity;
         NameField.Refresh(row.Name, mixed: false);
 

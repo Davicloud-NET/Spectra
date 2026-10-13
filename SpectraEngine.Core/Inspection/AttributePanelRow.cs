@@ -23,4 +23,13 @@ public readonly record struct AttributePanelRow(
 {
     /// <summary>Whether the nodes that have the attribute disagree about any of it.</summary>
     public bool IsMixed => MixedParts != 0;
+
+    /// <summary>
+    /// How many of the selected nodes lack the attribute and would not get it
+    /// from a new value. The editor leaves those as they are.
+    /// </summary>
+    public int LeftOutCount { get; init; }
+
+    /// <summary>What stands in the way on the nodes that are left out.</summary>
+    public AttributeRoom LeftOut { get; init; }
 }

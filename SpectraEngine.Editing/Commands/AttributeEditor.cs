@@ -13,7 +13,8 @@ namespace SpectraEngine.Editing.Commands;
 /// that is already as the edit wants it records nothing. Render thread only.
 /// </summary>
 // Every refusal here has its words in PropertyLimits, where the panel reads
-// them before it posts. A node this skips is one the panel said it would.
+// them before it posts. A node this skips is one the panel said it would:
+// a new name is refused there, and a row names the nodes its value stays off.
 public static class AttributeEditor
 {
     /// <summary>
@@ -117,9 +118,10 @@ public static class AttributeEditor
     }
 
     // Whether the node can get an attribute of a name it does not have. The
-    // root cannot: it is not saved with the level.
+    // panel counts the same answer into its row, which says where a new
+    // value goes before one is typed.
     private static bool HasRoomFor(SceneNode node, string name, EntitySchemaCatalog? schemas) =>
-        node.Parent is not null && !node.Attributes.IsFull && !EntityKeyvalueNames.Contains(node, schemas, name);
+        AttributePanelInfo.RoomFor(node, name, schemas) == AttributeRoom.Open;
 
     private static string NameOf(AttributeEditKind kind) => kind switch
     {

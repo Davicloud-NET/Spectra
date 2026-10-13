@@ -100,7 +100,64 @@ public sealed class AttributePanelInfo
             }
         }
 
+        if (hasFullNode || holdsRoot || entityNames is not null)
+            CountLeftOut(rows, nodes, schemas, entityNames);
+
         return new AttributePanelInfo(sources, [.. rows], hasFullNode, holdsRoot, entityNames ?? NoNames);
+    }
+
+    /// <summary>
+    /// What stands in the way of giving a node an attribute of a name it does
+    /// not have. The editor asks this before it writes and a row counts the
+    /// nodes it names, so the panel says what the editor will do.
+    /// </summary>
+    /// <param name="schemas">What the entity classes declare, or null.</param>
+    public static AttributeRoom RoomFor(SceneNode node, string name, EntitySchemaCatalog? schemas)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        AttributeRoom room = AttributeRoom.Open;
+        if (node.Parent is null) room |= AttributeRoom.Root;
+        if (node.Attributes.IsFull) room |= AttributeRoom.Full;
+        if (EntityKeyvalueNames.Contains(node, schemas, name)) room |= AttributeRoom.Entity;
+        return room;
+    }
+
+    // For each row only some nodes have: the nodes a new value would not reach.
+    private static void CountLeftOut(
+        List<AttributePanelRow> rows, IReadOnlyList<SceneNode> nodes, EntitySchemaCatalog? schemas,
+        HashSet<string>? entityNames)
+    {
+        for (int at = 0; at < rows.Count; at++)
+        {
+            AttributePanelRow row = rows[at];
+            if (row.Count == nodes.Count)
+                continue;
+
+            // Asked of the selection first: most names are no keyvalue of any entity in it.
+            bool isKeyvalue = entityNames is not null && entityNames.Contains(row.Name);
+            int count = 0;
+            AttributeRoom why = AttributeRoom.Open;
+
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                SceneNode node = nodes[i];
+                bool mayBeBarred =
+                    node.Parent is null || node.Attributes.IsFull || (isKeyvalue && node.Entity is not null);
+                if (!mayBeBarred || node.Attributes.Contains(row.Name))
+                    continue;
+
+                AttributeRoom room = RoomFor(node, row.Name, schemas);
+                if (room == AttributeRoom.Open)
+                    continue;
+
+                count++;
+                why |= room;
+            }
+
+            if (count > 0)
+                rows[at] = row with { LeftOutCount = count, LeftOut = why };
+        }
     }
 
     private static AttributePanelRow Merged(AttributePanelRow row, in MemberValue value, bool isTaken)

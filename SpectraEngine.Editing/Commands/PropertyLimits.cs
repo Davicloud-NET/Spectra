@@ -63,6 +63,27 @@ public static class PropertyLimits
         "The level's root is not saved with the level, so it keeps no tags and no attributes. " +
         "Mark the nodes under it.";
 
+    /// <summary>
+    /// Why a new value of an attribute stays off some of the selected nodes,
+    /// one sentence for each reason. Empty when nothing stands in the way.
+    /// </summary>
+    public static string LeftOut(AttributeRoom why, string name)
+    {
+        string said = string.Empty;
+        if ((why & AttributeRoom.Root) != 0)
+            said = "The level's root keeps no attributes.";
+
+        if ((why & AttributeRoom.Full) != 0)
+            said = Joined(said, FullOfAttributes);
+
+        if ((why & AttributeRoom.Entity) != 0)
+            said = Joined(said, $"An entity among them has a setting called '{name}' already.");
+
+        return said;
+    }
+
+    private static string Joined(string said, string more) => said.Length == 0 ? more : $"{said} {more}";
+
     /// <summary>What this cell accepts, for the message shown when input was rejected.</summary>
     public static string Expected(PropertyId id, PropertyKind kind)
     {
