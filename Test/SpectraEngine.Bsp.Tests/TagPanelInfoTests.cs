@@ -177,12 +177,16 @@ public sealed class TagPanelInfoTests
     {
         foreach (MemberValueKind kind in Enum.GetValues<MemberValueKind>())
         {
-            if (kind == MemberValueKind.None) continue;
+            // A node is what a script gives a Parent. No attribute holds one.
+            if (kind is MemberValueKind.None or MemberValueKind.Node) continue;
 
             MemberValue start = AttributeParts.DefaultOf(kind);
             start.Kind.ShouldBe(kind);
             AttributeValueRule.Refusal(in start).ShouldBeNull(kind.ToString());
         }
+
+        MemberValue node = MemberValue.OfNode(null);
+        AttributeValueRule.Refusal(in node).ShouldNotBeNull();
     }
 
     [Fact]
