@@ -126,6 +126,14 @@ public sealed class ScriptProjectSetupTests : IDisposable
         ScriptProjectSetup.Refresh(_project.Root, Api).ShouldBeSameAs(ScriptProjectReport.Nothing);
     }
 
+    [Fact]
+    public void Refresh_takes_a_folder_of_that_name_for_no_definitions_file()
+    {
+        Directory.CreateDirectory(_project.PathOf("spectra.d.luau"));
+
+        ScriptProjectSetup.Refresh(_project.Root, Api).ShouldBeSameAs(ScriptProjectReport.Nothing);
+    }
+
     [Theory]
     [MemberData(nameof(EveryFile))]
     public void A_file_that_is_there_as_a_folder_is_one_line_and_the_others_are_written(string file)

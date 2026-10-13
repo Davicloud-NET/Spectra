@@ -23,23 +23,27 @@ public sealed record ScriptProjectReport(
     public static ScriptProjectReport Failed(string reason) =>
         new([], [ScriptProjectFiles.Definitions], Sentence(reason));
 
-    /// <summary>One line for a person, or null when there is nothing to say.</summary>
-    public string? Describe()
+    /// <summary>What was written, as a sentence or two for a person. Null when nothing was.</summary>
+    public string? DescribeWritten() => Written.Count switch
     {
-        string wrote = Written.Count switch
-        {
-            0 => string.Empty,
-            1 when IsRenewal => $"Wrote {Written[0]} again. It did not hold this engine's script API.",
-            1 => $"Wrote {Written[0]} into the project folder. It sets a code editor up for the project's scripts.",
-            _ => $"Wrote {Listed(Written)} into the project folder. They set a code editor up for the project's scripts.",
-        };
+        0 => null,
+        1 when IsRenewal => $"Wrote {Written[0]} again. It did not hold this engine's script API.",
+        1 => $"Wrote {Written[0]} into the project folder. It sets a code editor up for the project's scripts.",
+        _ => $"Wrote {Listed(Written)} into the project folder. They set a code editor up for the project's scripts.",
+    };
 
-        if (!IsRefused)
-            return wrote.Length > 0 ? wrote : null;
+    /// <summary>What could not be written and why, for a person. Null when nothing was refused.</summary>
+    public string? DescribeRefused() =>
+        IsRefused ? $"Could not write {Listed(Refused)} into the project folder. {Reason}".TrimEnd() : null;
 
-        string refused = $"Could not write {Listed(Refused)} into the project folder. {Reason}".TrimEnd();
-        return wrote.Length > 0 ? wrote + " " + refused : refused;
-    }
+    /// <summary>Both in one line, or null when there is nothing to say.</summary>
+    public string? Describe() => (DescribeWritten(), DescribeRefused()) switch
+    {
+        (null, null) => null,
+        ({ } wrote, null) => wrote,
+        (null, { } refused) => refused,
+        ({ } wrote, { } refused) => wrote + " " + refused,
+    };
 
     internal static string Sentence(string words)
     {

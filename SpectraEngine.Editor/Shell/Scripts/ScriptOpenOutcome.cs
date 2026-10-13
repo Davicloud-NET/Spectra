@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Scripting.Tooling;
 using System.Collections.Generic;
 
 namespace SpectraEngine.Editor.Shell.Scripts;
@@ -15,4 +16,7 @@ public sealed record ScriptOpenOutcome(
 {
     /// <summary>Whether the file is open in a program that edits it.</summary>
     public bool IsOpenInEditor => Way is ScriptOpenWay.VisualStudioCode or ScriptOpenWay.DefaultProgram;
+
+    /// <summary>What was written into the script's project before any program was started.</summary>
+    public ScriptProjectReport Project { get; init; } = ScriptProjectReport.Nothing;
 }

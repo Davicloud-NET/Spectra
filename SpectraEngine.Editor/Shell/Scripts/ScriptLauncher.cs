@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Scripting.Tooling;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -24,9 +25,11 @@ public sealed class ScriptLauncher
     /// <param name="survey">Says what this computer has, asked on every open.</param>
     /// <param name="fileExists">Whether a script is on disk. The real disk when null.</param>
     /// <param name="countLines">How many lines a script has, or null when that is not known. The real disk when null.</param>
+    /// <param name="setup">Writes the project's files for a code editor. Nothing is written when null.</param>
     public ScriptLauncher(
         IProgramStarter starter, Func<ScriptEditorFacts> survey,
-        Func<string, bool>? fileExists = null, Func<string, int?>? countLines = null)
+        Func<string, bool>? fileExists = null, Func<string, int?>? countLines = null,
+        ScriptEditorSetup? setup = null)
     {
         ArgumentNullException.ThrowIfNull(starter);
         ArgumentNullException.ThrowIfNull(survey);
@@ -35,10 +38,15 @@ public sealed class ScriptLauncher
         _survey = survey;
         _fileExists = fileExists ?? File.Exists;
         _countLines = countLines ?? ScriptDetails.CountLines;
+        Setup = setup ?? ScriptEditorSetup.None;
     }
 
+    /// <summary>What sets a script's project up before the script opens.</summary>
+    public ScriptEditorSetup Setup { get; }
+
     /// <summary>A launcher over this computer.</summary>
-    public static ScriptLauncher ForThisComputer() => new(new ProcessStarter(), ScriptEditorSurvey.Take);
+    public static ScriptLauncher ForThisComputer() =>
+        new(new ProcessStarter(), ScriptEditorSurvey.Take, setup: ScriptEditorSetup.OfThisBuild());
 
     /// <summary>
     /// Opens the script off the calling thread: looking for a code editor
@@ -73,6 +81,18 @@ public sealed class ScriptLauncher
         if (!_fileExists(request.FilePath))
             return new ScriptOpenOutcome(null, OutputSeverity.Error, $"{name} is not on disk.", []);
 
+        // First, so a code editor that starts below finds its files there.
+        // Only for a script: any other file is shown and never opened.
+        ScriptProjectReport project =
+            ScriptOpenPlan.IsScriptFile(request.FilePath) && request.ProjectFolder is { Length: > 0 } folder
+                ? Setup.Prepare(folder)
+                : ScriptProjectReport.Nothing;
+
+        return Start(request, name) with { Project = project };
+    }
+
+    private ScriptOpenOutcome Start(ScriptOpenRequest request, string name)
+    {
         int? lines = request.Line is null ? null : _countLines(request.FilePath);
         ScriptOpenRequest inFile = KeepLineInFile(request, lines);
         ScriptEditorFacts facts = _survey();

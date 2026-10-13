@@ -48,7 +48,11 @@ public static class ScriptProjectSetup
             if (!Directory.Exists(projectFolder))
                 return ScriptProjectReport.Nothing;
 
-            tally.Try(ScriptProjectFiles.Definitions, path => WriteDefinitions(path, definitions, writesMissing, tally));
+            // A project that was never set up has no file to bring up.
+            if (!writesMissing && !File.Exists(Path.Combine(projectFolder, ScriptProjectFiles.Definitions)))
+                return ScriptProjectReport.Nothing;
+
+            tally.Try(ScriptProjectFiles.Definitions, path => WriteDefinitions(path, definitions, tally));
             if (writesMissing)
             {
                 tally.Try(ScriptProjectFiles.LuauRc, path => WriteNew(path, ScriptProjectFiles.LuauRcText()));
@@ -62,11 +66,10 @@ public static class ScriptProjectSetup
 
     // Left alone when it holds the same text, so a watcher of the file is
     // not woken for nothing.
-    private static bool WriteDefinitions(string path, string text, bool writesMissing, Tally tally)
+    private static bool WriteDefinitions(string path, string text, Tally tally)
     {
         bool isThere = File.Exists(path);
-        bool isWanted = isThere ? !IsSameText(File.ReadAllBytes(path), text) : writesMissing;
-        if (!isWanted)
+        if (isThere && IsSameText(File.ReadAllBytes(path), text))
             return false;
 
         File.WriteAllBytes(path, Utf8.GetBytes(text));

@@ -1,11 +1,13 @@
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.ConsoleSystem;
+using SpectraEngine.Core.Scripting.Tooling;
 using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Shell.Scripts;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 
@@ -25,6 +27,9 @@ internal sealed class ScriptCommands
 
     // The opens that have not answered yet, each by its file and its line.
     private readonly HashSet<(string File, int? Line)> _opening = [];
+
+    // The last line about files a project's folder did not take.
+    private string? _refusalSaid;
 
     /// <summary>Creates the commands.</summary>
     /// <param name="session">The session that is live now, or null.</param>
@@ -48,6 +53,31 @@ internal sealed class ScriptCommands
 
         // A line in Output that names a script and a line opens it there.
         shell.Output.PlaceRequested += OpenPlace;
+
+        document.PropertyChanged += (_, change) =>
+        {
+            if (change.PropertyName != nameof(EditorDocument.Project))
+                return;
+
+            // Another project is another folder, with refusals of its own.
+            _refusalSaid = null;
+            _ = RefreshProjectAsync();
+        };
+    }
+
+    /// <summary>
+    /// Brings the open project's definitions file up to this build, when the
+    /// project has one. Off the calling thread: it reads and writes the disk.
+    /// </summary>
+    // A project last opened with an older engine holds an older script API,
+    // and a code editor that is open on it reads the file with no script
+    // opened from here.
+    public async Task RefreshProjectAsync()
+    {
+        if (_document.Project is not { } project)
+            return;
+
+        Say(await Task.Run(() => _launcher.Setup.Refresh(project.Root)));
     }
 
     /// <summary>Makes a script file and adds a script that names it, under the selection.</summary>
@@ -187,6 +217,8 @@ internal sealed class ScriptCommands
             _opening.Remove(asked);
         }
 
+        Say(outcome.Project);
+
         foreach (string failure in outcome.Failures)
             _shell.Output.Append(OutputSeverity.Warning, failure);
 
@@ -204,6 +236,26 @@ internal sealed class ScriptCommands
             case OutputSeverity.Warning: _shell.SetWarning(outcome.Message); break;
             default: _shell.SetMessage(outcome.Message); break;
         }
+    }
+
+    // One line in Output for what was written into the project's folder, or
+    // for what could not be. Never the status bar: the open has that.
+    private void Say(ScriptProjectReport report)
+    {
+        string? wrote = report.DescribeWritten();
+        string? refused = report.DescribeRefused();
+        if (wrote is null && refused is null)
+            return;
+
+        // A folder that does not take a file refuses it on every open, so
+        // a refusal is said when it is new.
+        string? news = refused == _refusalSaid ? null : refused;
+        _refusalSaid = refused;
+
+        string?[] parts = [wrote, news];
+        string line = string.Join(' ', parts.Where(part => part is not null));
+        if (line.Length > 0)
+            _shell.Output.Append(news is null ? OutputSeverity.Info : OutputSeverity.Warning, line);
     }
 
     private void OnAdded(EditorSession session, ScriptInsertReport report)
