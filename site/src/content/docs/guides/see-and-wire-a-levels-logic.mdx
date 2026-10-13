@@ -88,8 +88,26 @@ Wires cannot be changed while the level plays. Stop, and the view is back to wha
 
 The console prints the same story line by line with `ent_watch on`. See [Console](/reference/console/).
 
+## Scripts
+
+A script is code, and the view does not draw code. It says where scripts are and what they reach.
+
+While you edit, a card names the scripts under its entity: `1 script inside: Beep`. Nothing more is known yet, because a script connects when it runs.
+
+Press Play, and each script that hears an output or has sent an input gets a small card of its own, joined by dashed wires:
+
+- A dashed wire from an output to a script means the script listens to that output, with `Connect`, `Once` or `Wait`.
+- A dashed wire from a script to an input means the script has sent that input, as `door:Open()` does.
+- The label names the line of code, such as `DoorController, line 42`. A module has no card. Its code counts for the script that asked for it, and the label names the module's file.
+- A dashed wire lights up when it carries something. The strip under the graph lists it with its line.
+
+A connection that ends takes its wire away, and Stop takes them all away. Dashed wires are made by code and last only while the level runs.
+
+Double-click a script's card to open its file. The Scripts key in the toolbar hides everything in this section.
+
 ## Limits today
 
 - The view lays the cards out itself. You cannot move a card.
 - A level with many crossing wires is hard to read as a whole. Work around the selection there.
 - The view shows the first 4,000 entities of a level and says so when there are more.
+- What a script will connect is not known before the level runs. An input a script sent before the view was opened shows once the script sends it again.
