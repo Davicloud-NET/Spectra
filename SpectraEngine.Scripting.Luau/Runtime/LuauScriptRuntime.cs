@@ -125,6 +125,9 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     /// <summary>How many nodes hold an attribute a script set, or a signal of one a script asked for. None once the level has stopped.</summary>
     public int AttributeNodeCount => _attributes.Table.NodeCount;
 
+    // How many tags are kept, with those nothing waits on until they are looked over.
+    internal int KnownTagCount => _tags.Table.TagCount;
+
     /// <summary>
     /// Whether the Luau state is gone, and every thread with it. After
     /// <see cref="Close"/> that is at once, or when the call into a script

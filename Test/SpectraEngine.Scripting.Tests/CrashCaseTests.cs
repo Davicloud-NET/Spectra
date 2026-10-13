@@ -175,6 +175,6 @@ public sealed class CrashCaseTests
 
         result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
         result.Output.ShouldContain("NativeAOT: True");
-        result.Output.ShouldContain("tagged and set 400 times in a level, 140 refused");
+        result.Output.ShouldContain("tagged and set 480 times in a level, 180 refused");
     }
 }

@@ -10,10 +10,15 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // and when a tagged node comes into the tree or leaves it.
 internal sealed class LevelTags
 {
+    // With fewer tags than this none is looked over.
+    private const int FirstLookOver = 64;
+
     private readonly LuauHost _host;
     private readonly EntityWorld _world;
     private readonly SignalHub _hub;
     private readonly DeferredCalls _calls;
+    private readonly Func<ScriptSignal, bool> _isHeld;
+    private int _lookOverAt = FirstLookOver;
 
     public LevelTags(LuauHost host, EntityWorld world, SignalHub hub, DeferredCalls calls)
     {
@@ -21,6 +26,7 @@ internal sealed class LevelTags
         _world = world;
         _hub = hub;
         _calls = calls;
+        _isHeld = host.Objects.Holds;
     }
 
     // Who has what. Adding here fires nothing, which is how a level's own
@@ -47,6 +53,9 @@ internal sealed class LevelTags
     // A tag the node has already is added to nothing and fires nothing.
     public void Add(SceneNode node, ReadOnlySpan<char> tag)
     {
+        if (Table.TagCount >= _lookOverAt && Table.Find(tag) is null)
+            LookOver();
+
         bool isInLevel = NodeTree.IsIn(_world.Scene.Root, node);
         if (Table.Add(node, tag, isInLevel) is { } added && isInLevel)
             Fire(added.Added, node);
@@ -64,17 +73,11 @@ internal sealed class LevelTags
         Table.Find(tag) is { } found ? Table.InOrder(found) : [];
 
     // One signal for each tag, so a script reads the same object every time.
-    public ScriptSignal AddedSignal(ReadOnlySpan<char> tag)
-    {
-        TagNodes named = Table.FindOrMake(tag);
-        return named.Added ??= new ScriptSignal("Signal InstanceAdded", _hub);
-    }
+    public ScriptSignal AddedSignal(ReadOnlySpan<char> tag) =>
+        Named(tag).Added ??= new ScriptSignal("Signal InstanceAdded", _hub);
 
-    public ScriptSignal RemovedSignal(ReadOnlySpan<char> tag)
-    {
-        TagNodes named = Table.FindOrMake(tag);
-        return named.Removed ??= new ScriptSignal("Signal InstanceRemoved", _hub);
-    }
+    public ScriptSignal RemovedSignal(ReadOnlySpan<char> tag) =>
+        Named(tag).Removed ??= new ScriptSignal("Signal InstanceRemoved", _hub);
 
     // The three below are scene events, raised in the middle of whatever
     // changed the level. So they change nothing and run no script: a
@@ -114,6 +117,32 @@ internal sealed class LevelTags
     }
 
     private void OnMoved(SceneNode node) => Table.TreeMoved();
+
+    private TagNodes Named(ReadOnlySpan<char> tag)
+    {
+        if (Table.Find(tag) is { } kept)
+            return kept;
+
+        if (Table.TagCount >= _lookOverAt)
+            LookOver();
+
+        return Table.FindOrMake(tag);
+    }
+
+    // A tag no node has stays, so one that comes and goes is made once. Each
+    // time there are twice as many tags as were left the last time, those
+    // nothing waits on are let go. Which signals scripts still hold is for
+    // Luau to say, and a full collection makes it say so now.
+    private void LookOver()
+    {
+        if (Table.DropUnused() > 0)
+        {
+            _host.Collect();
+            Table.DropUnheard(_isHeld);
+        }
+
+        _lookOverAt = Math.Max(FirstLookOver, Table.TagCount * 2);
+    }
 
     private void Fire(ScriptSignal? signal, SceneNode node)
     {

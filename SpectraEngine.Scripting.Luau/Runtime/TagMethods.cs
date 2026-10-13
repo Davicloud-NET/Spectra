@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
@@ -14,11 +15,19 @@ internal sealed class TagMethods(LevelTags tags)
     {
         if (!stack.TryGetUtf8(tagAt, out ReadOnlySpan<byte> utf8))
             return ScriptArguments.Wrong(stack, tagAt, "AddTag", "string", isMethod: true);
+        if (utf8.Length > TagLimits.MaxBytes)
+            return stack.Fail($"AddTag {TooLong(utf8.Length)}");
 
         // The tag is compared where it lies, so one the node has makes no string.
         Span<char> room = stackalloc char[NameChars.Room];
         if (!NameChars.TryRead(utf8, room, out ReadOnlySpan<char> tag))
             return stack.Fail($"AddTag {NotText}");
+
+        if (tags.Table.Of(node).Count >= TagLimits.MaxPerNode && !tags.Table.Has(node, tag))
+        {
+            return stack.Fail(
+                $"\"{node.Name}\" has {TagLimits.MaxPerNode} tags, and a node has no more. RemoveTag takes one off");
+        }
 
         tags.Add(node, tag);
         return 0;
@@ -30,7 +39,7 @@ internal sealed class TagMethods(LevelTags tags)
             return ScriptArguments.Wrong(stack, tagAt, "RemoveTag", "string", isMethod: true);
 
         Span<char> room = stackalloc char[NameChars.Room];
-        if (NameChars.TryRead(utf8, room, out ReadOnlySpan<char> tag))
+        if (TryReadTag(utf8, room, out ReadOnlySpan<char> tag))
             tags.Remove(node, tag);
 
         return 0;
@@ -42,7 +51,7 @@ internal sealed class TagMethods(LevelTags tags)
             return ScriptArguments.Wrong(stack, tagAt, "HasTag", "string", isMethod: true);
 
         Span<char> room = stackalloc char[NameChars.Room];
-        bool has = NameChars.TryRead(utf8, room, out ReadOnlySpan<char> tag) && tags.Table.Has(node, tag);
+        bool has = TryReadTag(utf8, room, out ReadOnlySpan<char> tag) && tags.Table.Has(node, tag);
         return ScriptResult.Of(stack.Push(has));
     }
 
@@ -70,7 +79,7 @@ internal sealed class TagMethods(LevelTags tags)
             return ScriptArguments.Wrong(stack, tagAt, "GetTagged", "string", isMethod: true);
 
         Span<char> room = stackalloc char[NameChars.Room];
-        IReadOnlyList<SceneNode> tagged = NameChars.TryRead(utf8, room, out ReadOnlySpan<char> tag) ? tags.Tagged(tag) : [];
+        IReadOnlyList<SceneNode> tagged = TryReadTag(utf8, room, out ReadOnlySpan<char> tag) ? tags.Tagged(tag) : [];
         if (!stack.NewTable(tagged.Count))
             return LuauStack.Raise;
 
@@ -91,6 +100,8 @@ internal sealed class TagMethods(LevelTags tags)
         string method = isOfAdded ? "GetInstanceAddedSignal" : "GetInstanceRemovedSignal";
         if (!stack.TryGetUtf8(tagAt, out ReadOnlySpan<byte> utf8))
             return ScriptArguments.Wrong(stack, tagAt, method, "string", isMethod: true);
+        if (utf8.Length > TagLimits.MaxBytes)
+            return stack.Fail($"{method} {TooLong(utf8.Length)}");
 
         Span<char> room = stackalloc char[NameChars.Room];
         if (!NameChars.TryRead(utf8, room, out ReadOnlySpan<char> tag))
@@ -99,4 +110,15 @@ internal sealed class TagMethods(LevelTags tags)
         ScriptSignal signal = isOfAdded ? tags.AddedSignal(tag) : tags.RemovedSignal(tag);
         return ScriptResult.Of(context.PushObject(stack, signal));
     }
+
+    // False for what is no tag: bytes that are no text, or more of them than
+    // a tag has. No node has such a tag, so asking after one is no mistake.
+    private static bool TryReadTag(ReadOnlySpan<byte> utf8, Span<char> room, out ReadOnlySpan<char> tag)
+    {
+        tag = default;
+        return utf8.Length <= TagLimits.MaxBytes && NameChars.TryRead(utf8, room, out tag);
+    }
+
+    private static string TooLong(int bytes) =>
+        $"was handed a tag of {bytes} bytes, and a tag is at most {TagLimits.MaxBytes} bytes long";
 }

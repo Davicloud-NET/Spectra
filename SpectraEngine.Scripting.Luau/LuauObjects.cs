@@ -80,6 +80,17 @@ public sealed unsafe class LuauObjects
     }
 
     /// <summary>
+    /// Whether a script may still hold the userdata of the object. It stays true for a
+    /// while after the last script let go, until Luau has collected the userdata and
+    /// <see cref="ReleaseCollected"/> has run.
+    /// </summary>
+    public bool Holds(object value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return _slotOf.ContainsKey(value);
+    }
+
+    /// <summary>
     /// Lets an object go, for one that left the level. A userdata a script still holds
     /// of it reads as released from now on. False when no script could reach it.
     /// </summary>

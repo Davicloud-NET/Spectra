@@ -131,13 +131,18 @@ public sealed class TagOrderTests
 
     // Two thousand nodes beside the two that are tagged. The way up from
     // each is three nodes long, and their paths part at the root, whose
-    // children are looked over until both are found.
-    [Fact]
-    public void Putting_nodes_in_order_looks_at_what_is_above_them_and_not_at_the_rest_of_the_level()
+    // children are looked over until both are found. So the two branches
+    // cost 8 when they are the root's first children and 28 behind the
+    // twenty crowds, and the nodes inside the crowds cost nothing.
+    [Theory]
+    [InlineData(true, 8)]
+    [InlineData(false, 28)]
+    public void Putting_nodes_in_order_looks_at_what_is_above_them_and_at_the_children_where_their_paths_part(
+        bool areFirst, int lookedAt)
     {
         var root = new SceneNode("Root");
-        SceneNode near = root.CreateChild("Near").CreateChild("Shelf").CreateChild("Cup");
-        SceneNode far = root.CreateChild("Far").CreateChild("Shelf").CreateChild("Cup");
+        SceneNode? near = areFirst ? root.CreateChild("Near") : null;
+        SceneNode? far = areFirst ? root.CreateChild("Far") : null;
         for (int i = 0; i < 20; i++)
         {
             SceneNode crowd = root.CreateChild($"Crowd{i}");
@@ -145,12 +150,82 @@ public sealed class TagOrderTests
                 crowd.CreateChild($"Node{j}");
         }
 
+        SceneNode nearCup = (near ?? root.CreateChild("Near")).CreateChild("Shelf").CreateChild("Cup");
+        SceneNode farCup = (far ?? root.CreateChild("Far")).CreateChild("Shelf").CreateChild("Cup");
+
         var order = new TreeOrder();
-        List<SceneNode> nodes = [far, near];
+        List<SceneNode> nodes = [farCup, nearCup];
         order.Sort(nodes);
 
-        nodes.ShouldBe([near, far]);
-        order.LookedAt.ShouldBe(8);
+        nodes.ShouldBe([nearCup, farCup]);
+        order.LookedAt.ShouldBe(lookedAt);
+    }
+
+    // The worst case: every part sits under the root, so the root's children
+    // are the level, and they are looked over up to the last tagged one.
+    [Fact]
+    public void In_a_flat_level_putting_nodes_in_order_looks_at_every_node_up_to_the_last_one_tagged()
+    {
+        var root = new SceneNode("Root");
+        for (int i = 0; i < 2000; i++)
+            root.CreateChild($"Part{i}");
+
+        SceneNode early = root.Children[10];
+        SceneNode late = root.Children[1500];
+
+        var order = new TreeOrder();
+        List<SceneNode> nodes = [late, early];
+        order.Sort(nodes);
+
+        nodes.ShouldBe([early, late]);
+        order.LookedAt.ShouldBe(2 + 1501);
+    }
+
+    [Fact]
+    public void However_many_nodes_lose_a_tag_its_list_is_tidied_once_when_it_is_asked_for_next()
+    {
+        var root = new SceneNode("Root");
+        var table = new TagTable();
+        List<SceneNode> nodes = [];
+        for (int i = 0; i < 1000; i++)
+        {
+            nodes.Add(root.CreateChild($"Part{i}"));
+            table.Add(nodes[i], "Lit", isInLevel: true);
+        }
+
+        TagNodes lit = table.Find("Lit").ShouldNotBeNull();
+        table.InOrder(lit).ShouldBe(nodes);
+
+        for (int i = 0; i < 1000; i += 2)
+            table.Remove(nodes[i], "Lit", out _);
+
+        table.Tidyings.ShouldBe(0);
+        table.InOrder(lit).ShouldBe(nodes.Where((_, index) => index % 2 == 1));
+        table.InOrder(lit).Count.ShouldBe(500);
+        table.Tidyings.ShouldBe(1);
+        table.Orderings.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_node_that_loses_a_tag_and_gets_it_back_before_the_list_is_asked_for_is_in_it_once()
+    {
+        var root = new SceneNode("Root");
+        SceneNode a = root.CreateChild("A");
+        SceneNode b = root.CreateChild("B");
+        SceneNode c = root.CreateChild("C");
+        var table = new TagTable();
+        foreach (SceneNode node in new[] { a, b, c })
+            table.Add(node, "Lit", isInLevel: true);
+
+        TagNodes lit = table.Find("Lit").ShouldNotBeNull();
+        table.InOrder(lit).ShouldBe([a, b, c]);
+
+        table.Remove(b, "Lit", out _);
+        table.Add(b, "Lit", isInLevel: true);
+        table.Leave(c);
+        table.Enter(c);
+
+        table.InOrder(lit).ShouldBe([a, b, c]);
     }
 
     [Fact]

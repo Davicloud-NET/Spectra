@@ -40,6 +40,13 @@ internal static class TagCase
         ("crate:SetAttribute('Owner', workspace)", false, "Instance is not a supported attribute type"),
         ("crate:SetAttribute('Text', '\\255')", false, "not valid UTF-8"),
         ("crate:SetAttribute()", false, "string expected, got nil"),
+
+        // Enough tags nobody keeps to have them looked over, which runs a
+        // full collection of Luau from inside a host function.
+        ("for i = 1, 200 do tags:GetInstanceAddedSignal('passing' .. i) end return #tags:GetTagged('Heavy')", true, "1"),
+        ("crate:AddTag(string.rep('t', 257))", false, "a tag is at most 256 bytes long"),
+        ("crate:SetAttribute('Note', string.rep('x', 65537))", false, "is at most 65536 bytes long"),
+        ("return crate:GetAttributeChangedSignal('not a name') == lamp:GetAttributeChangedSignal('\\255')", true, "true"),
         ("task.wait() return heard", true, "+Crate +Lamp -Lamp Weight Rest Glow Label Weight -Crate"),
     ];
 

@@ -62,13 +62,26 @@ internal static class AttributeValues
     };
 
     // A string of Luau is bytes. Bytes that are no text would read back as
-    // other bytes than the script set.
+    // other bytes than the script set. The text is kept outside the memory
+    // Luau counts for the scripts, so its length has a bound here.
     private static bool TryReadText(ReadOnlySpan<byte> text, in MemberValue held, out MemberValue value, out string? refusal)
     {
-        refusal = Utf8.IsValid(text) ? null : $"A string that is not valid UTF-8 is not a supported attribute value. {Kinds}";
-        value = refusal is null
-            ? MemberValue.Of(ScriptContext.TextOf(text, held.Kind == MemberValueKind.Text ? held.Text : string.Empty))
-            : MemberValue.None;
+        value = MemberValue.None;
+        refusal = null;
+        if (text.Length > AttributeLimits.MaxTextBytes)
+        {
+            refusal = $"A string of {text.Length} bytes is not a supported attribute value. " +
+                $"An attribute's string is at most {AttributeLimits.MaxTextBytes} bytes long";
+        }
+        else if (!Utf8.IsValid(text))
+        {
+            refusal = $"A string that is not valid UTF-8 is not a supported attribute value. {Kinds}";
+        }
+        else
+        {
+            value = MemberValue.Of(ScriptContext.TextOf(text, held.Kind == MemberValueKind.Text ? held.Text : string.Empty));
+        }
+
         return refusal is null;
     }
 }

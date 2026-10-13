@@ -182,19 +182,4 @@ public sealed class TagScriptTests
 
         printed.ShouldBe(["false 0 0"]);
     }
-
-    [Fact]
-    public void A_tag_longer_than_any_name_is_a_tag_like_another()
-    {
-        string[] printed = House.Ask(Service + """
-            local long = string.rep("tag", 400)
-            local door = workspace.House.Door
-            door:AddTag(long)
-            print(door:HasTag(long), door:GetTags()[1] == long, CollectionService:GetTagged(long)[1])
-            door:RemoveTag(long)
-            print(door:HasTag(long), #CollectionService:GetTagged(long))
-            """);
-
-        printed.ShouldBe(["true true Door", "false 0"]);
-    }
 }

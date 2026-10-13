@@ -151,27 +151,27 @@ internal static partial class NodeApi
     private static int GetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.Get(context, stack, node);
 
-    /// <summary>Leaves a value on the node under a name, for every script to read: a string, a boolean, a number, a Vector3, a CFrame or a Color3. Nil takes the attribute away. A name is 1 to 100 letters, digits and underscores, and does not start with RBX. On a node that carries an entity, scripts read this in place of the keyvalue of that name, and the entity never sees it: a door does not follow SetAttribute("speed", 9). Stop takes away what scripts set.</summary>
+    /// <summary>Leaves a value on the node under a name, for every script to read: a string, a boolean, a number, a Vector3, a CFrame or a Color3. Nil takes the attribute away. A name is 1 to 100 letters, digits and underscores, and does not start with RBX. A string is at most 65536 bytes long, and a node holds at most 256 attributes. On a node that carries an entity, scripts read this in place of the keyvalue of that name, and the entity never sees it: a door does not follow SetAttribute("speed", 9). Stop takes away what scripts set.</summary>
     [ScriptMethod(Parameters = "attribute: string, value: (string | boolean | number | Vector3 | CFrame | Color3)?")]
     private static int SetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.Set(context, stack, node);
 
-    /// <summary>Every attribute of the node by its name: what scripts set, and under that the keyvalues of the entity the node carries.</summary>
+    /// <summary>Every attribute of the node by its name: what scripts set, and under that the keyvalues of the entity the node carries. SetAttribute does not take every keyvalue back: one that refers to a node is that node here, and a keyvalue can have a name no attribute has.</summary>
     [ScriptMethod(Returns = "{ [string]: any }")]
     private static int GetAttributes(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.GetAll(context, stack, node);
 
-    /// <summary>Fires with the attribute's name when a script sets an attribute of the node to another value, or takes one away. Setting the value it has fires nothing.</summary>
+    /// <summary>Fires with the attribute's name when a script sets an attribute of the node to another value, or takes one away. Setting the value it has fires nothing, and 0 and -0 are one value.</summary>
     [ScriptSignal("attribute: string")]
     public static ScriptSignal AttributeChanged(ScriptContext context, SceneNode node) =>
         context.Attributes.ChangedSignal(node);
 
-    /// <summary>The signal that fires when a script sets the attribute of that name to another value, or takes it away. A listener is handed nothing and reads the value with GetAttribute.</summary>
+    /// <summary>The signal that fires when a script sets the attribute of that name to another value, or takes it away. A listener is handed nothing and reads the value with GetAttribute. A name no attribute can have gets a signal that never fires.</summary>
     [ScriptMethod(Parameters = "attribute: string", Returns = "RBXScriptSignal<()>")]
     private static int GetAttributeChangedSignal(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.PushChangedSignalOf(context, stack, node);
 
-    /// <summary>Puts a tag on the node, by which every script finds it: CollectionService lists the nodes of a tag. Nothing happens when the node has it. Stop takes every tag away.</summary>
+    /// <summary>Puts a tag on the node, by which every script finds it: CollectionService lists the nodes of a tag. Nothing happens when the node has it. A tag is at most 256 bytes long, and a node has at most 256 tags. Stop takes every tag away.</summary>
     [ScriptMethod(Parameters = "tag: string")]
     private static int AddTag(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Tags.Add(stack, node, tagAt: 2);

@@ -5,8 +5,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // Puts nodes into the order of their tree: a node before what is below it,
 // and children in their parent's order. It walks up from each node and down
-// again along those paths only. So it is paid by the nodes handed in and by
-// the children of the nodes where their paths part, not by the level.
+// again along those paths. Where paths part, the children are looked over
+// up to the last one on a path. In a flat level that is most of the level.
 internal sealed class TreeOrder
 {
     private readonly Dictionary<SceneNode, Mark> _marks = [];

@@ -21,6 +21,9 @@ internal sealed class AttributeMethods
     private readonly DeferredCalls _calls;
     private readonly List<string> _built = [];
 
+    // What every name no attribute can have gets as its signal.
+    private ScriptSignal? _neverFires;
+
     public AttributeMethods(SignalHub hub, DeferredCalls calls)
     {
         _hub = hub;
@@ -50,6 +53,14 @@ internal sealed class AttributeMethods
         // The value it has already is set to nothing and fires nothing.
         if (wasSet ? held == value : IsWhatWasBuilt(context, node, name, in value))
             return 0;
+
+        // From here a name the node does not hold is one more for it to hold.
+        if (!wasSet && Table.Of(node) is { Values.Count: >= AttributeLimits.MaxPerNode })
+        {
+            return stack.Fail(
+                $"\"{node.Name}\" has {AttributeLimits.MaxPerNode} attributes, and a node holds no more. " +
+                "SetAttribute with nil takes one away");
+        }
 
         // Taken away from a keyvalue, the name is kept with no value, or
         // the keyvalue would show through again.
@@ -128,20 +139,34 @@ internal sealed class AttributeMethods
         Table.OfOrMake(node).Changed ??= new ScriptSignal("Signal AttributeChanged", _hub);
 
     // GetAttributeChangedSignal. The name is the second value. A name no
-    // script can set gets a signal too, which then never fires.
+    // attribute can have is never set, so its signal never fires. It is one
+    // signal for all such names, and nothing is kept for the name.
     public int PushChangedSignalOf(ScriptContext context, LuauStack stack, SceneNode node)
     {
         if (!stack.TryGetUtf8(2, out ReadOnlySpan<byte> utf8))
             return ScriptArguments.Wrong(stack, 2, "GetAttributeChangedSignal", "string", isMethod: true);
 
+        // A name is ASCII, so more bytes than a name has characters is no name.
         Span<char> room = stackalloc char[NameChars.Room];
-        if (!NameChars.TryRead(utf8, room, out ReadOnlySpan<char> name))
-            return stack.Fail(NotText);
+        if (utf8.Length > AttributeName.MaxLength
+            || !NameChars.TryRead(utf8, room, out ReadOnlySpan<char> name)
+            || !AttributeName.IsValid(name))
+        {
+            _neverFires ??= new ScriptSignal("Signal AttributeChanged", _hub);
+            return ScriptResult.Of(context.PushObject(stack, _neverFires));
+        }
 
         NodeAttributes own = Table.OfOrMake(node);
         own.ChangedOf ??= new Dictionary<string, ScriptSignal>(StringComparer.Ordinal);
         if (!own.ChangedOf.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out ScriptSignal? signal))
         {
+            if (own.ChangedOf.Count >= AttributeLimits.MaxPerNode)
+            {
+                return stack.Fail(
+                    $"\"{node.Name}\" keeps the signals of {AttributeLimits.MaxPerNode} attribute names, " +
+                    "and a node keeps no more");
+            }
+
             signal = new ScriptSignal("Signal AttributeChanged", _hub);
             own.ChangedOf.Add(Table.NameOf(name), signal);
         }
