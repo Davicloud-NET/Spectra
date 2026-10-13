@@ -20,7 +20,7 @@ public class LooseAndCookedLevelTests
 {
     // Long enough for the deepest script to ask everything, wait and count
     // three heartbeats.
-    private const int Ticks = 45;
+    private const int Ticks = 60;
 
     private static readonly Lazy<Played> BothRuns = new(PlayBoth);
 
@@ -211,6 +211,55 @@ public class LooseAndCookedLevelTests
 
         played.Loose.Where(line => line.Contains(RequiringScript.Mark)).ShouldBe(RequiringScript.Lines);
         played.Cooked.Where(line => line.Contains(RequiringScript.Mark)).ShouldBe(RequiringScript.Lines);
+    }
+
+    // By the node's entity class, which a baked level has as its loose one does.
+    [Theory]
+    [InlineData("Door | member Open | a method")]
+    [InlineData("Door | member OnFullyOpen | Signal OnFullyOpen")]
+    [InlineData("Door | sent Open | true")]
+    [InlineData("Door | heard | OnOpen")]
+    [InlineData("Door | heard | OnFullyOpen")]
+    [InlineData("Relay | member Trigger | a method")]
+    [InlineData("Relay | member OnTrigger | Signal OnTrigger")]
+    [InlineData("Relay | heard its own output | 0 at once, 1 a tick later")]
+    public void An_entity_takes_an_input_from_a_script_and_a_script_hears_its_output_in_both_levels(string said)
+    {
+        Played played = Play();
+
+        played.Loose.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+        played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("Crate", "Open", "Part")]
+    [InlineData("Floor", "OnFullyOpen", "Part")]
+    [InlineData("Sun", "Trigger", "DirectionalLight")]
+    [InlineData("Start", "Open", "info_player_start")]
+    [InlineData("Door", "Trigger", "func_door")]
+    [InlineData("Relay", "Open", "logic_relay")]
+    public void A_node_refuses_an_input_and_an_output_its_class_does_not_have_in_the_same_words(
+        string node, string name, string className)
+    {
+        Played played = Play();
+
+        string loose = played.Loose.Single(line => line.Contains($"{node} | member {name} | "));
+        string cooked = played.Cooked.Single(line => line.Contains($"{node} | member {name} | "));
+
+        cooked.ShouldBe(loose);
+        loose.ShouldContain($"{name} is not a valid member of {className} \"{node} renamed\"");
+    }
+
+    [Fact]
+    public void A_value_for_an_input_that_takes_none_is_refused_the_same_way_in_both_levels()
+    {
+        Played played = Play();
+
+        string loose = played.Loose.Single(line => line.Contains("Relay | a value for an input that takes none | "));
+        string cooked = played.Cooked.Single(line => line.Contains("Relay | a value for an input that takes none | "));
+
+        cooked.ShouldBe(loose);
+        loose.ShouldContain("too many arguments to 'Trigger' (no value expected, got 1 value)");
     }
 
     // Skips where Luau is not built. The level is cooked and played once for

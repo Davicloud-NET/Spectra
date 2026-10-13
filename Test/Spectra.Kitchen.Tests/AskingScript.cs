@@ -117,5 +117,34 @@ internal static class AskingScript
         		print(who .. " | heartbeat | " .. beats .. " beats of " .. step)
         	end
         end)
+
+        -- What the node's entity class gives it: an input is a method and an
+        -- output is a signal. A node with no entity has neither.
+        local function member(name)
+        	local ok, found = pcall(function() return target[name] end)
+        	return if not ok then found elseif type(found) == "function" then "a method" else tostring(found)
+        end
+
+        for _, name in { "Open", "Trigger", "OnFullyOpen", "OnTrigger" } do
+        	say("member " .. name, member(name))
+        end
+        attempt("an input no class has", function() target:Explode() end)
+
+        if target:IsA("logic_relay") then
+        	local heard = 0
+        	target.OnTrigger:Connect(function() heard += 1 end)
+        	target:Trigger()
+        	local atOnce = heard
+        	task.wait()
+        	say("heard its own output", atOnce .. " at once, " .. heard .. " a tick later")
+        	attempt("a value for an input that takes none", function() target:Trigger(1) end)
+        end
+
+        if target:IsA("func_door") then
+        	target.OnOpen:Once(function() print(who .. " | heard | OnOpen") end)
+        	target.OnFullyOpen:Once(function() print(who .. " | heard | OnFullyOpen") end)
+        	target:Open()
+        	say("sent Open", target.OnOpen == target.OnOpen)
+        end
         """;
 }

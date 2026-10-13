@@ -169,6 +169,45 @@ Two more things stay by hand:
 
 `require` is declared like any global function with by-hand arguments (`ModuleLoader`), so the reference has it with its summary. The definitions file leaves it out. The type checker has a `require` of its own, which follows a path to its file and gives the module its type. A declaration in the file would take its place, and every module would be `any`. `LuauDefinitions.IsTheCheckersOwn` holds the names that are left out this way.
 
+## The members of an entity class
+
+An entity class is data, so no attribute declares what a script finds on its node. Its schema does. An input is a method and an output is a signal:
+
+```lua
+local button = workspace.Button :: func_button
+local door = workspace.Door :: func_door
+
+button.OnPressed:Connect(function()
+    door:Open()
+end)
+```
+
+`EntityClassApi` in `SpectraEngine.Core/Scripting/Api` is the one place that reads a schema this way. `MembersOf` gives the inputs and outputs a script reaches, and `Describe` writes them as a class. The binding (`EntityMembers`) answers a script from `MembersOf`, and the definitions file and the JSON are written from `Describe`, so the three say the same.
+
+A build's own description knows no level. `LuauScriptApi.Description.WithEntityClasses(schemas)` adds the classes of a set of schemas, and that is what a host hands to `LuauDefinitions.Write` and `ScriptApiJson.Write`. The demo's switches hand it the built-in classes, read back from `.sentdef` bytes.
+
+Who wins a name: a member of the node's own class, then an input, then an output, then a child. A name Luau cannot write after a colon is no member. `EntityClassApiTests` fails when a built-in class has an input or an output named as a member of the node that carries it.
+
+What a value is to a script goes by the type the schema gives the input or the output (`EntityClassApi.KindOf`):
+
+| The schema says | A script hands over, or is handed |
+|---|---|
+| no value | nothing |
+| `Bool` | a boolean |
+| `Int` | a number with no fraction |
+| `Float` | a number |
+| `String`, `TargetName` | a string |
+| `Vec3`, `Color`, `Angles` | a `Vector3` |
+| `Vec2`, `Vec4` | two or four numbers, each a value of its own |
+| `NodeRef` | a node, or nil |
+| nothing, as a `.sentdef` from before the types | one value of any of these kinds in, the wire's text out |
+
+`ParameterText` turns the value into the text a wire carries and back, so an entity reads from a script what it reads from a wire. `WireValues` in the binding is the Luau side of that.
+
+Neither runs inside the call. `door:Open()` queues the input, and a fired output queues one event for each listener (`EntityWorld.Listeners`), numbered on from the output's own wires. Both wait with what scripts made, so they take the scripts' share of a tick and of the queue.
+
+The type checker cannot know a level. `workspace.Door` is an `Instance` to it, and a script says what it is with a cast, as above.
+
 ## What is generated
 
 For a class or a value, in the other half of the declaring class:
@@ -198,6 +237,8 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global, and that it has no `require`.
 - `ScriptCostTests` fails when a crossing allocates. A new kind of crossing gets a row there. Its table of times is a measurement, which runs only when asked for: `dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.ScriptCostTests"`.
 - The generator's own tests are in `Test/SpectraEngine.Entities.Tests` (`ScriptApiGenerator*`). They compile its output against stubs of the binding in `ScriptApiHarness`. When the generator calls something new in the binding, the stub gets it too.
+- `EntityClassApiTests` holds the built-in entity classes against the script API: no input or output may be named as a member of the node that carries it, and each has to be in the definitions file.
+- `EntityClassBindingTests` asks a node of an entity class for every name of its schema, and compares with the description of the class.
 
 ## The files
 
