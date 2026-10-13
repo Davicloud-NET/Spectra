@@ -64,6 +64,7 @@ internal sealed class PlayJournal
         }
         catch (Exception failure)
         {
+            // Thrown again below, unless a value failed before it.
             first ??= ExceptionDispatchInfo.Capture(failure);
         }
 

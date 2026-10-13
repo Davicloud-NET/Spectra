@@ -754,6 +754,9 @@ public sealed class EntityWorld
     // level did: each spawns once all of them are built, named and wired.
     private void SpawnAll(List<SceneNode> nodes)
     {
+        if (_index is not { } index)
+            return;
+
         int first = _entities.Count;
         for (int i = 0; i < nodes.Count; i++)
         {
@@ -761,7 +764,7 @@ public sealed class EntityWorld
 
             // Gone again since it was queued, queued twice, or built by Activate.
             if (node.Entity is not { } data || !ReferenceEquals(node.Owner, _scene)
-                || _index!.TryGetByNodeId(node.Id, out _))
+                || index.TryGetByNodeId(node.Id, out _))
             {
                 continue;
             }
@@ -769,7 +772,7 @@ public sealed class EntityWorld
             Entity entity = Build(node, data);
             _entities.Add(entity);
             ParseKeyvalues(entity, data);
-            _index.Register(entity);
+            index.Register(entity);
         }
 
         for (int i = first; i < _entities.Count; i++)

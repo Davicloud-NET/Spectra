@@ -31,11 +31,10 @@ internal static class OpenWorldSpawn
         for (int i = 0; i < sizes.Length; i++)
             medians[i] = RunSize(sizes[i], placementsOf(sizes[i]), timedReps);
 
-        // A spawn, a destroy and the ray each walk the scene's tree of boxes
-        // from the root, and that tree is about six levels taller in the
-        // largest world than in the smallest. So the band is 2x here, where
-        // the move gesture has 1.5x. A stage that walks the world would show
-        // about 50x.
+        // A spawn, a destroy and the ray each walk the scene's tree of boxes,
+        // which is about six levels taller in the largest world. So the band
+        // is 2x here, where the move gesture has 1.5x. A stage that walks the
+        // world would show about 50x.
         double ratio = medians[^1] / medians[0];
         Console.WriteLine(
             $"  verdict (SPAWN and DESTROY): a tick at {sizes[^1] / 1000}k parts = {ratio:F2}x the tick at " +

@@ -1,10 +1,9 @@
 namespace Spectra.Kitchen.Tests;
 
-// A script that makes nodes, clones nodes of the level, gives them other
-// parents and destroys them, and asks a world brush for each of those. Every
-// line begins with the same word, so a test finds them among the rest. It
-// waits before it starts, so the level is as it was built while the other
-// scripts list it, and it ends with every node it made destroyed.
+// A script that makes, clones, moves and destroys nodes, and asks a world
+// brush for each of those. Every line begins with the same word, so a test
+// finds them among the rest. It waits before it starts, so the other scripts
+// list the level as it was built, and it destroys every node it made.
 internal static class MakingScript
 {
     public const string Path = "Scripts/makes.luau";

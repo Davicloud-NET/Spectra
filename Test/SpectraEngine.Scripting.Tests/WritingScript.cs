@@ -5,13 +5,10 @@ using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Tests;
 
-// The Luau of a script that makes random writes: to its own node, to the
-// node above it and to the root, a few each tick. First one to every member
-// of each of the three, then the random ones. Every write is in a pcall,
-// and the script ends by printing how many were refused and how many each
-// member took. It is one line: every script ends on the same tick, and
-// scripts may print only so many lines in one. A tick later it changes the
-// tree: it makes, clones, moves and destroys nodes.
+// The Luau of a script that writes at random to its own node, the node above
+// it and the root: first every member of each, then a few a tick, each in a
+// pcall. It prints its counts as one line, since all scripts end on one tick
+// and may print only so many. A tick later it makes, clones, moves and destroys.
 internal static class WritingScript
 {
     // What every node that carries one of these scripts is called.
@@ -51,11 +48,10 @@ internal static class WritingScript
 
         SceneNode[] targets = [AnyNode, parent, root];
 
-        // The wait comes before the first write of any script, so what each
-        // script read at its start is what the level was authored with. A
-        // member the target does not have is left out of what was read.
-        // The nodes a script can name as a parent are those the level was
-        // built with, in the order of its tree, as RandomWrites counts them.
+        // The wait comes before any script's first write, so each script read
+        // what the level was authored with. A member the target does not have
+        // is left out. The parents a script can name are the nodes the level
+        // was built with, in the order of its tree, as RandomWrites counts them.
         var text = new StringBuilder()
             .AppendLine("local all = { workspace }")
             .AppendLine("for _, node in workspace:GetDescendants() do")
