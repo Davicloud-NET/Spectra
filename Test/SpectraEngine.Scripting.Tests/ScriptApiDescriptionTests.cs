@@ -41,6 +41,10 @@ public sealed partial class ScriptApiDescriptionTests
             Color3 = Color3.new(1, 0.5, 0),
             CollectionService = game:GetService("CollectionService"),
         }
+        local moved = {}
+        holders.Character:SetMover(function(state, command, collision, tuning) moved = { state, command, collision, tuning } end)
+        run.Heartbeat:Wait()
+        holders.CharacterState, holders.CharacterCommand, holders.CharacterCollision, holders.CharacterTuning = table.unpack(moved)
         """;
 
     // No node is one of these and nothing more, so none has a holder: a node

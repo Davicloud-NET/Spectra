@@ -38,6 +38,9 @@ internal static class ScriptSamples
                 .Select(file => new ScriptSample(Path.GetRelativePath(folder, file).Replace('\\', '/'), Read(file))),
             new(TemplatePath, Read(Path.Combine(root, "SpectraEngine.Editor", "Assets", "Templates", "Script.luau"))),
             new(DemoSpinner.ScriptPath, Read(Path.Combine(root, "Assets", DemoSpinner.ScriptPath))),
+            new(MoverLevel.Installer, Read(Path.Combine(root, "Assets", MoverLevel.Installer))),
+            new(MoverLevel.Walk, Read(Path.Combine(root, "Assets", MoverLevel.Walk))),
+            new(MoverLevel.DoubleJump, Read(Path.Combine(root, "Assets", MoverLevel.DoubleJump))),
         ];
 
         // EnumerateFiles has no documented order.
