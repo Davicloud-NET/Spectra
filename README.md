@@ -29,20 +29,21 @@ It's early. You can build a level, wire it up, script it in Luau, walk around in
 | Sound | Positional sound through OpenAL with distance falloff, Doppler, and walls that muffle a sound by what they're made of and how thick they are. Captions and subtitles come from plain text files. | Sound around corners, reverb, music, compressed audio. Nothing draws the captions on screen yet. |
 | Content | Everything loads from loose files or from `.spack` packs. `scook` cooks a project into packs: compressed textures, glTF models, audio, compiled shaders and baked levels. The same input gives the same bytes, on Windows and on Linux. | Cooked materials, skinned models, collision shapes on models |
 | Console | One command line per engine. You reach it from the editor, from the terminal or from the demo's command line. `ent_fire`, `ent_list`, `ent_show` and `ent_watch` poke at a running level. | Variables, key binds, config files, completion |
-| Scripting | Luau scripts on nodes, each one a `.luau` file in the project. They run while the level plays, on its fixed tick, and stopping puts back everything a script changed. A script finds nodes the way a Roblox script does, moves them, waits, reaches the player and requires modules. An error shows in Output with its file and line, and a click opens the file there. The editor sets the project up for VS Code and `luau-lsp`, so you get completion and type checking from the first script on. | Touch events, making and removing parts, tags and attributes, a debugger. A change to a script waits for the next Play. |
+| Scripting | Luau scripts on nodes, each one a `.luau` file in the project. They run while the level plays, on its fixed tick, and stopping puts back everything a script changed. A script finds nodes the way a Roblox script does, moves them, waits, reaches the player and requires modules. It calls an entity's inputs as methods and connects to its outputs as signals, hears the player touch a part, reads and sets tags and attributes, and makes, clones and destroys parts. How the player moves is a Luau file too, so you can swap it. An error shows in Output with its file and line, and a click opens the file there. The editor sets the project up for VS Code and `luau-lsp`, so you get completion and type checking from the first script on. | Keys and mouse, the camera, anything on screen, a debugger. A script can't size or color a part yet. A change to a script waits for the next Play. |
 
 Not started at all: multiplayer, game UI, terrain and save games. Animation has skeletons, clips and pose blending on the CPU, but nothing imports or draws them.
 
 ## Build and run
 
-You need Windows 10 or 11, the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Git. Physics is native code, so you also need CMake and Visual Studio with the C++ workload to build it once.
+You need Windows 10 or 11, the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Git. Physics and Luau are native code, so you also need CMake and Visual Studio with the C++ workload to build them once.
 
 ```bash
-git submodule update --init --recursive   # the Box3D source
+git submodule update --init --recursive   # the Box3D and Luau source
 ```
 
 ```powershell
 native/build-box3d.ps1                    # builds box3d.dll, only needed once
+native/build-luau.ps1                     # builds Luau, only needed once
 ```
 
 ```bash
@@ -91,9 +92,9 @@ flowchart TD
     classDef next fill:#7a5c12,stroke:#e0a800,color:#fff
     classDef todo fill:#2b2f36,stroke:#5a6068,color:#c9ced6
 
-    class build,wire,play,cook done
-    class script next
-    class more,look,game,net,world todo
+    class build,wire,play,cook,script done
+    class more next
+    class look,game,net,world todo
 ```
 
 <sub>Green works today. Amber is next. Grey is planned, in this order.</sub>
@@ -118,7 +119,7 @@ npm --prefix site install
 npm --prefix site run dev    # http://localhost:4321
 ```
 
-Run `npm --prefix site run api` before `dev` if you also want the C# reference. A good first page is "Make a door that opens", which builds a working door with no code.
+Run `npm --prefix site run api` before `dev` if you also want the C# reference and the script reference. A good first page is "Make a door that opens", which builds a working door with no code.
 
 If you want to work on the engine itself, these are the ones to read:
 
@@ -138,12 +139,13 @@ SpectraEngine.Editor/          the editor shell (Avalonia)
 SpectraEngine.Executable/      the demo
 SpectraEngine.Entities/        the built-in entities, with their source generator next to it
 SpectraEngine.Physics.Box3D/   the Box3D binding
+SpectraEngine.Scripting.Luau/  the Luau binding
 Spectra.Kitchen/               the cook (scook)
 SpectraShade.*/                the shader compiler, its CLI, language server and VS extension
 Test/                          the test suites
 site/                          the user docs
 docs/                          design notes
-native/, external/             the Box3D build script and its source
+native/, external/             the Box3D and Luau build scripts and their source
 ```
 
 ## Contributing
