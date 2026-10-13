@@ -255,6 +255,34 @@ public sealed class LuauMoverInstallTests
         ]);
     }
 
+    // The mover works on a copy of the state. A teleport moves the player
+    // itself, and writing the copy over it would take the teleport back.
+    [Fact]
+    public void A_teleport_from_inside_the_mover_stands_and_the_mover_goes_on_from_there()
+    {
+        using MoverLevel level = new MoverLevel().WithScript($$"""
+            {{Character}}
+            local ticks = 0
+            character:SetMover(function(state, ...)
+                ticks += 1
+                if ticks == 10 then
+                    character:Teleport(Vector3.new(141.5, 2.05, 0))
+                end
+                walk(state, ...)
+            end)
+            """);
+
+        level.Play().Tick(in Ahead, 10);
+        System.Numerics.Vector3 landed = level.State.Position;
+        level.Tick(in Ahead, 30);
+
+        level.Errors.ShouldBeEmpty();
+        landed.ShouldBe(new System.Numerics.Vector3(141.5f, 2.05f, 0f));
+        level.State.Position.X.ShouldBeGreaterThan(142.5f, "it walked on along the terrace");
+        level.State.Grounded.ShouldBeTrue();
+        level.Character.Mover.ShouldBeOfType<LuauCharacterMover>();
+    }
+
     [Fact]
     public void A_mover_gets_the_same_four_objects_on_every_tick_and_the_step_in_seconds()
     {

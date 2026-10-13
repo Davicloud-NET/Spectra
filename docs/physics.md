@@ -627,7 +627,7 @@ The function is called on every tick with the five things the built-in mover get
 
 What the engine keeps to itself runs around the mover, in `CharacterSimulation.Tick` and `PlaySession`, whoever moves the player: the ride on a part that moves, the buttons of the tick before, the facing, the respawn below the level, and Use.
 
-**The state is a copy.** The function works on a copy of the player's state, and the player gets it when the function has returned. So a tick the function did not finish leaves the player as the tick found it, for the built-in mover to move.
+**The state is a copy.** The function works on a copy of the player's state, and the player gets it when the function has returned. So a tick the function did not finish leaves the player as the tick found it, for the built-in mover to move. A teleport or a `Velocity` the mover's script sets on the character from inside the call moves the player itself. That stands, and what the mover made of its copy on that tick is dropped.
 
 **The plane list is the engine's.** `Sweep` returns what stopped it as values: how far it went, the normal, the gap, the point and the part. `AddPlane` puts a normal into the list and `Clip` takes out of a velocity what drives into a plane of the list. `Gather` fills the list with the planes that touch the capsule, `Plane(i)` reads one, and `Solve` finds the move that leaves the capsule in none of them. A plane counts for `Clip` when `AddPlane` added it or `Solve` pushed against it, which is the rule the built-in mover follows by hand. No table crosses, and a tick makes nothing for Luau's collector.
 

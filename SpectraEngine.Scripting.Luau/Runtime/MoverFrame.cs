@@ -17,6 +17,7 @@ internal sealed class MoverFrame
     private readonly PlayerWrites _door;
     private readonly EntityWorld _world;
     private CharacterState _state;
+    private CharacterState _start;
     private CharacterState _resting;
     private CharacterButtons _previous;
 
@@ -44,6 +45,7 @@ internal sealed class MoverFrame
         in CharacterState state, in CharacterCommand command, ICharacterCollisionSource source, CharacterTuning tuning, float deltaTime)
     {
         _state = state;
+        _start = state;
         _previous = state.PrevButtons;
 
         // As the built-in mover starts a tick.
@@ -63,6 +65,12 @@ internal sealed class MoverFrame
 
     // What the mover has made of the state. Read once it has returned.
     public ref readonly CharacterState Result => ref _state;
+
+    // False when the player was moved past the mover while it ran, as by a
+    // teleport the mover's own script made. That move stands, and what the
+    // mover made of its copy is dropped.
+    public bool IsWhereItStarted(in CharacterState now) =>
+        now.Position == _start.Position && now.Velocity == _start.Velocity && now.Grounded == _start.Grounded;
 
     public ref readonly CharacterState Read()
     {

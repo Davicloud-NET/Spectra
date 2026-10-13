@@ -70,7 +70,9 @@ internal sealed class LuauCharacterMover : ICharacterMover
             _collision.Begin(in state, tuning, deltaTime);
             if (_call.TryRun(_handed, deltaTime, out failure))
             {
-                state = _frame.Result;
+                if (_frame.IsWhereItStarted(in state))
+                    state = _frame.Result;
+
                 return true;
             }
 
