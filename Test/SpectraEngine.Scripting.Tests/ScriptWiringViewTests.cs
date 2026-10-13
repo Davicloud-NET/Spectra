@@ -203,6 +203,33 @@ public sealed class ScriptWiringViewTests
             .ShouldBe(new ScriptListener(echo.Id, "OnPing", new ScriptPlace(main.Id, "Scripts/main.luau", 2)));
     }
 
+    [Fact]
+    public void A_modules_file_is_named_by_one_string_however_often_its_code_connects()
+    {
+        using var level = new ScriptLevel();
+        Echo(level);
+        level.FileAt("Scripts/lib/ears.luau", """
+            return function(echo)
+                echo.OnPing:Connect(function() end)
+            end
+            """);
+        level.ScriptAt("Scripts/main.luau", """
+            local listen = require('./lib/ears')
+            listen(workspace.Echo)
+            listen(workspace.Echo)
+            """);
+        level.Play().Tick();
+
+        var listeners = new List<ScriptListener>();
+        level.Entities.Listeners.CopyTo(listeners);
+
+        level.Errors.ShouldBeEmpty();
+        listeners.Count.ShouldBe(2);
+        listeners[0].By.File.ShouldBe("Scripts/lib/ears.luau");
+        listeners[1].By.File.ShouldBeSameAs(listeners[0].By.File);
+        listeners.ShouldAllBe(listener => listener.By.Line == 2);
+    }
+
     private ScriptLevel Watched()
     {
         var level = new ScriptLevel();

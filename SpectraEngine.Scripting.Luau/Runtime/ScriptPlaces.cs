@@ -6,8 +6,7 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // Says which script called a host function and from which line, for a view
 // that draws what scripts hear and send. A script is the node its thread
 // was started for, also when the line is in a module. A file's name is made
-// once and handed out again, so asking makes nothing in a level that has run
-// for a while.
+// once and handed out again, so asking makes no string after the first time.
 internal sealed class ScriptPlaces(LuauHost host)
 {
     private readonly Dictionary<string, string> _files = new(StringComparer.Ordinal);
