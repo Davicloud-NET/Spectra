@@ -14,8 +14,9 @@ internal static class MoverLimits
     public const float MaxSpeed = 4f * PlayerWrites.MaxSpeed;
 
     // How far one sweep goes, how far off a gather looks, and how far from
-    // where the player began the tick either may start. More than a tick at
-    // MaxSpeed, and no more: the collision builds all a mover reaches.
+    // where the player began the tick either may start. A tick at MaxSpeed
+    // goes 667 units. Not far past that: the collision builds all a mover
+    // reaches and keeps it while the player is in it.
     public const float MaxReach = 1_000f;
 
     // How far from the origin a place may be on each axis.
