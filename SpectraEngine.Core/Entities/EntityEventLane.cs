@@ -1,8 +1,8 @@
 namespace SpectraEngine.Core.Entities;
 
 // One of the dispatcher's two queues, with its own share of a drain and its
-// own room. What entities send waits in one and the wakes of scripts in the
-// other, so neither can hold the other up or take its place.
+// own room. What entities send waits in one. What scripts queue waits in
+// the other: a thread's wake, an input one sent and a listener's call.
 internal sealed class EntityEventLane
 {
     private readonly EntityEventQueue _queue = new();

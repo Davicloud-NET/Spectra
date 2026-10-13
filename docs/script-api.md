@@ -186,7 +186,11 @@ end)
 
 A build's own description knows no level. `LuauScriptApi.Description.WithEntityClasses(schemas)` adds the classes of a set of schemas, and that is what a host hands to `LuauDefinitions.Write` and `ScriptApiJson.Write`. The demo's switches hand it the built-in classes, read back from `.sentdef` bytes.
 
-Who wins a name: a member of the node's own class, then an input, then an output, then a child. A name Luau cannot write after a colon is no member. `EntityClassApiTests` fails when a built-in class has an input or an output named as a member of the node that carries it.
+A class Luau cannot name as a type is left out of the description, and so is an input or an output that is no member. `EntityClassGaps.Of` gives a sentence for each, and whoever writes the files logs them, as the demo's switches do.
+
+Who wins a name: a member of the node's own class, then an input, then an output, then a child. A name Luau cannot write after a colon is no member.
+
+The node's own class is the class of what it carries, and the binding asks by that: `EntityClassApi.MembersOf` takes the carrier. The description cannot know a node. It goes by where the class is placed, `Part` for a class placed as a brush and `Instance` for any other. The two differ when a class sits on a node of another kind, as a point class on a light, and a member of that node then wins where the file says method. So `EntityClassGapsTests` holds every input and output of the built-in classes free of the members of every class of nodes. A project's class has no such test. The first time a script asks a node of it, the level's scripts are warned of each input and output they cannot reach there.
 
 What a value is to a script goes by the type the schema gives the input or the output (`EntityClassApi.KindOf`):
 
@@ -204,7 +208,13 @@ What a value is to a script goes by the type the schema gives the input or the o
 
 `ParameterText` turns the value into the text a wire carries and back, so an entity reads from a script what it reads from a wire. `WireValues` in the binding is the Luau side of that.
 
+The description says what the binding takes. For the last row that is `(boolean | number | string | Vector3 | Instance)?` in and `string?` out, from `ValuesOf` and `SentValuesOf`. An output fired with text its type cannot read calls its listeners with no value, and the scripts are warned the first time an output does.
+
 Neither runs inside the call. `door:Open()` queues the input, and a fired output queues one event for each listener (`EntityWorld.Listeners`), numbered on from the output's own wires. Both wait with what scripts made, so they take the scripts' share of a tick and of the queue.
+
+Scripts start on the first tick. What fired while the level spawned is past by then, as the `OnMapSpawn` of a `logic_auto` is: a wire carries it and no script hears it. The first script that connects to such an output, or waits for it, gets a warning at that line.
+
+A listener ends with `Disconnect` and with the level. One whose script was switched off, or whose thread was cancelled, ends when its output fires next. `NodeSignals` also looks all listeners over each time there are twice as many, so those do not pile up on an output that never fires again.
 
 The type checker cannot know a level. `workspace.Door` is an `Instance` to it, and a script says what it is with a cast, as above.
 
@@ -238,6 +248,7 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `ScriptCostTests` fails when a crossing allocates. A new kind of crossing gets a row there. Its table of times is a measurement, which runs only when asked for: `dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.ScriptCostTests"`.
 - The generator's own tests are in `Test/SpectraEngine.Entities.Tests` (`ScriptApiGenerator*`). They compile its output against stubs of the binding in `ScriptApiHarness`. When the generator calls something new in the binding, the stub gets it too.
 - `EntityClassApiTests` holds the built-in entity classes against the script API: no input or output may be named as a member of the node that carries it, and each has to be in the definitions file.
+- `EntityClassGapsTests` holds the same names free on every class of nodes, so a new member of `Light` or `BasePart` that a built-in class has as an input fails there.
 - `EntityClassBindingTests` asks a node of an entity class for every name of its schema, and compares with the description of the class.
 
 ## The files
@@ -251,4 +262,4 @@ dotnet run --project SpectraEngine.Executable -- --export-script-api=script-api.
 
 `LuauDefinitions.Write` and `ScriptApiJson.Write` are in Core and need no Luau. `LuauScriptApi.Description` is the data, and reading it loads no native library.
 
-The syntax of a definitions file has no specification, and `luau-lsp` has not checked this one yet. Every construct is written in one place in `LuauDefinitions`, so a correction is one line there and one in `LuauDefinitionsTests`.
+The syntax of a definitions file has no specification. `luau-lsp` 1.70.1 loads this one under both of its type solvers, entity classes and all, and its `analyze` command reports a wrong call on a node that a script cast to its class. Every construct is written in one place in `LuauDefinitions`, so a correction is one line there and one in `LuauDefinitionsTests`.

@@ -10,8 +10,7 @@ namespace SpectraEngine.Scripting.CrashCases;
 // A script of a level that plays calls the inputs of an entity and hears
 // its outputs, the right way and every wrong way. Each refusal is an error
 // raised out of a host function, each call of a listener starts a thread
-// from the level's queue, and every line the script prints runs the
-// collector in the middle of it.
+// from the level's queue, and every printed line runs the collector.
 internal static class WiringCase
 {
     private const int Rounds = 20;

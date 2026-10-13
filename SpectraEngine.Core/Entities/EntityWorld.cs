@@ -165,8 +165,8 @@ public sealed class EntityWorld
     /// waiting, and the most it sends of those it makes itself. Waiting
     /// events past it stay queued and go first on the next tick. What a tick
     /// makes past it is a loop with no delay, and is logged and dropped.
-    /// What entities send and the wakes of scripts each have this much to
-    /// themselves, so neither holds the other up.
+    /// What entities send has this much to itself, and so has what scripts
+    /// queue: a thread's wake, an input one sent and a listener's call.
     /// </summary>
     public int MaxDispatchesPerTick
     {
@@ -178,8 +178,8 @@ public sealed class EntityWorld
     /// The most events that can wait at once. One made while the queue is
     /// full is logged and dropped, which stops a loop that waits and
     /// multiplies. Sending an event frees its place, so an entity that asks
-    /// for one more wait each time it is woken is not dropped. The wakes of
-    /// scripts have as much room again, and take none from the entities.
+    /// for one more wait each time it is woken is not dropped. What scripts
+    /// queue has as much room again, and takes none from the entities.
     /// </summary>
     public int MaxPendingEvents
     {
