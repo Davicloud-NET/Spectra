@@ -175,8 +175,14 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
     internal long PeakHeldDestroyedBytes => _lifetime.Held.PeakBytes;
 
-    // How many cycles of Luau's collector the destroyed nodes asked for.
+    // How many cycles of Luau's collector the destroyed nodes stepped to
+    // their end, and how many times one of them made it step.
     internal int HeldCollectionCount => _lifetime.Held.Cycles;
+
+    internal int HeldStepCount => _lifetime.Held.Steps;
+
+    // The held bytes from which a node that adds more makes the collector step.
+    internal long HeldGoalBytes => _lifetime.Held.Goal;
 
     // What Luau counts for the scripts, garbage included.
     internal long LuauBytes => _host.MemoryUsed;

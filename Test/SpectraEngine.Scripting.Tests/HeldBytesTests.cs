@@ -227,8 +227,82 @@ public sealed class HeldBytesTests
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(["true nil"]);
         bare.ShouldBe(NodeWeight.OfNode);
-        (full - bare).ShouldBe(BlobBytes + NodeWeight.OfText + NodeWeight.OfAttribute + NodeWeight.OfTag);
-        emptied.ShouldBe(bare + NodeWeight.OfTag);
+        long name = NodeWeight.OfText + (2 * "Blob".Length);
+        long tag = NodeWeight.OfTag + (2 * "Late".Length);
+        (full - bare).ShouldBe(
+            NodeWeight.OfAttributes + NodeWeight.OfAttribute + name + NodeWeight.OfText + BlobBytes + tag);
+        emptied.ShouldBe(bare + tag);
+    }
+
+    // A tag no node of the level has is kept by the destroyed part alone.
+    [Fact]
+    public void Tags_and_attribute_names_on_a_destroyed_part_are_weighed_with_their_text()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.AddScript(level.Scene.Root, """
+            local part = Instance.new("Part")
+            part:Destroy()
+            task.wait()
+            for index = 1, 100 do
+                part:AddTag(string.rep("t", 200) .. index)
+                part:SetAttribute(string.rep("n", 60) .. index, index)
+            end
+            """, "Main");
+
+        LuauScriptRuntime runtime = level.Play().Tick().Runtime.ShouldNotBeNull();
+        long bare = runtime.HeldDestroyedBytes;
+        level.Tick();
+
+        level.Errors.ShouldBeEmpty();
+        long tags = 100 * (NodeWeight.OfTag + (2 * 200));
+        long names = 100 * (NodeWeight.OfAttribute + NodeWeight.OfText + (2 * 60));
+        (runtime.HeldDestroyedBytes - bare).ShouldBeGreaterThan(tags + names);
+    }
+
+    // The part's handle goes while the part still has its place among the
+    // objects scripts held, and the listener is handed a new one.
+    [Fact]
+    public void A_destroyed_part_handed_out_again_after_Luau_collected_its_handle_is_weighed_again()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.AddScript(level.Scene.Root, """
+            local kept
+            game:GetService("CollectionService"):GetInstanceRemovedSignal("Enemy"):Connect(function(enemy)
+                kept = enemy
+                print(#enemy:GetAttribute("Blob"))
+            end)
+
+            local function muster()
+                local enemy = Instance.new("Part")
+                enemy.Name = "Enemy"
+                enemy:AddTag("Enemy")
+                enemy:SetAttribute("Blob", string.rep("x", 65536))
+                enemy.Parent = workspace
+            end
+
+            local function destroy()
+                workspace.Enemy:Destroy()
+            end
+
+            -- Garbage of Luau's own, so its collector goes round by itself.
+            local function litter()
+                for index = 1, 200000 do
+                    local scrap = { index }
+                end
+            end
+
+            muster()
+            task.wait()
+            destroy()
+            litter()
+            """, "Main");
+
+        LuauScriptRuntime runtime = level.Play().Tick(3).Runtime.ShouldNotBeNull();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["65536"]);
+        runtime.HeldDestroyedCount.ShouldBe(1);
+        runtime.HeldDestroyedBytes.ShouldBeGreaterThan(BlobBytes, "the part's new handle weighs nothing");
     }
 
     [Fact]
@@ -252,7 +326,7 @@ public sealed class HeldBytesTests
     }
 
     [Fact]
-    public void Stop_leaves_nothing_counted()
+    public void The_next_play_starts_with_nothing_counted_and_counts_the_same()
     {
         using var level = new ScriptLevel(hasCharacter: false);
         level.AddScript(level.Scene.Root, """
@@ -266,11 +340,16 @@ public sealed class HeldBytesTests
             print(#kept)
             """, "Main");
         LuauScriptRuntime runtime = level.Play().Tick().Runtime.ShouldNotBeNull();
-        runtime.HeldDestroyedBytes.ShouldBeGreaterThan(10 * BlobBytes);
+        long counted = runtime.HeldDestroyedBytes;
+        counted.ShouldBeGreaterThan(10 * BlobBytes);
 
         level.Stop();
-
-        runtime.HeldDestroyedBytes.ShouldBe(0);
         runtime.DestroyedAttributeCount.ShouldBe(0);
+        LuauScriptRuntime next = level.Play().Runtime.ShouldNotBeNull();
+
+        next.ShouldNotBeSameAs(runtime);
+        next.HeldDestroyedBytes.ShouldBe(0);
+        level.Tick();
+        next.HeldDestroyedBytes.ShouldBe(counted);
     }
 }

@@ -3,15 +3,10 @@ using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The made nodes that were destroyed and that a script may still hold. What
-// a script holds of one keeps the whole node, so each counts against the
-// bound on made nodes until Luau has let go of it.
-//
-// Luau's collector counts the handle and not the node, so it is told what
-// each node weighs. Under the goal nothing is asked of it. Past the goal it
-// works for every byte a destroyed node adds, as it does for a byte a script
-// allocates, until its cycle ends. The goal is then twice what was still
-// held, so a script that holds much is not collected over and over.
+// The made nodes that were destroyed and that a script may still hold. Each
+// counts against the bound on made nodes until Luau has let go of it. Luau
+// counts the handle and not the node, so its collector is told what each
+// weighs and is stepped for what they weigh past a goal.
 internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, AttributeTable attributes)
 {
     // Held bytes under this ask for no collection.
@@ -27,9 +22,11 @@ internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, A
     // Each is in the host's objects too, and leaves when it leaves those.
     // So this keeps no node that Luau has collected.
     private readonly HashSet<SceneNode> _held = new(ReferenceEqualityComparer.Instance);
-    private long _goal = FirstGoal;
     private long _owed;
     private int _idleTicks;
+
+    // A cycle runs that the goal asked for. Until it ends, every byte added
+    // steps it. The step every so many ticks does not set this.
     private bool _isCollecting;
 
     public int Count => _held.Count;
@@ -41,17 +38,28 @@ internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, A
 
     public long PeakBytes { get; private set; }
 
-    // How many cycles of the collector ended that this asked for.
+    // Twice what was held when the last cycle ended.
+    public long Goal { get; private set; } = FirstGoal;
+
+    // How many cycles of the collector ended that this stepped.
     public int Cycles { get; private set; }
 
-    // A destroyed node a script holds, or has come to hold again.
+    // How many times the collector was stepped for bytes a node added.
+    public int Steps { get; private set; }
+
+    // A destroyed node a script holds, or has come to hold again. One that
+    // is here already has a new handle, which weighs nothing yet.
     public void Add(SceneNode destroyed)
     {
-        if (!tree.CountAgain(destroyed))
-            return;
+        if (!_held.Contains(destroyed))
+        {
+            if (!tree.CountAgain(destroyed))
+                return;
 
-        _held.Add(destroyed);
-        PeakCount = Math.Max(PeakCount, _held.Count);
+            _held.Add(destroyed);
+            PeakCount = Math.Max(PeakCount, _held.Count);
+        }
+
         Weigh(destroyed);
     }
 
@@ -87,15 +95,14 @@ internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, A
         if (host.IsClosed || Bytes < FirstGoal)
             return;
 
-        _isCollecting = true;
-        Step(Math.Max(1024, host.MemoryUsed / IdleCycleSteps));
+        if (host.StepCollector(Math.Max(1024, host.MemoryUsed / IdleCycleSteps)))
+            EndCycle();
     }
 
     private void Weigh(SceneNode node)
     {
         long added = host.Objects.SetWeight(node, NodeWeight.Of(node, tags, attributes));
-        long bytes = Bytes;
-        PeakBytes = Math.Max(PeakBytes, bytes);
+        PeakBytes = Math.Max(PeakBytes, Bytes);
         if (added <= 0)
             return;
 
@@ -103,21 +110,18 @@ internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, A
         if (_isCollecting && host.StepCollector(0))
             EndCycle();
 
-        if (!_isCollecting && Bytes < _goal)
+        if (!_isCollecting && Bytes < Goal)
             return;
 
-        _isCollecting = true;
+        // The collector steps by whole kilobytes. Less than one is owed on.
         _owed += added;
-        Step(_owed);
-    }
-
-    private void Step(long bytes)
-    {
-        long stepped = Math.Min(bytes, LuauHost.MaxStepBytes) & ~1023L;
+        long stepped = Math.Min(_owed, LuauHost.MaxStepBytes) & ~1023L;
         if (stepped == 0)
             return;
 
-        _owed = Math.Max(0, _owed - stepped);
+        _owed -= stepped;
+        _isCollecting = true;
+        Steps++;
         if (host.StepCollector(stepped))
             EndCycle();
     }
@@ -127,7 +131,7 @@ internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, A
         host.Objects.ReleaseCollected();
         _isCollecting = false;
         _owed = 0;
-        _goal = Math.Max(FirstGoal, 2 * Bytes);
+        Goal = Math.Max(FirstGoal, 2 * Bytes);
         Cycles++;
     }
 }

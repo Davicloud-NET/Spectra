@@ -1363,6 +1363,8 @@ SL_API int64_t sl_outside(lua_State* L)
 // between two cycles afterwards.
 SL_API int sl_gcstep(lua_State* L, int kilobytes)
 {
+    // One step of this size. An amount handed to LUA_GCSTEP is worked off
+    // in steps of the size that is set, a kilobyte each.
     if (kilobytes > 0)
     {
         int size = lua_gc(L, LUA_GCSETSTEPSIZE, kilobytes);

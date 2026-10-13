@@ -26,15 +26,17 @@ public sealed unsafe class LuauObjects
     public long WeightBytes => _host.IsClosed ? 0 : Shim.sl_outside(_host.Stack.State);
 
     /// <summary>
-    /// Is told of an object each time a script comes to hold one that no
-    /// script held. It runs inside the push: it pushes nothing and runs no script.
+    /// Is told of an object each time a script comes to hold one that no script held,
+    /// also one whose userdata Luau collected and that was not released yet. It runs
+    /// inside the push. It may step the collector, so <see cref="Released"/> can run
+    /// under it. It leaves every stack as it found it and runs no script.
     /// </summary>
     public Action<object>? Reached { get; set; }
 
     /// <summary>
     /// Is told of an object each time no script holds it any more: Luau collected its
-    /// userdata, or it was released. It runs inside a push or a collection: it pushes
-    /// nothing and runs no script.
+    /// userdata, or it was released. It runs inside a push, or wherever
+    /// <see cref="ReleaseCollected"/> is called. It pushes nothing and runs no script.
     /// </summary>
     public Action<object>? Released { get; set; }
 
@@ -72,7 +74,9 @@ public sealed unsafe class LuauObjects
         else if (isNew)
             Free(index);
 
-        if (isNew && created != 0)
+        // Also for an object that kept its slot: what was said of the old
+        // userdata, like its weight, went with that one.
+        if (created != 0)
             Reached?.Invoke(value);
 
         return status == LuaStatus.Ok;
