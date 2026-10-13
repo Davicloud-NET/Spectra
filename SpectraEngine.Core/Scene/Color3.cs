@@ -17,7 +17,8 @@ namespace SpectraEngine.Core.Scene;
 public readonly record struct Color3(float R, float G, float B)
 {
     // How many floats each side of the curve's own answer FromLinear tries.
-    private const int NearbySteps = 4;
+    // Four was the most any value needed, measured up to three times white.
+    private const int NearbySteps = 8;
 
     /// <summary>A colour from parts of 0 to 255. A part outside that is taken as it is.</summary>
     public static Color3 FromRgb(float r, float g, float b) => new(r / 255f, g / 255f, b / 255f);
