@@ -51,6 +51,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             CFrameMembers.Install(context);
             CFrameLibrary.ScriptInstall(context);
             ObjectMembers.Install(context);
+            Color3Members.Install(context);
+            Color3Library.ScriptInstall(context);
 
             _tasks = new TaskLibrary(_host, _world, _waiting);
             _tasks.ScriptInstall(context);

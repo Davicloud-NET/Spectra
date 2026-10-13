@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Text;
 using System.Text.Unicode;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 
@@ -42,6 +43,10 @@ internal sealed class ScriptContext
     // sets it once the signals behind it are made. Null until then.
     public EntityMembers? Entities { get; set; }
 
+    // The level, for what a script only reads of it. A change of a node
+    // goes through the writes below and no other way.
+    public EntityWorld World => _writes.World;
+
     // Nil for null. False: an error value is on top instead.
     public bool PushObject(LuauStack stack, object? value) =>
         value is null ? stack.PushNil() : Host.Objects.Push(stack, ScriptTags.Object, value);
@@ -75,7 +80,7 @@ internal sealed class ScriptContext
             throw NotSetUp(stack);
     }
 
-    // The three writes below take the value from the third argument of
+    // The writes below take the value from the third argument of
     // __newindex, check its kind and hand it to the door.
     public int WriteVector(LuauStack stack, SceneNode node, SettableMemberId member) =>
         stack.TryGetVector(3, out Vector3 value)
@@ -99,6 +104,22 @@ internal sealed class ScriptContext
 
         return Write(stack, node, member, MemberValue.Of(TextOf(text, ScriptWrites.Read(node, member).Text)));
     }
+
+    public int WriteBoolean(LuauStack stack, SceneNode node, SettableMemberId member) =>
+        ScriptArguments.TryBoolean(stack, 3, out bool value)
+            ? Write(stack, node, member, MemberValue.Of(value))
+            : WrongKind(stack, member);
+
+    // A string that reads as a number counts as one, as it does in Luau.
+    public int WriteNumber(LuauStack stack, SceneNode node, SettableMemberId member) =>
+        ScriptArguments.TryDouble(stack, 3, out double value)
+            ? Write(stack, node, member, MemberValue.Of(value))
+            : WrongKind(stack, member);
+
+    public int WriteColor(LuauStack stack, SceneNode node, SettableMemberId member) =>
+        ColorValue.TryGet(stack, 3, out Color3 value)
+            ? Write(stack, node, member, MemberValue.Of(value))
+            : WrongKind(stack, member);
 
     private int Write(LuauStack stack, SceneNode node, SettableMemberId member, in MemberValue value) =>
         _writes.TryWrite(node, member, in value, out string? refusal) ? 0 : stack.Fail(refusal);

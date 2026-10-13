@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Tests;
@@ -19,17 +20,35 @@ internal static class WritingScript
     // Indexes into the script's table of targets.
     private const int TargetCount = 3;
 
+    // What a script node has of the members: those every node has.
+    private static readonly SceneNode AnyNode = new("Any");
+
     private static int SweepWrites => TargetCount * ScriptWrites.Settable.Count;
 
-    public static string From(RandomWrites random, int writes)
+    // The script for a node, which it will sit under. Most of its random
+    // writes are to members its targets have.
+    public static string From(RandomWrites random, int writes, SceneNode parent)
     {
+        SceneNode root = parent;
+        while (root.Parent is { } above)
+            root = above;
+
+        SceneNode[] targets = [AnyNode, parent, root];
+
         // The wait comes before the first write of any script, so what each
-        // script read at its start is what the level was authored with.
+        // script read at its start is what the level was authored with. A
+        // member the target does not have is left out of what was read.
         var text = new StringBuilder()
             .AppendLine("local targets = { script, script.Parent, workspace }")
+            .AppendLine($"local members = {{ {string.Join(", ", ScriptWrites.Settable.Select(member => $"'{member.Name}'"))} }}")
             .AppendLine("local atStart = {}")
             .AppendLine("for i, target in targets do")
-            .AppendLine($"    atStart[i] = {{ {MembersOf("target")} }}")
+            .AppendLine("    local held = {}")
+            .AppendLine("    for _, member in members do")
+            .AppendLine("        local has, value = pcall(function() return target[member] end)")
+            .AppendLine("        if has then held[member] = value end")
+            .AppendLine("    end")
+            .AppendLine("    atStart[i] = held")
             .AppendLine("end")
             .AppendLine("local taken, refused = {}, 0")
             .AppendLine("local function try(member, write)")
@@ -41,14 +60,19 @@ internal static class WritingScript
         for (int target = 1; target <= TargetCount; target++)
         {
             foreach (SettableMember member in ScriptWrites.Settable)
-                Append(text, random.Taken(member), target, ref written);
+                Append(text, member, Changing(random, member, target), target, ref written);
         }
 
         // The random writes start on a tick of their own. One that puts a
         // value back would else hide a write of the same tick from a look.
         text.AppendLine("task.wait()");
         for (int i = 0; i < writes; i++)
-            Append(text, random.Next(), 1 + random.Pick(TargetCount), ref written);
+        {
+            int target = 1 + random.Pick(TargetCount);
+            RandomWrite write = random.Next(targets[target - 1]);
+            string value = write.PutsBack ? $"atStart[{target}].{write.Member.Name}" : write.Luau;
+            Append(text, write.Member, value, target, ref written);
+        }
 
         return text
             .AppendLine("local counts = {}")
@@ -86,19 +110,23 @@ internal static class WritingScript
         return (scripts, taken, refused);
     }
 
-    private static void Append(StringBuilder text, RandomWrite write, int target, ref int written)
+    // A value the member takes that is not the one it has. A switch has two
+    // values and a random one would leave half of them as they are, so it is
+    // turned over, and a number is moved on by one.
+    private static string Changing(RandomWrites random, SettableMember member, int target) => member.Kind switch
     {
-        string member = write.Member.Name;
-        string value = write.PutsBack ? $"atStart[{target}].{member}" : write.Luau;
+        MemberValueKind.Boolean => $"not atStart[{target}].{member.Name}",
+        MemberValueKind.Number => $"(atStart[{target}].{member.Name} or 0) + 1",
+        _ => random.Taken(member).Luau,
+    };
+
+    private static void Append(StringBuilder text, SettableMember member, string value, int target, ref int written)
+    {
         text.AppendLine(
             CultureInfo.InvariantCulture,
-            $"try('{member}', function() targets[{target}].{member} = {value} end)");
+            $"try('{member.Name}', function() targets[{target}].{member.Name} = {value} end)");
 
         if (++written % WritesPerTick == 0)
             text.AppendLine("task.wait()");
     }
-
-    // Every member a script can set, read from one node: "Name = node.Name, ...".
-    private static string MembersOf(string node) =>
-        string.Join(", ", ScriptWrites.Settable.Select(member => $"{member.Name} = {node}.{member.Name}"));
 }

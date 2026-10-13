@@ -146,6 +146,11 @@ internal static partial class NodeApi
         return NameChars.TryRead(className, room, out ReadOnlySpan<char> wanted) && NodeClass.IsA(node, wanted);
     }
 
+    /// <summary>A keyvalue of the entity the node carries, as the level was built with it: a number, a boolean, a string, a Vector3, a Color3 for a colour, or a node for a reference to one. One the builder left alone is what the entity's class gives it. Nil for a name the entity does not have, and for a node with no entity.</summary>
+    [ScriptMethod(Parameters = "attribute: string", Returns = "any")]
+    private static int GetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
+        AttributeRead.Push(context, stack, node);
+
     // The text comes as the bytes Luau keeps, so a search makes no string.
     private static SceneNode? Below(SceneNode node, NodeMatch by, ReadOnlySpan<byte> text, bool recursive)
     {

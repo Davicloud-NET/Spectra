@@ -38,6 +38,7 @@ public sealed partial class ScriptApiDescriptionTests
             Players = game:GetService("Players"),
             Player = game:GetService("Players").LocalPlayer,
             Character = game:GetService("Players").LocalPlayer.Character,
+            Color3 = Color3.new(1, 0.5, 0),
         }
         """;
 
@@ -105,8 +106,8 @@ public sealed partial class ScriptApiDescriptionTests
     public void A_value_takes_the_operators_the_description_gives_it_and_no_other()
     {
         string[] printed = ScriptLevel.Run("""
-            local values = { CFrame = CFrame.new(1, 2, 3), Vector3 = Vector3.new(1, 2, 3) }
-            local rights = { CFrame = values.CFrame, Vector3 = values.Vector3, number = 2, string = "two" }
+            local values = { CFrame = CFrame.new(1, 2, 3), Vector3 = Vector3.new(1, 2, 3), Color3 = Color3.new(1, 0.5, 0) }
+            local rights = { CFrame = values.CFrame, Vector3 = values.Vector3, number = 2, string = "two", Color3 = values.Color3 }
             local binary = {
                 ["+"] = function(a, b) return a + b end,
                 ["-"] = function(a, b) return a - b end,

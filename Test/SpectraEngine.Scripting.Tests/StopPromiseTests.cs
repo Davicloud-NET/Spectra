@@ -44,8 +44,8 @@ public sealed class StopPromiseTests
 
             for (int i = 0; i < WritesPerPlay; i++)
             {
-                RandomWrite write = random.Next();
                 int node = random.Pick(nodes.Length);
+                RandomWrite write = random.Next(nodes[node]);
                 MemberValue value = write.PutsBack ? atStart[node][(int)write.Member.Id] : write.Value;
                 if (coverage.Write(door, nodes[node], write.Member, in value))
                     taken++;
@@ -84,7 +84,7 @@ public sealed class StopPromiseTests
         var random = new RandomWrites(seed);
         SceneNode[] nodes = [.. level.Scene.Root.Traverse()];
         foreach (SceneNode node in nodes)
-            level.AddScript(node, WritingScript.From(random, WritesPerScript), "Writer");
+            level.AddScript(node, WritingScript.From(random, WritesPerScript, node), "Writer");
 
         var before = new LevelState(level.Scene);
         var coverage = new WriteCoverage(level.Scene);

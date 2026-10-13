@@ -38,6 +38,13 @@ internal readonly ref struct ApiTable
         return this;
     }
 
+    public ApiTable Color(ReadOnlySpan<byte> name, Color3 value)
+    {
+        Check(ColorValue.Push(_stack, value));
+        Check(_stack.SetField(-2, name));
+        return this;
+    }
+
     public void SetAsGlobal(ReadOnlySpan<byte> name) => Check(_stack.SetGlobal(name));
 
     public void SetAsVectorMetatable() => Check(_stack.SetVectorMetatable());

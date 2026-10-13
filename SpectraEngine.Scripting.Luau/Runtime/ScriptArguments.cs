@@ -33,6 +33,9 @@ internal static class ScriptArguments
     public static bool TryFrame(LuauStack stack, int index, out CFrame value) =>
         FrameValue.TryGet(stack, index, out value);
 
+    public static bool TryColor(LuauStack stack, int index, out Color3 value) =>
+        ColorValue.TryGet(stack, index, out value);
+
     // True and false only. Any value counts as one of them in a condition,
     // and an argument of the wrong kind is a mistake.
     public static bool TryBoolean(LuauStack stack, int index, out bool value)
@@ -90,8 +93,12 @@ internal static class ScriptArguments
         LuauType.Function => "function",
         LuauType.Thread => "thread",
         LuauType.Buffer => "buffer",
-        _ => FrameValue.TryGet(stack, index, out _) ? "CFrame" : ObjectName(stack, index),
+        _ => FrameValue.TryGet(stack, index, out _) ? "CFrame" : ValueName(stack, index),
     };
+
+    // A value held in a userdata of its own tag, or else an object.
+    private static string ValueName(LuauStack stack, int index) =>
+        ColorValue.TryGet(stack, index, out _) ? "Color3" : ObjectName(stack, index);
 
     // A node is an Instance. Any other object goes by its class, or a
     // message would read "Instance expected, got Instance".

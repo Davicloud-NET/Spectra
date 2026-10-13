@@ -68,10 +68,12 @@ public sealed class SettableListTests
 
         described.Order(StringComparer.Ordinal).ShouldBe(
             ScriptWrites.Settable
-                .Select(member => $"Instance.{member.Name}: {MemberValue.TypeName(member.Kind)} through {member.Id}")
+                .SelectMany(member => member.Classes.Select(owner =>
+                    $"{owner}.{member.Name}: {MemberValue.TypeName(member.Kind)} through {member.Id}"))
                 .Order(StringComparer.Ordinal),
             "what the description says a script can set, against the list of ScriptWrites. A member of the door " +
-            "needs a property in NodeApi with Sets, of the type the door takes, and the other way round");
+            "needs a property with Sets on each class the door names for it, of the type the door takes, and " +
+            "the other way round");
     }
 
     [Fact]
@@ -145,6 +147,9 @@ public sealed class SettableListTests
             MemberValueKind.Text => "\"text\"",
             MemberValueKind.Vector3 => "Vector3.new(1, 2, 3)",
             MemberValueKind.CFrame => "CFrame.new(1, 2, 3)",
+            MemberValueKind.Boolean => "false",
+            MemberValueKind.Number => "2",
+            MemberValueKind.Color => "Color3.new(0.5, 0.25, 1)",
             _ => throw new NotSupportedException(
                 $"The probe has no value of the kind {kind}. Add one, so a member of that kind is tried."),
         });

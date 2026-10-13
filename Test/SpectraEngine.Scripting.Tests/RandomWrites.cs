@@ -17,6 +17,15 @@ internal sealed class RandomWrites(int seed)
 
     private static readonly float[] NotNumbers = [float.NaN, float.PositiveInfinity, float.NegativeInfinity];
 
+    // What a brightness and a range both take, and what both refuse.
+    private static readonly float[] Amounts = [0.5f, 1f, 2.25f, 3.75f, 100f, 1e-3f];
+
+    private static readonly float[] RefusedAmounts =
+        [-1f, -2.25f, -1e6f, float.NaN, float.PositiveInfinity, float.NegativeInfinity];
+
+    // A part of a colour: both ends, a step of a picker, and past white.
+    private static readonly float[] ColorParts = [0f, 1f, 0.5f, 128f / 255f, 0.2f, 2f];
+
     private static readonly string[] Names =
         ["Door", "Gate 2", "Tür", "a", "wild*", "\U0001F6AA", new string('x', NodeName.MaxLength)];
 
@@ -30,16 +39,27 @@ internal sealed class RandomWrites(int seed)
     private static readonly string[] OtherLuau = ["nil", "5", "true", "{}", "workspace", "print"];
 
     private static readonly MemberValueKind[] Kinds =
-        [MemberValueKind.Text, MemberValueKind.Vector3, MemberValueKind.CFrame];
+    [
+        MemberValueKind.Text, MemberValueKind.Vector3, MemberValueKind.CFrame, MemberValueKind.Boolean,
+        MemberValueKind.Number, MemberValueKind.Color,
+    ];
 
     private readonly Random _random = new(seed);
 
     public int Pick(int count) => _random.Next(count);
 
-    public RandomWrite Next()
+    // Seven writes in eight are to a member the target has, when one is
+    // named. A light's member written to a part is refused every time, and
+    // a run of mostly such writes would show little.
+    public RandomWrite Next(SceneNode? target = null)
     {
         IReadOnlyList<SettableMember> members = ScriptWrites.Settable;
         SettableMember member = members[Pick(members.Count)];
+        if (target is not null && Pick(8) != 0)
+        {
+            while (!ScriptWrites.Has(target, member.Id))
+                member = members[Pick(members.Count)];
+        }
 
         // A script that moves a thing and then puts it where it was is common,
         // and it is how a node ends a run equal to its first value.
@@ -66,13 +86,20 @@ internal sealed class RandomWrites(int seed)
     private RandomWrite WrongKind(SettableMember member)
     {
         if (Pick(2) == 0)
-            return new RandomWrite(member, MemberValue.None, OtherLuau[Pick(OtherLuau.Length)]);
+        {
+            // Not the one of them that is of the member's own kind.
+            string other = OtherLuau[Pick(OtherLuau.Length)];
+            while (IsOfKind(other, member.Kind))
+                other = OtherLuau[Pick(OtherLuau.Length)];
 
-        MemberValueKind other = Kinds[Pick(Kinds.Length)];
-        while (other == member.Kind)
-            other = Kinds[Pick(Kinds.Length)];
+            return new RandomWrite(member, MemberValue.None, other);
+        }
 
-        (MemberValue value, string luau) = Value(other, isRefused: false);
+        MemberValueKind kind = Kinds[Pick(Kinds.Length)];
+        while (kind == member.Kind)
+            kind = Kinds[Pick(Kinds.Length)];
+
+        (MemberValue value, string luau) = Value(kind, isRefused: false);
         return new RandomWrite(member, value, luau);
     }
 
@@ -93,6 +120,19 @@ internal sealed class RandomWrites(int seed)
 
             case MemberValueKind.Text:
                 return Name(isRefused);
+
+            // Every boolean is taken. What refuses one is the node.
+            case MemberValueKind.Boolean:
+                bool flag = Pick(2) == 0;
+                return (MemberValue.Of(flag), flag ? "true" : "false");
+
+            case MemberValueKind.Number:
+                float amount = Amount(isRefused);
+                return (MemberValue.Of(amount), Luau(amount));
+
+            case MemberValueKind.Color:
+                Vector3 parts = ColorOf(isRefused);
+                return (MemberValue.Of(new Color3(parts.X, parts.Y, parts.Z)), $"Color3.new({Luau(parts)})");
 
             default:
                 throw new NotSupportedException(
@@ -117,6 +157,32 @@ internal sealed class RandomWrites(int seed)
         float[] parts = [Number(), Number(), Number()];
         if (isRefused)
             parts[Pick(3)] = NotNumbers[Pick(NotNumbers.Length)];
+
+        return new Vector3(parts);
+    }
+
+    private static bool IsOfKind(string luau, MemberValueKind kind) =>
+        (luau == "5" && kind == MemberValueKind.Number) || (luau == "true" && kind == MemberValueKind.Boolean);
+
+    private float Amount(bool isRefused)
+    {
+        if (isRefused)
+            return RefusedAmounts[Pick(RefusedAmounts.Length)];
+
+        return Pick(3) == 0 ? (float)((_random.NextDouble() * 50d) + 0.01d) : Amounts[Pick(Amounts.Length)];
+    }
+
+    // One part is always drawn afresh, so no two colours of a run are alike
+    // and none is the white a light starts with.
+    private Vector3 ColorOf(bool isRefused)
+    {
+        float[] parts =
+        [
+            ColorParts[Pick(ColorParts.Length)], ColorParts[Pick(ColorParts.Length)], ColorParts[Pick(ColorParts.Length)],
+        ];
+        parts[Pick(3)] = (float)_random.NextDouble();
+        if (isRefused)
+            parts[Pick(3)] = RefusedAmounts[Pick(RefusedAmounts.Length)];
 
         return new Vector3(parts);
     }

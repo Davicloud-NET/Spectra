@@ -181,9 +181,11 @@ public sealed class NodeClassScriptTests
         string file = LuauDefinitions.Write(LuauScriptApi.Description);
 
         // A class with no member of its own still says what a child reads as.
-        file.ShouldContain("declare extern type BasePart extends Instance with\n    [string]: Instance\nend\n");
+        file.ShouldContain("declare extern type Folder extends Instance with\n    [string]: Instance\nend\n");
         file.ShouldContain("declare extern type Part extends BasePart with\n    [string]: Instance\nend\n");
-        file.ShouldContain("declare extern type SpotLight extends Light with\n    [string]: Instance\nend\n");
+        file.ShouldContain("declare extern type DirectionalLight extends Light with\n    [string]: Instance\nend\n");
+        BlockOf(file, "BasePart").ShouldContain("[string]: Instance");
+        BlockOf(file, "SpotLight").ShouldContain("[string]: Instance");
         file.ShouldContain("declare extern type RunService with\n");
         BlockOf(file, "RunService").ShouldNotContain("[string]");
 

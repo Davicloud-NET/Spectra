@@ -68,10 +68,18 @@ internal sealed class WriteCoverage
         }
     }
 
-    // A level moves no node with a world brush at or below it. A name every
-    // node takes.
-    private static bool Takes(SceneNode node, SettableMember member) =>
-        member.Id == SettableMemberId.Name || node.SubtreeStaticWorldBrushCount == 0;
+    // A level moves no node with a world brush at or below it, and switches
+    // nothing on a world brush. A name every node takes, and a light every
+    // member a light has.
+    private static bool Takes(SceneNode node, SettableMember member) => member.Id switch
+    {
+        SettableMemberId.Name => true,
+        SettableMemberId.Position or SettableMemberId.CFrame or SettableMemberId.LocalPosition
+            or SettableMemberId.LocalCFrame => node.SubtreeStaticWorldBrushCount == 0,
+        SettableMemberId.CanCollide or SettableMemberId.CanQuery or SettableMemberId.CanTouch
+            or SettableMemberId.Visible => ScriptWrites.Has(node, member.Id) && !node.IsStaticWorldBrush,
+        _ => ScriptWrites.Has(node, member.Id),
+    };
 
     private static MemberValue Read(SceneNode node, SettableMember member) => ScriptWrites.Read(node, member.Id);
 }

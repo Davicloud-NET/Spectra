@@ -8,4 +8,7 @@ internal static class ScriptTags
 
     // A CFrame, held in the userdata itself.
     public const int CFrame = 2;
+
+    // A Color3, held in the userdata itself.
+    public const int Color3 = 3;
 }
