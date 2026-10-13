@@ -36,6 +36,8 @@ internal sealed class ScriptLevel : IDisposable
         catalog.Add(FuncButton.SpectraSchema, static () => new FuncButton());
         catalog.Add(FuncDoor.SpectraSchema, static () => new FuncDoor());
         catalog.Add(LogicAuto.SpectraSchema, static () => new LogicAuto());
+        catalog.Add(new EntitySchema(SensingEntity.Class), () => new SensingEntity(Sink));
+        catalog.Add(SignEntity.Schema, () => new SignEntity());
 
         Manager = new SceneManager(NullLogger<SceneManager>.Instance)
         {

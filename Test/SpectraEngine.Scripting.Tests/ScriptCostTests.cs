@@ -9,7 +9,7 @@ namespace SpectraEngine.Scripting.Tests;
 
 /// <summary>
 /// What it costs a script to cross into the engine and back: a property
-/// read, a method call, a Vector3 and a CFrame. None of them may allocate.
+/// read, a method call, a Vector3, a CFrame and a Color3. None of them may allocate.
 /// The times are a measurement that runs when asked for, and are then
 /// written beside the test binary, in script-costs.txt.
 /// </summary>
@@ -51,6 +51,20 @@ public sealed class ScriptCostTests
         ("call an input, whose output nothing hears", "echo:Tap()"),
         ("call an input, whose output a script hears", "echo:Nudge()"),
         ("call an input from a function of a module", "tap(echo)"),
+        ("make a Color3", "local _ = Color3.new(0.5, i, 1)"),
+        ("read a number of a Color3", "local _ = c.R"),
+        ("call a method of a Color3, Color3 in and out", "local _ = c:Lerp(d, 0.5)"),
+        ("call a method of a Color3, three numbers out", "local _ = c:ToHSV()"),
+        ("compare two Color3", "local _ = c == d"),
+        ("read a Color3 of a light", "local _ = lamp.Color"),
+        ("write a Color3 to a light", "lamp.Color = if i % 2 == 0 then c else d"),
+        ("read a number of a light", "local _ = lamp.Brightness"),
+        ("write a number to a light", "lamp.Brightness = i"),
+        ("read a boolean of a part", "local _ = part.CanCollide"),
+        ("write a boolean to a part", "part.CanCollide = i % 2 == 0"),
+        ("read a member a class two above declares", "local _ = lamp.Name"),
+        ("read a number attribute of an entity", "local _ = sign:GetAttribute('speed')"),
+        ("read a Color3 attribute of an entity", "local _ = sign:GetAttribute('tint')"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
@@ -89,6 +103,8 @@ public sealed class ScriptCostTests
         SceneNode part = level.Part("Mover", new Vector3(0f, 2f, 0f));
         level.Scene.Root.CreateChild("Echo").Entity = new EntityData(EchoEntity.Class);
         level.FileAt("Scripts/tapper.luau", "return function(echo) echo:Tap() end");
+        level.Scene.Root.CreateChild("Lamp").Light = new Light { Kind = LightKind.Point };
+        level.Scene.Root.CreateChild("Sign").Entity = new EntityData(SignEntity.Class);
         level.AddScript(part, $$"""
             local part = script.Parent
             local a = Vector3.new(1, 2, 3)
@@ -99,6 +115,10 @@ public sealed class ScriptCostTests
             local echo = workspace.Echo
             echo.OnNudged:Connect(function() end)
             local tap = require("./tapper")
+            local c = Color3.new(1, 0.5, 0.25)
+            local d = Color3.fromRGB(10, 20, 30)
+            local lamp = workspace.Lamp
+            local sign = workspace.Sign
             run.Heartbeat:Connect(function()
                 for i = 1, {{Rounds}} do
                     {{statement}}
