@@ -53,6 +53,7 @@ internal sealed class SceneBvh
         public int Child1;      // free-list next while the node is free
         public int Child2;
         public SceneNode? Leaf; // null for internal and free nodes
+        public int Height;      // 0 for a leaf, one more than the taller child for any other
         public bool Dirty;      // leaf is queued in _dirtyNodes
         public bool CountsAsMesh; // leaf's scene node carried a MeshRenderer when last counted
     }
@@ -90,6 +91,10 @@ internal sealed class SceneBvh
     }
 
     internal int LeafCount => _leaves.Count;
+
+    // How many levels there are under the root. A tree that is kept in
+    // balance is about as tall as the logarithm of its leaves.
+    internal int Height => _root == Null ? 0 : _nodes[_root].Height;
 
     // Leaves with a MeshRenderer. Feeds RenderView.TotalCount, read per frame.
     private int _meshLeafCount;
@@ -256,6 +261,7 @@ internal sealed class SceneBvh
         _nodes[index].Child1 = Null;
         _nodes[index].Child2 = Null;
         _nodes[index].Leaf = null;
+        _nodes[index].Height = 0;
         _nodes[index].Dirty = false;
         _nodes[index].CountsAsMesh = false;
         return index;
@@ -343,7 +349,7 @@ internal sealed class SceneBvh
             _nodes[oldParent].Child2 = newParent;
         }
 
-        RefitAncestors(oldParent);
+        RefitAncestors(newParent);
     }
 
     private float DescendCost(int child, in Aabb leafBox)
@@ -383,13 +389,69 @@ internal sealed class SceneBvh
         FreeNode(parent);
     }
 
+    // Up from a node whose children changed: each box and height is made
+    // anew, and a node with one side two taller than the other is turned, as
+    // in Box2D's tree. Without that a row of parts made one after another is
+    // a list, and every insert walks all of it.
     private void RefitAncestors(int index)
     {
         while (index != Null)
         {
-            _nodes[index].FatBox = Union(_nodes[_nodes[index].Child1].FatBox, _nodes[_nodes[index].Child2].FatBox);
+            index = Balance(index);
+            int child1 = _nodes[index].Child1;
+            int child2 = _nodes[index].Child2;
+            _nodes[index].Height = 1 + Math.Max(_nodes[child1].Height, _nodes[child2].Height);
+            _nodes[index].FatBox = Union(_nodes[child1].FatBox, _nodes[child2].FatBox);
             index = _nodes[index].Parent;
         }
+    }
+
+    // The node that stands where `a` stood: `a` itself, or its taller child.
+    private int Balance(int a)
+    {
+        if (_nodes[a].Leaf is not null || _nodes[a].Height < 2)
+            return a;
+
+        int first = _nodes[a].Child1;
+        int second = _nodes[a].Child2;
+        int lean = _nodes[second].Height - _nodes[first].Height;
+        if (lean > 1)
+            return Lift(a, second, kept: first, isSecond: true);
+
+        return lean < -1 ? Lift(a, first, kept: second, isSecond: false) : a;
+    }
+
+    // `up` takes the place of `a`, which becomes its first child and takes
+    // the shorter child of `up` where `up` was.
+    private int Lift(int a, int up, int kept, bool isSecond)
+    {
+        int parent = _nodes[a].Parent;
+        int one = _nodes[up].Child1;
+        int other = _nodes[up].Child2;
+        (int tall, int low) = _nodes[one].Height > _nodes[other].Height ? (one, other) : (other, one);
+
+        _nodes[up].Child1 = a;
+        _nodes[up].Child2 = tall;
+        _nodes[up].Parent = parent;
+        _nodes[a].Parent = up;
+        _nodes[low].Parent = a;
+        if (isSecond)
+            _nodes[a].Child2 = low;
+        else
+            _nodes[a].Child1 = low;
+
+        if (parent == Null)
+            _root = up;
+        else if (_nodes[parent].Child1 == a)
+            _nodes[parent].Child1 = up;
+        else
+            _nodes[parent].Child2 = up;
+
+        _nodes[a].FatBox = Union(_nodes[kept].FatBox, _nodes[low].FatBox);
+        _nodes[up].FatBox = Union(_nodes[a].FatBox, _nodes[tall].FatBox);
+        _nodes[a].Height = 1 + Math.Max(_nodes[kept].Height, _nodes[low].Height);
+        _nodes[up].Height = 1 + Math.Max(_nodes[a].Height, _nodes[tall].Height);
+        return up;
     }
 
     // False when the node is not indexed.
@@ -908,6 +970,8 @@ internal sealed class SceneBvh
             Aabb union = Union(_nodes[node.Child1].FatBox, _nodes[node.Child2].FatBox);
             if (node.FatBox.Min != union.Min || node.FatBox.Max != union.Max)
                 throw new InvalidOperationException($"Internal node {index}: box is not the union of its children.");
+            if (node.Height != 1 + Math.Max(_nodes[node.Child1].Height, _nodes[node.Child2].Height))
+                throw new InvalidOperationException($"Internal node {index}: height is not one more than its taller child's.");
 
             stack.Push(node.Child1);
             stack.Push(node.Child2);
