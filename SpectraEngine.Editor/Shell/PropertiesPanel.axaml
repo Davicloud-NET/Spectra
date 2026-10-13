@@ -576,8 +576,15 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <!-- Tags and Attributes: what scripts find the selected nodes by. -->
-      <shell:TagsAndAttributesView x:Name="TagsAndAttributes" DataContext="{Binding Properties}" />
+      <!-- Tags and Attributes: what scripts find the selected nodes by. Not
+           editable while the level plays. The editor refuses every edit
+           then, and a tag would look added and then gone. -->
+      <StackPanel IsEnabled="{Binding !IsPlaying}">
+        <shell:TagsAndAttributesView x:Name="TagsAndAttributes" DataContext="{Binding Properties}" />
+      </StackPanel>
+      <TextBlock Classes="micro" Margin="12,6,12,4" TextWrapping="Wrap"
+                 IsVisible="{Binding IsPlaying}"
+                 Text="Tags and attributes are shown as the level was built. While it plays, scripts change a copy of their own. You can edit these again after Stop." />
 
       <!-- Sends: the wires leaving this entity. Single-entity selection only. -->
       <StackPanel Margin="12,12,12,14" Spacing="4"

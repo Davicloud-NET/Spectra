@@ -134,6 +134,27 @@ public sealed class TagsAndAttributesSheetTests(RibbonSession session)
         });
     }
 
+    [Fact]
+    public void While_the_level_plays_the_two_sections_cannot_be_edited_and_say_why()
+    {
+        session.On(() =>
+        {
+            using var sheet = new Sheet(null, Brick());
+            TextBox tagField = sheet.Shown<TextBox>().Single(box => box.PlaceholderText == "Add a tag");
+            tagField.IsEffectivelyEnabled.ShouldBeTrue();
+            sheet.Shown<TextBlock>().ShouldNotContain(text => text.Text != null && text.Text.Contains("after Stop"));
+
+            sheet.Play(true);
+
+            tagField.IsEffectivelyEnabled.ShouldBeFalse();
+            sheet.Shown<TextBlock>().ShouldContain(text => text.Text != null && text.Text.Contains("after Stop"));
+            sheet.Save("properties-tags-playing@2x.png");
+
+            sheet.Play(false);
+            tagField.IsEffectivelyEnabled.ShouldBeTrue();
+        });
+    }
+
     [Theory]
     [InlineData("tag:ice", "Nothing here has a tag with", "ice")]
     [InlineData("tag:", "Nothing here has a tag.", "")]
@@ -184,8 +205,11 @@ public sealed class TagsAndAttributesSheetTests(RibbonSession session)
         private readonly SceneNode[] _selected;
         private readonly Window _window;
         private readonly PropertiesPanel _view;
+        private readonly ShellModel _shell;
         private TagPanelInfo? _tags;
         private AttributePanelInfo? _attributes;
+        private bool _isPlaying;
+        private long _frame;
 
         public Sheet(EntitySchemaCatalog? schemas, params SceneNode[] selected)
         {
@@ -203,7 +227,8 @@ public sealed class TagsAndAttributesSheetTests(RibbonSession session)
                 Schemas = schemas,
             };
 
-            _view = new PropertiesPanel { DataContext = new ShellModel { Properties = Panel } };
+            _shell = new ShellModel { Properties = Panel };
+            _view = new PropertiesPanel { DataContext = _shell };
             _window = new Window { Content = _view, Width = PropertyLabelFixture.ExpandedWidth, Height = 1180 };
             _window.SetRenderScaling(2.0);
             _window.Show();
@@ -214,7 +239,7 @@ public sealed class TagsAndAttributesSheetTests(RibbonSession session)
 
         public UndoStack Undo { get; }
 
-        // Hands the panel what the engine would publish now.
+        // Hands the shell a snapshot as the engine would publish it now.
         public void Publish()
         {
             var rows = new List<PropertyRow>();
@@ -222,8 +247,26 @@ public sealed class TagsAndAttributesSheetTests(RibbonSession session)
             _tags = TagPanelInfo.Capture(_selected, _tags);
             _attributes = AttributePanelInfo.Capture(_selected, _scene.EntitySchemas, _attributes);
 
-            Panel.Apply(rows, _selected.Length, null, _tags, _attributes);
+            _shell.ApplySnapshot(new FrameSnapshot
+            {
+                FrameNumber = ++_frame,
+                SelectedIds = [.. _selected.Select(node => node.Id)],
+                SelectionProperties = rows,
+                SelectionTags = _tags,
+                SelectionAttributes = _attributes,
+                IsPlaying = _isPlaying,
+            });
             Dispatcher.UIThread.RunJobs();
+        }
+
+        // Starts or stops the level, as far as the shell is told.
+        public void Play(bool isPlaying)
+        {
+            _isPlaying = isPlaying;
+
+            // The shell holds its own word for a few snapshots before the engine's wins.
+            for (int i = 0; i < 12; i++)
+                Publish();
         }
 
         public void Type(PropertyFieldModel field, string text)
