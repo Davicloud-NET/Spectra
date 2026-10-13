@@ -142,6 +142,12 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     /// <summary>How many signals of nodes scripts have asked for, such as a part's Touched.</summary>
     public int NodeSignalCount => _signals.SignalCount;
 
+    /// <summary>How many nodes and other objects scripts hold, or held until Luau's collector says otherwise. One that only grows is a leak.</summary>
+    public int HeldObjectCount => _host.IsClosed ? 0 : _host.Objects.Count;
+
+    // Has Luau collect in full, so the counts above say what is held now.
+    internal void Collect() => _host.Collect();
+
     /// <summary>
     /// Whether the Luau state is gone, and every thread with it. After
     /// <see cref="Close"/> that is at once, or when the call into a script

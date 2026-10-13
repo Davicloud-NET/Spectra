@@ -30,6 +30,10 @@ internal sealed class PartBrushMeshCache
     private readonly Dictionary<SceneNode, Brush> _references = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Brush> _dirty = new(BrushIdentity.Comparer);
 
+    // The entry of the brush that left last without ever being built, for
+    // the next brush that comes. A part that leaves and comes back makes none.
+    private Entry? _spare;
+
     // Distinct part brushes that hold GPU meshes.
     public int Count { get; private set; }
     internal int PendingCount => _dirty.Count;
@@ -53,14 +57,33 @@ internal sealed class PartBrushMeshCache
         if (ReferenceEquals(old, brush)) return;
         if (old is not null)
         {
-            _entries[old].References--;
-            _dirty.Add(old);
+            Entry held = _entries[old];
+            held.References--;
             _references.Remove(node);
+
+            // A brush that was never built has nothing on the GPU to free. It
+            // goes now: a host that draws nothing never pumps, and would keep
+            // the brush of every part a level spawned and destroyed.
+            if (held.References == 0 && !held.Built)
+            {
+                _entries.Remove(old);
+                _dirty.Remove(old);
+                _spare = held;
+            }
+            else
+            {
+                _dirty.Add(old);
+            }
         }
         if (brush is not null)
         {
             if (!_entries.TryGetValue(brush, out Entry? entry))
-                _entries.Add(brush, entry = new Entry());
+            {
+                entry = _spare ?? new Entry();
+                _spare = null;
+                _entries.Add(brush, entry);
+            }
+
             entry.References++;
             _references.Add(node, brush);
             _dirty.Add(brush);

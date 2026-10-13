@@ -6,7 +6,7 @@ door.Position = 5 --> 'Vector3', but got 'number'
 door.CFrame = door.Position --> 'CFrame', but got 'Vector3'
 door.Name = 7 --> 'string', but got 'number'
 door.ClassName = "Wall" --> new: ClassName of type 'Instance' is read-only
-door.Parent = workspace --> new: Parent of type 'Instance' is read-only
+door.Parent = game --> 'Instance?', but got 'DataModel'
 door:FindFirstChild(7) --> 'string', but got 'number'
 door:WaitForChild("Hinge", "soon") --> 'number', but got 'string'
 door:Explode() --> Cannot call a value of type Instance

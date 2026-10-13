@@ -40,6 +40,10 @@ internal sealed class SceneBvh
 
     private const int Null = -1;
 
+    // How many marks of nodes that have left may wait for a flush, on top
+    // of two for each leaf.
+    private const int MostStaleMarks = 64;
+
     // For a mesh with no bounds at all. Validity comes from HasLocalBounds, not
     // Positions: a MeshCpuAccess.None mesh has empty arrays and good bounds.
     // The Positions check covers test doubles that skip InitializeCpuData.
@@ -113,9 +117,13 @@ internal sealed class SceneBvh
                 (node.Brush is not null && node.BrushKind == BrushKind.Part));
     }
 
+    // A node that has its leaf already got it while it was being added,
+    // with the box it has now. Marked dirty again, it would wait in the
+    // list for a query that a level with no view never makes.
     private void OnNodeAdded(SceneNode node)
     {
-        OnSpatialComponentChanged(node);
+        if (!_leaves.ContainsKey(node))
+            OnSpatialComponentChanged(node);
     }
 
     private void OnNodeRemoved(SceneNode node)
@@ -182,6 +190,12 @@ internal sealed class SceneBvh
     {
         if (_leaves.TryGetValue(node, out int leaf) && !_nodes[leaf].Dirty)
         {
+            // A node that left since it was marked is still in the list. With
+            // no query to flush it, as on a host that draws nothing, the list
+            // would keep every part that ever moved and was destroyed.
+            if (_dirtyNodes.Count > (2 * _leaves.Count) + MostStaleMarks)
+                FlushDirtyLeaves();
+
             _nodes[leaf].Dirty = true;
             _dirtyNodes.Add(node);
         }

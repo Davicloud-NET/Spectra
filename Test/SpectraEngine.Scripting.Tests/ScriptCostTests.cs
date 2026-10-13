@@ -91,6 +91,11 @@ public sealed class ScriptCostTests
         ("read the signal of a node's attributes", "local _ = part.AttributeChanged"),
         ("ask for the signal of one attribute", "local _ = part:GetAttributeChangedSignal('Score')"),
         ("ask for the signal of a tag", "local _ = tags:GetInstanceAddedSignal('Lava')"),
+        ("give a part the parent it has", "spare.Parent = workspace"),
+        ("give a part another parent and its own again", "spare.Parent = lamp spare.Parent = workspace"),
+        ("take a part out of the level and put it back", "spare.Parent = nil spare.Parent = workspace"),
+        ("read the parent of a destroyed node", "local _ = gone.Parent"),
+        ("destroy a node that is destroyed", "gone:Destroy()"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
@@ -131,6 +136,7 @@ public sealed class ScriptCostTests
         level.FileAt("Scripts/tapper.luau", "return function(echo) echo:Tap() end");
         level.Scene.Root.CreateChild("Lamp").Light = new Light { Kind = LightKind.Point };
         level.Scene.Root.CreateChild("Sign").Entity = new EntityData(SignEntity.Class);
+        level.Part("Spare", new Vector3(5f, 2f, 5f));
         level.AddScript(part, $$"""
             local part = script.Parent
             local a = Vector3.new(1, 2, 3)
@@ -154,6 +160,9 @@ public sealed class ScriptCostTests
             part:SetAttribute("Glow", c)
             part:GetAttributeChangedSignal("Heard"):Connect(function() end)
             tags:GetInstanceAddedSignal("Heard"):Connect(function() end)
+            local spare = workspace.Spare
+            local gone = Instance.new("Folder")
+            gone:Destroy()
             run.Heartbeat:Connect(function()
                 for i = 1, {{Rounds}} do
                     {{statement}}
