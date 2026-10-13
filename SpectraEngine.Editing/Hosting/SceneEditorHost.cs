@@ -672,10 +672,12 @@ public sealed class SceneEditorHost : ISceneEditor
     /// <returns>How many nodes changed.</returns>
     public int ApplyTag(TagEdit edit)
     {
-        if (RefuseEdit("Tag edit", allowPropertyGesture: true))
+        // Kept out of an open gesture, unlike an attribute: no tag is dragged,
+        // and one that joined a scrub would be rolled back with it.
+        if (RefuseEdit("Tag edit"))
             return 0;
 
-        return TagEditor.Apply(_undo, _scene.Selection.Items, edit, _propertyGestureOpen);
+        return TagEditor.Apply(_undo, _scene.Selection.Items, edit);
     }
 
     /// <summary>
@@ -685,6 +687,7 @@ public sealed class SceneEditorHost : ISceneEditor
     /// <returns>How many nodes changed.</returns>
     public int ApplyAttribute(AttributeEdit edit)
     {
+        // Let into an open gesture: the colour picker's drag is these edits.
         if (RefuseEdit("Attribute edit", allowPropertyGesture: true))
             return 0;
 

@@ -16,12 +16,8 @@ public static class TagEditor
     /// off every one. A tag the rule refuses changes nothing, and a node
     /// with no room for one more is left as it is.
     /// </summary>
-    /// <param name="inGesture">
-    /// True while the caller holds a transaction open, so this edit joins it
-    /// instead of becoming its own history entry.
-    /// </param>
     /// <returns>How many nodes changed.</returns>
-    public static int Apply(UndoStack undo, IReadOnlyList<SceneNode> targets, TagEdit edit, bool inGesture = false)
+    public static int Apply(UndoStack undo, IReadOnlyList<SceneNode> targets, TagEdit edit)
     {
         ArgumentNullException.ThrowIfNull(undo);
         ArgumentNullException.ThrowIfNull(targets);
@@ -44,16 +40,13 @@ public static class TagEditor
         if (commands.Count == 0)
             return 0;
 
-        // Inside a gesture the caller owns the transaction; a second Begin throws.
-        if (!inGesture)
-            undo.BeginTransaction(NameOf(edit));
-
+        // A tag edit is always its own entry. No gesture carries one, and the
+        // editor keeps it out of one that is open.
+        undo.BeginTransaction(NameOf(edit));
         foreach (IEditorCommand command in commands)
             undo.Execute(command);
 
-        if (!inGesture)
-            undo.CommitTransaction();
-
+        undo.CommitTransaction();
         return commands.Count;
     }
 
