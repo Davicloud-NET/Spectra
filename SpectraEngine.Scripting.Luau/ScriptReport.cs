@@ -49,6 +49,30 @@ internal static unsafe class ScriptReport
         }
     }
 
+    // The same with the line that called. The line is 0 when no script
+    // function did.
+    internal static ReadOnlySpan<byte> CallerFile(nint L, out int line)
+    {
+        for (int level = 0; ; level++)
+        {
+            byte* source;
+            byte* name;
+            int at;
+            int kind = Shim.sl_frame(L, level, &source, &name, &at);
+            if (kind == 0)
+            {
+                line = 0;
+                return default;
+            }
+
+            if (kind == ScriptFrameKind)
+            {
+                line = at;
+                return WithoutMark(LuaText.FromNative(source));
+            }
+        }
+    }
+
     // An error the host makes for a thread where it stands, such as one that
     // waits where it may not. Its position is the thread's own code, the
     // outermost script function, and the stack is what that line called.

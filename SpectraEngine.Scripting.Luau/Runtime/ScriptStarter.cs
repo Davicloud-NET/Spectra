@@ -51,6 +51,9 @@ internal sealed partial class ScriptStarter(LuauHost host, IScriptSource source,
         if (loaded is null)
             return;
 
+        // What the script hears and sends is drawn from this node.
+        loaded.Owner = node;
+
         if (loaded.SetGlobal("script"u8, ScriptOf(node)))
             loaded.Start();
         else

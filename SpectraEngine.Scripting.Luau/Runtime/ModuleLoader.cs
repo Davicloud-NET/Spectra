@@ -177,7 +177,7 @@ internal sealed partial class ModuleLoader(
         _running.Add(module);
         try
         {
-            _runner.Run(module, text);
+            _runner.Run(module, text, host.ScriptOf(stack)?.Owner);
         }
         finally
         {

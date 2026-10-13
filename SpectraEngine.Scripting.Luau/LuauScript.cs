@@ -35,6 +35,12 @@ public sealed class LuauScript
     /// <summary>The thread its top level runs on.</summary>
     public LuauThread Thread { get; internal set; }
 
+    /// <summary>
+    /// Whatever the host's user wants to find again from the script, such as
+    /// what it runs for. The host does not read it.
+    /// </summary>
+    public object? Owner { get; set; }
+
     internal int Id { get; }
 
     // Why the host stopped the script, as the shim numbers it: for time or

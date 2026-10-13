@@ -25,6 +25,9 @@ internal sealed class QueuedSignal(NodeSignals signals, SceneNode node, EntityPo
     // of a world brush can never be told. Null for any other.
     public string? WhyNoListener() => isTouch ? TouchSignal.WhyNone(node) : null;
 
+    // Who is connecting, and from which line.
+    public ScriptPlace PlaceOf(LuauStack stack) => signals.Places.Of(stack);
+
     // What to tell the first script that listens to an output which fired
     // while the level spawned, when no script ran yet. Null for any other.
     public string? TakeMissedFire() =>

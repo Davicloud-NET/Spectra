@@ -45,9 +45,9 @@ internal sealed partial class ScriptSignal : ScriptObject
     // for one the host fires where it stands.
     public QueuedSignal? Queued => _queued;
 
-    public ScriptConnection Connect(LuauFunction function, bool isOnce)
+    public ScriptConnection Connect(LuauFunction function, bool isOnce, in ScriptPlace by = default)
     {
-        ScriptConnection connection = new(this, function, isOnce);
+        ScriptConnection connection = new(this, function, isOnce) { By = by };
         Add(connection);
         return connection;
     }
@@ -111,7 +111,8 @@ internal sealed partial class ScriptSignal : ScriptObject
             return stack.Fail(WaitingThreads.CannotYield);
 
         WaitingThreads waiting = _hub.Waiting;
-        Add(new ScriptConnection(this, waiting, waiting.Add(WaitingThread.ForSignal(thread))));
+        ScriptPlace by = _queued?.PlaceOf(stack) ?? default;
+        Add(new ScriptConnection(this, waiting, waiting.Add(WaitingThread.ForSignal(thread))) { By = by });
         SayWhatWasMissed(stack);
         return LuauStack.Yield();
     }
@@ -152,7 +153,7 @@ internal sealed partial class ScriptSignal : ScriptObject
         if (_hub.Host.KeepFunction(stack, 2) is not { } function)
             return ScriptArguments.Wrong(stack, 2, method, "function", isMethod: true);
 
-        ScriptConnection connection = Connect(function, isOnce);
+        ScriptConnection connection = Connect(function, isOnce, _queued?.PlaceOf(stack) ?? default);
         SayWhatWasMissed(stack);
         return ScriptResult.Of(_hub.Host.Objects.Push(stack, ScriptTags.Connection, connection));
     }

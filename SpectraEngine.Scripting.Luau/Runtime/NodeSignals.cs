@@ -25,9 +25,13 @@ internal sealed class NodeSignals
     {
         _hub = hub;
         _world = world;
+        Places = new ScriptPlaces(hub.Host);
     }
 
     public int ListenerCount => _listeners.Count;
+
+    // Who called and from which line, which a listener and a sent input carry.
+    public ScriptPlaces Places { get; }
 
     public ScriptSignal OfOutput(SceneNode node, EntityPort output)
     {
@@ -47,7 +51,7 @@ internal sealed class NodeSignals
 
         connection.Listener = ++_lastListener;
         _listeners.Add(connection.Listener, connection);
-        _world.Listeners.Add(node, name, connection.Listener);
+        _world.Listeners.Add(node, name, connection.Listener, connection.By);
     }
 
     // Also for a connection that has ended already: it ends once when it is
@@ -85,7 +89,7 @@ internal sealed class NodeSignals
     // wait, is let go when its output fires next. On an output that never
     // fires again it would stay for good, so all are looked over each time
     // there are twice as many as were left the last time.
-    private void LetTheDeadGo()
+    public void LetTheDeadGo()
     {
         foreach (ScriptConnection connection in _listeners.Values)
         {

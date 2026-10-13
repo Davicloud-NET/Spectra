@@ -37,6 +37,10 @@ internal sealed partial class ScriptConnection : ScriptObject
     // fires. Zero for any other, and once the connection has ended.
     public long Listener { get; set; }
 
+    // Which script connected and from which line, for a signal the queue
+    // fires. A view of the level's wiring shows it.
+    public ScriptPlace By { get; init; }
+
     // What a fire of the signal carries.
     public ParameterType Sends => _signal.Sends;
 

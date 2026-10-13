@@ -32,7 +32,9 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
         return Sentence(failed);
     }
 
-    public void Run(ScriptModule module, byte[] text)
+    // owner is what the script that asked runs for. The module's own code
+    // counts for the same, so a module is never a sender of its own.
+    public void Run(ScriptModule module, byte[] text, object? owner = null)
     {
         TimeSpan askedBefore = _asked;
         bool heldBefore = sink.HoldsErrors;
@@ -43,7 +45,7 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
         sink.HoldsErrors = true;
         try
         {
-            ScriptMessage? failure = Start(module, text, out LuauScript? script);
+            ScriptMessage? failure = Start(module, text, owner, out LuauScript? script);
             if (failure is not { } said)
                 return;
 
@@ -62,11 +64,13 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
 
     // Null when the module returned its one value, which it then keeps.
     // Otherwise how it failed, which nobody has been told yet.
-    private ScriptMessage? Start(ScriptModule module, byte[] text, out LuauScript? script)
+    private ScriptMessage? Start(ScriptModule module, byte[] text, object? owner, out LuauScript? script)
     {
         script = host.Load(module.Path, text);
         if (script is null)
             return Said(module);
+
+        script.Owner = owner;
         if (module.Node is { } node && !script.SetGlobal("script"u8, LuauValue.Object(ScriptTags.Object, node)))
             return Error(module, "the module could not be given its node");
 

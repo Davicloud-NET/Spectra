@@ -152,15 +152,11 @@ internal sealed class EntityMembers
     }
 
     // Only a trace reads who sent an input, so only a watched level looks
-    // the place up. The name of a module's file is a new string each time.
-    private bool Queue(LuauStack stack, Entity entity, string input, string text)
-    {
-        if (_world.Trace is null)
-            return _world.QueueScriptInput(entity, input, text, string.Empty, 0);
-
-        ScriptMessage place = ScriptReport.Line(stack.State, _host.ScriptOf(stack), ScriptSeverity.Print, string.Empty);
-        return _world.QueueScriptInput(entity, input, text, place.Script, place.Line);
-    }
+    // the place up.
+    private bool Queue(LuauStack stack, Entity entity, string input, string text) =>
+        _world.Trace is null
+            ? _world.QueueScriptInput(entity, input, text, string.Empty, 0)
+            : _world.QueueScriptInput(entity, input, text, _signals.Places.Of(stack));
 
     private int PushMethod(LuauStack stack, string input) =>
         _methods.TryGetValue(input, out LuauReference? kept) ? ScriptResult.Of(kept.Push(stack)) : MakeMethod(stack, input);
