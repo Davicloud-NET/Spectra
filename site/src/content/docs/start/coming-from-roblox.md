@@ -158,9 +158,6 @@ A Roblox `ProximityPrompt` is a Button entity here. A `Sound` is a Sound entity,
 | A light | A child that lights from where its part is. | A node with a place of its own. There are also `DirectionalLight` and `DiscLight`, and a `SurfaceLight` is a rectangle that shines. |
 | `Transparency` | Hides a part at 1. | `Visible` draws or hides a part. |
 | An attribute | Can hold an `Instance`. | Cannot. It holds a string, a number, a boolean, a `Vector3`, a `CFrame` or a `Color3`. |
-| An attribute's name | May have `.`, `-` and `/` in it. | Letters, digits and `_` only. |
-| `GetTags` | Sorted by name. | In the order the node got its tags. |
-| The tags and attributes of a destroyed node | Kept, and `AddTag` and `SetAttribute` still work. | Gone. `HasTag` is false, `GetAttribute` is `nil`, and `AddTag` and `SetAttribute` are errors. |
 | `Parent` set to a destroyed node | Taken. | An error. |
 | `WaitForChild` with a timeout, on a destroyed node | `nil` when the time is over. | `nil` at once. |
 | A signal a script kept of a node that was destroyed since | `Connect` gives a live connection. | `Connect` gives a connection that is never called, and `Wait` is an error. |
