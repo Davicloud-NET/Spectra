@@ -53,7 +53,8 @@ public sealed class Light
     private float _radius = 0.5f;
     private Vector3 _color = Vector3.One;
 
-    // The colour Color was set as, while Color still is what that became.
+    // Color as a display colour, once it was set as one or asked for. Null
+    // again when Color is set.
     private Color3? _displayColor;
 
     /// <summary>The light's shape.</summary>
@@ -81,7 +82,7 @@ public sealed class Light
     // alone could not say which was set.
     public Color3 DisplayColor
     {
-        get => _displayColor ?? Color3.FromLinear(_color);
+        get => _displayColor ??= Color3.FromLinear(_color);
         set
         {
             _color = value.ToLinear();
@@ -177,6 +178,9 @@ public sealed class Light
         Width = Width,
         Height = Height,
         Radius = Radius,
+
+        // After Color, which drops it.
+        _displayColor = _displayColor,
     };
 
     /// <summary>

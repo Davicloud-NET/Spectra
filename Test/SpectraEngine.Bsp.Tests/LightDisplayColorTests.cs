@@ -60,13 +60,29 @@ public sealed class LightDisplayColorTests
     }
 
     [Fact]
-    public void A_copy_of_a_light_shows_the_same_colour()
+    public void A_copy_of_a_light_shows_the_colour_the_light_was_given()
     {
-        var light = new Light { DisplayColor = Color3.FromRgb(12f, 200f, 77f) };
+        var light = new Light();
+        var random = new Random(42);
+        for (int i = 0; i < 2_000; i++)
+        {
+            light.DisplayColor = new Color3(random.NextSingle(), random.NextSingle(), random.NextSingle());
 
-        Light copy = light.Clone();
+            Light copy = light.Clone();
 
-        copy.Color.ShouldBe(light.Color);
-        copy.DisplayColor.ShouldBe(light.DisplayColor);
+            copy.Color.ShouldBe(light.Color);
+            copy.DisplayColor.ShouldBe(light.DisplayColor);
+        }
+    }
+
+    [Fact]
+    public void Asking_for_the_display_colour_changes_nothing_of_the_light()
+    {
+        var light = new Light { Color = new Vector3(0.8f, 0.3f, 0.05f) };
+
+        Color3 first = light.DisplayColor;
+
+        light.Color.ShouldBe(new Vector3(0.8f, 0.3f, 0.05f));
+        light.DisplayColor.ShouldBe(first);
     }
 }
