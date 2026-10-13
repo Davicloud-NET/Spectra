@@ -53,12 +53,17 @@ public sealed class Color3Tests
         Color3.FromHsv(-0.5f, 1f, 1f).ShouldBe(Color3.FromHsv(0.5f, 1f, 1f));
     }
 
+    // Roblox's reference prints 1 1 1 for the hue, saturation and value of
+    // Color3.fromRGB(255, 0, 0), and 0.3333333 1 1 for green.
     [Theory]
-    [InlineData(1f, 0f, 0f, 0f, 1f, 1f)]
+    [InlineData(1f, 0f, 0f, 1f, 1f, 1f)]
     [InlineData(0f, 1f, 0f, 1f / 3f, 1f, 1f)]
     [InlineData(0f, 0f, 1f, 2f / 3f, 1f, 1f)]
     [InlineData(1f, 0f, 1f, 5f / 6f, 1f, 1f)]
-    [InlineData(0.5f, 0.25f, 0.25f, 0f, 0.5f, 0.5f)]
+    [InlineData(1f, 1f, 0f, 1f / 6f, 1f, 1f)]
+    [InlineData(0f, 1f, 1f, 0.5f, 1f, 1f)]
+    [InlineData(1f, 0.5f, 0f, 1f / 12f, 1f, 1f)]
+    [InlineData(1f, 0f, 0.5f, 11f / 12f, 1f, 1f)]
     public void A_colour_gives_its_hue_its_saturation_and_its_value(
         float r, float g, float b, float h, float s, float v)
     {
@@ -69,11 +74,35 @@ public sealed class Color3Tests
         value.ShouldBe(v, 1e-6f);
     }
 
+    // Roblox's sample only shows it for full red. Taken here for every red
+    // with as much green as blue, which is what the sum that gives 1 for
+    // full red gives for those too.
+    [Theory]
+    [InlineData(1f, 0f, 0f, 1f)]
+    [InlineData(0.5f, 0.25f, 0.25f, 0.5f)]
+    [InlineData(0.2f, 0.1f, 0.1f, 0.5f)]
+    public void A_red_with_as_much_green_as_blue_has_a_hue_of_1_and_not_0(float r, float g, float b, float s)
+    {
+        new Color3(r, g, b).ToHsv().ShouldBe((1f, s, r));
+    }
+
     [Fact]
     public void A_grey_has_no_hue_and_no_saturation()
     {
         new Color3(0.4f, 0.4f, 0.4f).ToHsv().ShouldBe((0f, 0f, 0.4f));
         default(Color3).ToHsv().ShouldBe((0f, 0f, 0f));
+    }
+
+    // Roblox's documentation says nothing of a hue that is no number.
+    // Chosen: it is not made into one, and the colour has such a part too.
+    [Theory]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void A_hue_that_is_no_number_makes_a_colour_with_a_part_that_is_no_number(float hue)
+    {
+        Color3 made = Color3.FromHsv(hue, 1f, 1f);
+
+        (float.IsNaN(made.R) || float.IsNaN(made.G) || float.IsNaN(made.B)).ShouldBeTrue();
     }
 
     [Theory]

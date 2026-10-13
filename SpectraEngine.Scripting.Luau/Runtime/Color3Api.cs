@@ -24,7 +24,7 @@ internal static partial class Color3Api
     [ScriptMethod]
     public static Color3 Lerp(Color3 self, Color3 goal, float alpha) => self.Lerp(goal, alpha);
 
-    /// <summary>The hue, the saturation and the value of the colour, each 0 to 1.</summary>
+    /// <summary>The hue, the saturation and the value of the colour, each 0 to 1. A grey has a hue of 0. A red with as much green as blue has a hue of 1, as in Roblox, and Color3.fromHSV makes the same red from 0 and from 1.</summary>
     [ScriptMethod]
     public static (float H, float S, float V) ToHSV(Color3 self) => self.ToHsv();
 

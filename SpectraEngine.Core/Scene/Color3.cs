@@ -8,12 +8,11 @@ namespace SpectraEngine.Core.Scene;
 /// <summary>
 /// A colour as a person picks one: red, green and blue as a screen shows
 /// them, each 0 to 1. Every operation means what it means on a Roblox Color3.
-/// The engine lights in linear values. <see cref="ToLinear"/> and
-/// <see cref="FromLinear"/> cross between the two.
 /// </summary>
 /// <param name="R">Red. Nothing keeps it between 0 and 1.</param>
 /// <param name="G">Green.</param>
 /// <param name="B">Blue.</param>
+// The engine lights in linear values. ToLinear and FromLinear cross.
 public readonly record struct Color3(float R, float G, float B)
 {
     // How many floats each side of the curve's own answer FromLinear tries.
@@ -37,7 +36,8 @@ public readonly record struct Color3(float R, float G, float B)
         float q = v * (1f - (within * s));
         float t = v * (1f - ((1f - within) * s));
 
-        // A hue that is no number has no sector, and reads as red.
+        // A hue that is no number has no sector, and a cast of one to an int
+        // is anything. It takes the first, and the colour has such a part too.
         float wrapped = sector - (6f * MathF.Floor(sector / 6f));
         return (float.IsFinite(wrapped) ? (int)wrapped : 0) switch
         {
@@ -89,7 +89,10 @@ public readonly record struct Color3(float R, float G, float B)
     public Color3 Lerp(Color3 goal, float alpha) =>
         new(R + ((goal.R - R) * alpha), G + ((goal.G - G) * alpha), B + ((goal.B - B) * alpha));
 
-    /// <summary>The hue, the saturation and the value, each 0 to 1. A grey has a hue of 0.</summary>
+    /// <summary>
+    /// The hue, the saturation and the value, each 0 to 1. A grey has a hue
+    /// of 0, and a red with as much green as blue a hue of 1, as in Roblox.
+    /// </summary>
     public (float H, float S, float V) ToHsv()
     {
         float most = MathF.Max(R, MathF.Max(G, B));
@@ -98,16 +101,23 @@ public readonly record struct Color3(float R, float G, float B)
         if (!(spread > 0f))
             return (0f, 0f, most);
 
-        float sixth;
-        if (most == R)
-            sixth = (G - B) / spread;
-        else if (most == G)
-            sixth = ((B - R) / spread) + 2f;
-        else
-            sixth = ((R - G) / spread) + 4f;
+        // How far each part is below the largest, 0 to 1.
+        float red = (most - R) / spread;
+        float green = (most - G) / spread;
+        float blue = (most - B) / spread;
 
-        float hue = sixth / 6f;
-        return (hue < 0f ? hue + 1f : hue, spread / most, most);
+        // The largest part and the smallest say which sixth of the wheel. Red
+        // over the smallest green is the last one, and Roblox puts pure red
+        // there too: at its end, 1, and not at 0.
+        float sixth;
+        if (R == most)
+            sixth = G == least ? 5f + blue : 1f - green;
+        else if (G == most)
+            sixth = B == least ? 1f + red : 3f - blue;
+        else
+            sixth = R == least ? 3f + green : 5f - red;
+
+        return (sixth / 6f, spread / most, most);
     }
 
     /// <summary>
