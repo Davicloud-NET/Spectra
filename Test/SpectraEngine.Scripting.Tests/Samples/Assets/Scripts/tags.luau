@@ -50,3 +50,22 @@ end
 CollectionService:AddTag(board, "Scored")
 CollectionService:RemoveTag(board, "Scored")
 print(table.concat(CollectionService:GetTags(board), ", "))
+
+-- A name may have a period, a hyphen and a slash, as in Roblox.
+board:SetAttribute("ui/best.run-1", 12)
+board:GetAttributeChangedSignal("ui/best.run-1"):Connect(function()
+	print(board:GetAttribute("ui/best.run-1"))
+end)
+
+-- GetTags is sorted, whatever order the tags were put on in: Late, then Open.
+board:AddTag("Late")
+print(table.concat(board:GetTags(), " "))
+
+-- A destroyed node keeps its tags and attributes for a script that holds it.
+local ember = Instance.new("Part", lava)
+ember:AddTag("Lava")
+ember:SetAttribute("Heat", 900)
+ember:Destroy()
+print(ember.Parent, ember:HasTag("Lava"), ember:GetAttribute("Heat"), #CollectionService:GetTagged("Lava"))
+ember:SetAttribute("Heat", 0)
+ember:AddTag("Cold")

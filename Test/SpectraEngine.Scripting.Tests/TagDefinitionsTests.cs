@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Scripting;
 using SpectraEngine.Core.Scripting.Api;
 using SpectraEngine.Scripting.Luau.Runtime;
 
@@ -69,6 +70,39 @@ public sealed class TagDefinitionsTests
         set.Summary.ShouldContain("Stop takes away what scripts set");
         File.ShouldContain(set.Summary);
     }
+
+    [Fact]
+    public void The_words_of_SetAttribute_say_the_rule_for_a_name_as_the_rule_itself_says_it()
+    {
+        ScriptFunctionDescription set = Method("Instance", "SetAttribute");
+
+        set.Summary.ShouldContain(AttributeName.Rule.Replace("An attribute's name", "A name") + ".");
+        File.ShouldContain(set.Summary);
+    }
+
+    [Fact]
+    public void The_words_of_GetTags_say_that_the_tags_come_sorted()
+    {
+        ScriptFunctionDescription ofNode = Method("Instance", "GetTags");
+        ScriptFunctionDescription ofService = Method("CollectionService", "GetTags");
+
+        ofNode.Summary.ShouldContain("sorted by the bytes of their text");
+        ofService.Summary.ShouldContain("sorted");
+        File.ShouldContain(ofNode.Summary);
+        File.ShouldContain(ofService.Summary);
+    }
+
+    [Fact]
+    public void The_words_of_Destroy_say_that_the_node_keeps_its_tags_and_attributes()
+    {
+        ScriptFunctionDescription destroy = Method("Instance", "Destroy");
+
+        destroy.Summary.ShouldContain("It keeps its tags and attributes, as in Roblox");
+        File.ShouldContain(destroy.Summary);
+    }
+
+    private static ScriptFunctionDescription Method(string className, string name) =>
+        LuauScriptApi.Description.FindClass(className).ShouldNotBeNull().Methods.Single(method => method.Name == name);
 
     // From the line that opens a declaration to the line that closes it.
     private static string BlockOf(string opening)

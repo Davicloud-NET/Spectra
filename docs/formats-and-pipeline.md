@@ -461,7 +461,7 @@ As built on 2026-10-11, `realm` and `state` bind to `SceneNode.DeclaredRealm` an
 The `tags` and `attributes` members, as built on 2026-10-13. A builder marks a node with them in Properties, and the scripts of a playing level find them (`docs/data-model.md` §3).
 
 - Both are node members, written after `script` and before `editor`, each on one line. Neither is written for a node that has none, so a map from before them saves to the bytes it had.
-- `tags` is an array of strings, in the order the node got them: `"tags": ["Lava","Hot stuff"]`. A tag is 1 to 256 bytes of UTF-8 and is case sensitive. A node has at most 256.
+- `tags` is an array of strings, in the order the node got them: `"tags": ["Lava","Hot stuff"]`. It is never sorted. A script's `GetTags` sorts what it hands out, by the bytes of the tags, and the file keeps its order. A tag is 1 to 256 bytes of UTF-8 and is case sensitive. A node has at most 256.
 - `attributes` is one object with a value under each name, in the order the names were added. It is never sorted:
 
 ```json
@@ -470,9 +470,9 @@ The `tags` and `attributes` members, as built on 2026-10-13. A builder marks a n
 
 - Text, true or false and a number are JSON's own. A number is a double, written as the shortest text that reads back as the same double.
 - The three kinds JSON has no value for are an object with one member that names the kind. `vector3` is three numbers. `color3` is red, green and blue as a person picks them, 0 to 1, not linear. `cframe` is seven numbers: the position, then the rotation as a quaternion `x, y, z, w`. Their numbers are floats.
-- A name is 1 to 100 ASCII letters, digits and underscores and does not start with `RBX`. A node holds at most 256 attributes, and text is at most 65536 bytes of UTF-8.
+- A name is 1 to 100 ASCII letters, digits and any of `_ . - /`, and does not start with `RBX`, which is Roblox's rule (`AttributeName`). The period, the hyphen and the slash are written as they are: `"ui/hud.title-2":3`. A map saved before the rule took those three reads as it did. The format version did not move for them: a build from before refuses such a name by the node's name and drops nothing. A node holds at most 256 attributes, and text is at most 65536 bytes of UTF-8.
 - Both are closed records. A reader error names the node and the byte offset for a tag or a name that breaks its rule or is there twice, a second `tags` or `attributes` member on a node that has one with something in it, one more than a node can have, a value of no kind (`null`, an array, an object with another member or with two), an array of the wrong length, a number that is not finite, and a `cframe` whose rotation has no length. Nothing of them is carried as an unknown member: a save builds the node anew, so what was carried would be dropped.
-- What a save writes reads back to the same bytes. Three forms a person can write by hand are read and then written another way. An empty `"tags": []` or `"attributes": {}` is no member, as `"collide": true` is. A number keeps its value and gets JSON's shortest spelling. A `cframe` rotation off unit length is the same rotation and is brought to unit length, so `[0,0.7071,0,0.7071]` is saved as `[0,0.70710677,0,0.70710677]`.
+- What a save writes reads back to the same bytes. Four forms a person can write by hand are read and then written another way. An empty `"tags": []` or `"attributes": {}` is no member, as `"collide": true` is. A number keeps its value and gets JSON's shortest spelling. A slash escaped as `\/` in a name is the same name and is saved as a plain slash. A `cframe` rotation off unit length is the same rotation and is brought to unit length, so `[0,0.7071,0,0.7071]` is saved as `[0,0.70710677,0,0.70710677]`.
 - `EngineInfo.MapFormatVersion` went from 5 to 6. A document that carries a tag or an attribute declares `minimumReadableVersion` 6 (`EngineInfo.NodeTagsMapVersion`). An older editor keeps both as unknown members, and its next save drops them. A document without them declares what it did before.
 - They bind to `SceneNode.Tags` and `SceneNode.Attributes`. A baked map keeps both (§2.7, `NTAG` and `NATR`).
 
@@ -827,9 +827,9 @@ NATR preamble, 16 bytes: u32 count, then 12 zero bytes
 +0x34  u32  0
 ```
 
-- One record for each tag and one of 56 bytes for each attribute. Records are in node order, and a node's own are in the order of its set, which is the order a script reads its tags in.
+- One record for each tag and one of 56 bytes for each attribute. Records are in node order, and a node's own are in the order of its set, which is the order the node got them in. A script reads its tags sorted, whatever order the records have.
 - A field the kind does not use is written zero. The kinds are numbered here and not by `MemberValueKind`, so that enum can change and a file cannot.
-- Tags, names and text are strings of `STRT`. They are interned after the entities' strings, node by node: a node's tags, then each attribute's name and its text. A map with neither adds no string.
+- Tags, names and text are strings of `STRT`. They are interned after the entities' strings, node by node: a node's tags, then each attribute's name and its text. A map with neither adds no string. A name is held to `AttributeName`'s rule when the sets are made, so a period, a hyphen and a slash in one need nothing here, and neither `MapRule.Version` nor the format version moved for them.
 - They follow `SCPT` in the file, `NTAG` first.
 - The reader refuses a count that runs past its section, a node or a string that is out of range, records that are not in node order, and a kind it has no value for. It then makes every node's two sets once to check them, so a tag there twice, a name no attribute has and a number that is not finite are refused before anything is loaded. `TagSet` and `AttributeSet` would throw on those half way through the graph.
 - A reader that does not know the two codes steps over them and loads the level with no tag and no attribute.

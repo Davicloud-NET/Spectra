@@ -347,7 +347,7 @@ A `.smap` saves them as `realm` and `state`, by name, and leaves each out when i
 A builder marks a node so that scripts find it without knowing its name. `SceneNode.Tags` is a `TagSet` (`Scene/TagSet.cs`): the node's tags in the order it got them. `SceneNode.Attributes` is an `AttributeSet` (`Scene/AttributeSet.cs`): a value under each name, in the order the names were added. Any node can have both, whatever it carries. They are not payloads: a node has no tag and no attribute until told to, and neither changes what the node is.
 
 - A tag is text of 1 to 256 bytes of UTF-8 (`Scripting/TagName.cs`). It is case sensitive, and a node has at most 256.
-- An attribute's name is 1 to 100 ASCII letters, digits and underscores and does not start with `RBX` (`Scripting/AttributeName.cs`), which is Roblox's rule. A node holds at most 256.
+- An attribute's name is 1 to 100 ASCII letters, digits and any of `_ . - /`, and does not start with `RBX` (`Scripting/AttributeName.cs`). That is Roblox's rule as Roblox Studio answers it, so a name may start with a digit. A script, the panel and a map all ask that one place. A node holds at most 256.
 - A value is a `MemberValue` of one of six kinds: text, true or false, a number, three numbers (`Vector3`), a colour (`Color3`, as a person picks one) and a position and rotation (`CFrame`). `Scripting/AttributeValueRule.cs` holds what a level cannot keep: a number that is not finite, since a map is text, and text over 65536 bytes.
 - These are the limits a running script lives by (`TagLimits`, `AttributeLimits`), with two differences. A script may add the empty tag and set a number that is not finite, and a level can be built with neither.
 
@@ -362,6 +362,11 @@ The editor writes them with `SetTagsCommand` and `SetAttributesCommand`. `TagEdi
 A value typed on a row only some nodes have goes on the others too, where it can. It cannot go on the level's root, on a node that holds 256 attributes, or on a node whose entity has a keyvalue of the name. `AttributePanelInfo.RoomFor` is that rule. `AttributeEditor` asks it for each node, and a row carries how many nodes it leaves out and why (`AttributePanelRow.LeftOutCount`, `LeftOut`), so the row says where a new value goes before one is typed. A tag edit is its own undo entry and is kept out of an open property gesture. An attribute edit joins one, which is how a colour dragged in the picker is one entry.
 
 While a level plays, its scripts read and change a copy. `LevelSeed` (in `SpectraEngine.Scripting.Luau/Runtime`) puts every node's tags and attributes into the script runtime's tables before the first script starts. `AddTag`, `RemoveTag` and `SetAttribute` change those tables and never the node, so there is nothing for the play journal to put back, and a save after Stop writes the bytes a save before Play did.
+
+Two answers of Roblox Studio hold for that copy:
+
+- `GetTags` hands a node's tags out sorted, and not in the order the node got them. The order is that of the bytes of their UTF-8 (`TagName.CompareBytes`), so a digit comes before a capital letter and a capital before a small one. The node, the map and the panel keep the order the node got them in.
+- A node a script destroyed keeps its tags and attributes. A script that still holds it reads them and can change them, with no error. `GetTagged` leaves it out and nothing it has fires a signal. The copy lasts as long as the node does and Stop takes it away with the rest (`docs/script-api.md`, "What a script makes, clones, moves and destroys").
 
 On a node that carries an entity, a script also reads the entity's keyvalues as attributes. A keyvalue and an attribute of one name would be two values, one the entity runs with and one only scripts see. So the keyvalue wins: the editor refuses an attribute with the name of a keyvalue of the node's entity, declared by its class or held by the node (`Entities/EntityKeyvalueNames.cs`), and a level that has one anyway does not hand it to scripts and warns.
 
