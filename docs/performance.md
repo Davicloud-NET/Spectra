@@ -95,6 +95,24 @@ $env:SPECTRA_WALL_COST = "1"
 dotnet run -c Release --project Test/Spectra.Kitchen.Tests -- -trait "Suite=WallCost" -showLiveOutput
 ```
 
+## The open-world verdict
+
+`CsgBench openworld` moves one isolated part in worlds of 1k, 10k and 50k parts and compiles from the previous world. Its MOVE verdict is the edit at 50k over the edit at 1k, and the band is 1.5x. An edit is about 0.09 ms, and one sample is the mean of 16.
+
+The three sizes are timed in turn inside each of 15 rounds, and the verdict is the median of the 15 ratios. It is green when the middle half of the ratios is under the band, red when the middle half is over it, and "too noisy to say" between. The line under it prints the spread.
+
+It used to time each size on its own, three samples each, minutes apart, and take one ratio of two medians. On 13 October 2026 that read 1.3x to 3.0x over sixteen runs of four commits, back to the one of 6 October. What the machine was doing then is not known, and the red was not reproduced. The same commits on the same machine that evening, with the old measurement:
+
+| Commit | Runs | Ratio |
+|---|---|---|
+| 46e27e50, 13 October | 20 | 0.78x to 1.02x |
+| 02cc5b32, 6 October | 6 | 0.73x to 0.95x |
+| 0f6eb345, 21 August, where the bench came in | 6 | 0.75x to 1.28x |
+
+So no commit in that range made the edit grow with the world, and the red readings came from the machine. With two other compiles running beside it, single samples of the old measurement went from 80 to 350 microseconds and its ratio from 0.48x to 1.28x over four runs. The new one read 0.82x to 0.93x over fourteen runs, six of them under that load.
+
+The edit at 50k is the faster one by about a tenth. Nothing in the patch path explains that, and nobody has looked.
+
 ## Deliberately separate future work
 
 Instancing in geometry/shadows, cooked BC textures, mapped packs, baked maps and the fixes above are implemented. LOD/HLOD, occlusion culling, render scaling, staggered shadow updates and world paging remain separate features requiring their own measurements. The current patch adds none of them.

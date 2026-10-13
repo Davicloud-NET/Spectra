@@ -496,35 +496,35 @@ static void RunOpenWorldBench()
     Console.WriteLine("recompile after moving ONE isolated part by 0.3 with the previous-world carry (incremental compile), no monolithic mesh.");
     Console.WriteLine("'add' is the OTHER common gesture: appending one isolated part, which the patch path refuses (count change) and the");
     Console.WriteLine("validated caching fallback resolves — its O(world) validation floor is a real per-placement cost, measured here.");
+    Console.WriteLine(
+        $"'edit' and 'noop' are medians of {OpenWorldMove.Rounds} rounds. A round times every size in turn, each as the mean of " +
+        $"{OpenWorldMove.BurstIterations} compiles.");
     Console.WriteLine("parts  | cells  | surfaces | initial ms | init MiB | edit ms | noop ms | add ms  | edit MiB | dirty | carveMiss | weld | bspBuilt | meshBuilt");
     Console.WriteLine("-------|--------|----------|------------|----------|---------|---------|---------|----------|-------|-----------|------|----------|----------");
 
     int[] sizes = [1_000, 10_000, 50_000];
+    var cases = new OpenWorldCase[sizes.Length];
+    var move = new OpenWorldMove();
+    for (int i = 0; i < sizes.Length; i++)
+    {
+        cases[i] = PrepareOpenWorldSize(sizes[i]);
+        move.Add(sizes[i], cases[i].World, cases[i].Open.Placements, cases[i].Edited, cases[i].DirtyCells);
+    }
+
+    move.Measure();
+
     var editMedians = new double[sizes.Length];
     var noopMedians = new double[sizes.Length];
     var addMedians = new double[sizes.Length];
-    CsgWorld? world10k = null;
-    OpenWorld? open10k = null;
-
     for (int i = 0; i < sizes.Length; i++)
     {
-        (editMedians[i], noopMedians[i], addMedians[i], CsgWorld world, OpenWorld open) = RunOpenWorldSize(sizes[i]);
-        if (sizes[i] == 10_000)
-        {
-            // For the query section below.
-            world10k = world;
-            open10k = open;
-        }
+        editMedians[i] = move.EditMedianMs(i);
+        noopMedians[i] = move.NoopMedianMs(i);
+        addMedians[i] = FinishOpenWorldSize(cases[i], editMedians[i], noopMedians[i]);
     }
 
-    // Covers the move gesture only. 1.5x is the noise band: an O(world) stage
-    // would show about 50x. Add and remove pay the fallback in the 'add' column.
-    double ratio = editMedians[^1] / editMedians[0];
-    Console.WriteLine(
-        $"  verdict (MOVE gesture): one-part edit at 50k parts = {ratio:F2}x the edit at 1k parts -> " +
-        (ratio <= 1.5
-            ? "world-size independent (within noise)"
-            : "NOT world-size independent — investigate before accepting this as a baseline"));
+    // Covers the move gesture only. Add and remove pay the fallback in the 'add' column.
+    move.PrintVerdict();
 
     // The no-op build is the patch path's bookkeeping floor only. The validated
     // path's O(world) floor is the 'add' column.
@@ -534,11 +534,13 @@ static void RunOpenWorldBench()
         $"validated fallback floor (add one part) {string.Join(" / ", addMedians.Select(m => $"{m:F2}"))} ms " +
         "at 1k / 10k / 50k parts");
 
-    RunOpenWorldQuery(world10k!, open10k!);
+    OpenWorldCase queried = cases[Array.IndexOf(sizes, 10_000)];
+    RunOpenWorldQuery(queried.World, queried.Open);
     OpenWorldSpawn.Run(sizes, size => MakeOpenWorld(size).Placements, TimedReps);
 }
 
-static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld World, OpenWorld Open) RunOpenWorldSize(int parts)
+// The world of one size and the edit OpenWorldMove times in it.
+static OpenWorldCase PrepareOpenWorldSize(int parts)
 {
     OpenWorld open = MakeOpenWorld(parts);
     List<BrushPlacement> placements = open.Placements;
@@ -579,48 +581,24 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     dirtySet.CopyTo(dirtyCells);
     Array.Sort(dirtyCells);
 
-    // No BuildMesh in the timed section: the editor uploads per-cell meshes,
-    // so a whole-world flatten would be a cost the engine does not pay.
-    //
-    // One edit compile is about 0.1 ms, below timer jitter, so each rep times
-    // a burst from the same previous world and reports the mean.
-    const int BurstIterations = 16;
-    for (int warm = 0; warm < 2; warm++)
-        _ = CsgWorld.Build(edited, dirtyCells, world);
+    return new OpenWorldCase(parts, open, world, edited, dirtyCells, Median(initial), initialAlloc);
+}
 
-    var edit = new double[TimedReps];
-    CsgWorld editedWorld = null!;
-    for (int r = 0; r < TimedReps; r++)
-    {
-        Collect();
-        var sw = Stopwatch.StartNew();
-        for (int k = 0; k < BurstIterations; k++)
-            editedWorld = CsgWorld.Build(edited, dirtyCells, world);
-        sw.Stop();
-        edit[r] = sw.Elapsed.TotalMilliseconds / BurstIterations;
-    }
+// The rest of a size's row, once the move gesture has been timed. Returns the
+// median of adding one part.
+static double FinishOpenWorldSize(OpenWorldCase size, double editMedianMs, double noopMedianMs)
+{
+    int parts = size.Parts;
+    CsgWorld world = size.World;
+    List<BrushPlacement> edited = size.Edited;
+    ChunkCoord[] dirtyCells = size.DirtyCells;
 
+    // No BuildMesh: the editor uploads per-cell meshes, so a whole-world
+    // flatten would be a cost the engine does not pay.
     Collect();
-    allocBefore = GC.GetTotalAllocatedBytes(precise: true);
-    _ = CsgWorld.Build(edited, dirtyCells, world);
+    long allocBefore = GC.GetTotalAllocatedBytes(precise: true);
+    CsgWorld editedWorld = CsgWorld.Build(edited, dirtyCells, world);
     long editAlloc = GC.GetTotalAllocatedBytes(precise: true) - allocBefore;
-    Collect();
-
-    // No-op recompile: same placements, empty dirty set. Measures the patch
-    // path's bookkeeping floor, which must not scale with world size.
-    for (int warm = 0; warm < 2; warm++)
-        _ = CsgWorld.Build(placements, [], world);
-
-    var noop = new double[TimedReps];
-    for (int r = 0; r < TimedReps; r++)
-    {
-        Collect();
-        var sw = Stopwatch.StartNew();
-        for (int k = 0; k < BurstIterations; k++)
-            _ = CsgWorld.Build(placements, [], world);
-        sw.Stop();
-        noop[r] = sw.Elapsed.TotalMilliseconds / BurstIterations;
-    }
     Collect();
 
     // Add one isolated part. A count change takes the validated caching path,
@@ -664,12 +642,12 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     CsgBspStats bspStats = editedWorld.BspStats ?? default;
     CsgMeshStats meshStats = editedWorld.MeshStats ?? default;
     Console.WriteLine(
-        $"{parts,6} | {world.Chunks.Count,6} | {world.Surfaces.Count,8} | {Median(initial),10:F1} | " +
-        $"{initialAlloc / (1024.0 * 1024.0),8:F1} | {Median(edit),7:F2} | {Median(noop),7:F2} | {Median(add),7:F2} | " +
+        $"{parts,6} | {world.Chunks.Count,6} | {world.Surfaces.Count,8} | {size.InitialMedianMs,10:F1} | " +
+        $"{size.InitialAllocBytes / (1024.0 * 1024.0),8:F1} | {editMedianMs,7:F2} | {noopMedianMs,7:F2} | {Median(add),7:F2} | " +
         $"{editAlloc / (1024.0 * 1024.0),8:F2} | " +
         $"{dirtyCells.Length,5} | {carveStats.Misses,9} | {weldStats.Welded,4} | {bspStats.Built,8} | {meshStats.Built,9}");
 
-    return (Median(edit), Median(noop), Median(add), world, open);
+    return Median(add);
 }
 
 // Produces all four caches and consumes none, like an editor session's first compile.
@@ -1090,6 +1068,11 @@ internal readonly record struct BakeResult(
 // EditIndex is the isolated part the edit benchmark moves.
 internal sealed record OpenWorld(
     List<BrushPlacement> Placements, int EditIndex, Aabb NearBounds, Aabb FarBounds);
+
+// One size of the openworld scenes, compiled, with its one-part move.
+internal sealed record OpenWorldCase(
+    int Parts, OpenWorld Open, CsgWorld World, List<BrushPlacement> Edited, ChunkCoord[] DirtyCells,
+    double InitialMedianMs, long InitialAllocBytes);
 
 // 64-bit LCG (Knuth MMIX constants). Not System.Random: the query checksums
 // need inputs that are bit-identical across runtimes.

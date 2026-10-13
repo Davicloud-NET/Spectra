@@ -389,7 +389,7 @@ Tests and tools
 - A mover test that shortens `CallLimit` calls `MoverLevel.StopTheNextHangSoon` right before the call that hangs. The watchdog goes by the wall clock, and a short limit left on stops a call that only stalled.
 - `TagsAndAttributesKeysTests` drives the real boxes. `KeyTextInput` sends text and no key press, so a test of what a key does after Enter presses a key first.
 - A render test that edits and then saves a sheet runs the jobs and a render tick several times before it captures, or the PNG is the frame before the last change.
-- `CsgBench openworld` times edits of a tenth of a millisecond, and its MOVE verdict moves with the machine: read it over several runs on a quiet one.
+- `CsgBench openworld` times edits of a tenth of a millisecond. Its MOVE verdict times the three sizes in turn over 15 rounds, and says "too noisy to say" when the rounds lie on both sides of the band. That is no pass: run it again. The SPAWN verdict still times one size after the other.
 - `ScriptCostTests` fails on an allocation. Its table of times is explicit and runs only with `-- -explicit only`, so a normal run reports one test as not run.
 - Everything that opens a script goes through `ScriptLauncher`, and it starts a program only for a `.luau` file (`ScriptOpenPlan.IsScriptFile`), since a level can name any file as its script. No test starts a program, except `LuauLspTests`, which starts luau-lsp where the variable names it: `FakeProgramStarter` keeps what was asked.
 - An agent's worktree keeps about 4.6 GB of build output. Delete `bin` and `obj` in a worktree once its branch is merged, or the drive fills.
