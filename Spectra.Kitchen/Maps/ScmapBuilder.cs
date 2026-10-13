@@ -1,8 +1,6 @@
 using System;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Bsp;
@@ -319,8 +317,8 @@ public sealed class ScmapBuilder
 
         byte[] stringBody = strings.Build();
         byte[] assetBody = _assets.Build(assetPathStrings);
-        byte[] metaBody = BuildMeta(sceneNameString);
-        byte[] nodeBody = BuildNodes(nodeNameStrings);
+        byte[] metaBody = ScmapMetaSection.Build(sceneNameString, _spawns);
+        byte[] nodeBody = ScmapNodeSection.Build(_nodes, nodeNameStrings);
         byte[] chunkBody = ScmapChunkSection.Build(_chunks, out byte[] meshBody, out byte[] bspBody);
         byte[] collisionBody = ScmapCollisionSection.Build(_nodes, _hulls);
         byte[]? hullMaterialBody = ScmapHullMaterialSection.Build(_hulls, _assets.Rows);
@@ -364,51 +362,5 @@ public sealed class ScmapBuilder
         if (brushBody is not null) writer.AddSection(ScmapFormat.BrushSourceSection, brushBody);
 
         writer.Write(stream);
-    }
-
-    private byte[] BuildMeta(uint sceneNameString)
-    {
-        var body = new byte[ScmapFormat.MetaPreambleSize + (_spawns.Count * ScmapFormat.SpawnRecordSize)];
-        Span<byte> span = body;
-
-        var meta = new ScmapMeta(sceneNameString, (uint)_spawns.Count);
-        MemoryMarshal.Write(span, in meta);
-
-        for (int i = 0; i < _spawns.Count; i++)
-        {
-            var record = new ScmapSpawn(_spawns[i].Position, _spawns[i].Rotation);
-            MemoryMarshal.Write(span[(ScmapFormat.MetaPreambleSize + (i * ScmapFormat.SpawnRecordSize))..], in record);
-        }
-
-        return body;
-    }
-
-    private byte[] BuildNodes(uint[] nameStrings)
-    {
-        var body = new byte[ScmapFormat.NodePreambleSize + (_nodes.Count * ScmapFormat.NodeRecordSize)];
-        Span<byte> span = body;
-
-        BinaryPrimitives.WriteUInt32LittleEndian(span, (uint)_nodes.Count);
-
-        for (int i = 0; i < _nodes.Count; i++)
-        {
-            ScmapNodeSource source = _nodes[i];
-            var record = new ScmapNodeRecord(
-                source.Id,
-                nameStrings[i],
-                source.ParentIndex,
-                source.LocalTransform.Position,
-                source.LocalTransform.Rotation,
-                source.LocalTransform.Scale,
-                source.PayloadKind,
-                source.PayloadFlags,
-                source.DeclaredRealm,
-                source.DeclaredState,
-                source.PayloadIndex);
-
-            MemoryMarshal.Write(span[(ScmapFormat.NodePreambleSize + (i * ScmapFormat.NodeRecordSize))..], in record);
-        }
-
-        return body;
     }
 }
