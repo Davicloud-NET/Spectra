@@ -194,6 +194,22 @@ public static ScriptSignal AttributeChanged(ScriptContext context, SceneNode nod
 
 A property with `Sets` takes the node and nothing else, since the generator writes its body.
 
+### A signal and who fires it
+
+A signal is a `ScriptSignal` some object hands out, the same one on every read. It is fired in one of three ways:
+
+- Where the host stands, with `ScriptSignal.Fire`. `RunService` does: its listeners run at that point of the tick.
+- From the level's queue, for an output of an entity. `NodeSignals` keeps those listeners in the level's own table.
+- Through `DeferredCalls.Fire`, for what a script sets off itself: `AttributeChanged` and the two signals of a tag. Every listener the signal has at that moment gets a wake in the level's queue and is called when its wake comes due, unless it was disconnected by then. So nothing runs inside the call that fired. A wake a tick's budget drops is a fire that listener does not hear.
+
+### What scripts leave on nodes
+
+Tags and the attributes scripts set are kept in the runtime and on no node: `TagTable` and `AttributeTable`. So they need no journal, and Stop takes them away with the runtime. The two tables fire nothing and know nothing of Luau. `LevelTags` and `AttributeMethods` stand in front of them and fire the signals.
+
+A name no script has set reads the keyvalue of the node's entity (`AttributeRead`). What a script sets under that name hides the keyvalue from scripts and never reaches the entity.
+
+A tag's list holds the nodes that are in the level's tree. It is put into the tree's order when it is asked for after a node joined it or a node moved in the tree (`TreeOrder`), and is handed over as it is every other time.
+
 Two more things stay by hand:
 
 - An operator. `[ScriptOperator("*", "Vector3", "Vector3")]` goes on the method that implements it, and that method is put into the metatable by hand (`CFrameMembers`).

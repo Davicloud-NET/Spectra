@@ -44,20 +44,27 @@ internal sealed class AttributeMethods
             return stack.Fail(refusal);
 
         // The value it has already is set to nothing and fires nothing.
-        bool isBuilt = AttributeRead.TryRead(context, node, name, out MemberValue built, out SceneNode? reference);
-        if (wasSet ? held == value : reference is null && built == value)
+        if (wasSet ? held == value : IsWhatWasBuilt(context, node, name, in value))
             return 0;
 
         // Taken away from a keyvalue, the name is kept with no value, or
         // the keyvalue would show through again.
         string kept = Table.NameOf(name);
-        if (value.Kind == MemberValueKind.None && !isBuilt)
+        if (value.Kind == MemberValueKind.None && !AttributeRead.TryRead(context, node, name, out _, out _))
             Table.Forget(node, name);
         else
             Table.Set(node, kept, in value);
 
         FireChanged(node, kept);
         return 0;
+    }
+
+    // Whether the node reads as that value with nothing set by a script: its
+    // entity's keyvalue, or nil. A reference to a node is no value a script sets.
+    private static bool IsWhatWasBuilt(ScriptContext context, SceneNode node, ReadOnlySpan<char> name, in MemberValue value)
+    {
+        AttributeRead.TryRead(context, node, name, out MemberValue built, out SceneNode? reference);
+        return reference is null && built == value;
     }
 
     // GetAttribute. The name is the second value.
