@@ -487,8 +487,8 @@ public sealed class MapCodecTests
     {
         var thrown = Should.Throw<MapFormatException>(() => MapReader.Read(Utf8("""
             {
-              "spectramap": 7,
-              "minimumReadableVersion": 7,
+              "spectramap": 8,
+              "minimumReadableVersion": 8,
               "engine": "9.9.9",
               "scene": {
                 "name": "S"
@@ -497,7 +497,7 @@ public sealed class MapCodecTests
             }
             """)));
 
-        thrown.Message.ShouldContain("7");
+        thrown.Message.ShouldContain("needs a reader for map format 8");
     }
 
     [Fact]

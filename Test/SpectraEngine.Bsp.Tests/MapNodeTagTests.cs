@@ -20,7 +20,7 @@ public sealed class MapNodeTagTests
     // Hand-written. The unknown members pin where the two sit in a node.
     private const string Marked = """
         {
-          "spectramap": 6,
+          "spectramap": 7,
           "minimumReadableVersion": 6,
           "engine": "1.0.0",
           "scene": {
@@ -44,7 +44,7 @@ public sealed class MapNodeTagTests
         }
         """;
 
-    private static string OneNode(string members, int version = 6) => $$"""
+    private static string OneNode(string members, int version = 7) => $$"""
         {
           "spectramap": {{version}},
           "minimumReadableVersion": 1,
@@ -255,7 +255,7 @@ public sealed class MapNodeTagTests
 
         // A save stamps the engine's version and nothing else is new.
         string saved = Encoding.UTF8.GetString(MapWriter.Write(MapSceneBinder.FromScene(loaded)));
-        saved.ShouldBe(Encoding.UTF8.GetString(old).Replace("\"spectramap\": 5", "\"spectramap\": 6"));
+        saved.ShouldBe(Encoding.UTF8.GetString(old).Replace("\"spectramap\": 5", "\"spectramap\": 7"));
     }
 
     [Theory]

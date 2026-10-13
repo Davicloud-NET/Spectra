@@ -2,6 +2,7 @@ using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -43,7 +44,8 @@ public static class MapSceneBinder
     // Per document: only a shaped light (spot, rect, disc), an entity, a node
     // flag that is off, a script, a declared realm or state, or a tag or an
     // attribute raises the floor, since an older editor would drop those on
-    // save. Light kind is tested, not its numbers. Takes the max of what applies.
+    // save. So does an attribute name an older reader refuses. Light kind is
+    // tested, not its numbers. Takes the max of what applies.
     private static int RequiredReaderVersion(Scene.Scene scene)
     {
         int floor = EngineInfo.MinimumReadableMapVersion;
@@ -82,7 +84,22 @@ public static class MapSceneBinder
         if (AnyBelow(root, static node => node.Tags.Count > 0 || node.Attributes.Count > 0))
             floor = Math.Max(floor, EngineInfo.NodeTagsMapVersion);
 
+        if (AnyBelow(root, static node => HasLaterAttributeName(node)))
+            floor = Math.Max(floor, EngineInfo.AttributeNameMapVersion);
+
         return floor;
+    }
+
+    private static bool HasLaterAttributeName(SceneNode node)
+    {
+        AttributeSet attributes = node.Attributes;
+        for (int i = 0; i < attributes.Count; i++)
+        {
+            if (AttributeName.HasLaterCharacter(attributes[i].Key))
+                return true;
+        }
+
+        return false;
     }
 
     private static bool AnyBelow(SceneNode node, Func<SceneNode, bool> carries)

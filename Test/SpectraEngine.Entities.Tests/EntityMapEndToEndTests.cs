@@ -27,7 +27,7 @@ public sealed class EntityMapEndToEndTests
     // 'spectramap' is the engine's current version: a save stamps it.
     private const string RelayFixture = """
         {
-          "spectramap": 6,
+          "spectramap": 7,
           "minimumReadableVersion": 3,
           "engine": "1.0.0",
           "scene": {
@@ -106,7 +106,7 @@ public sealed class EntityMapEndToEndTests
     // count matches no case, which is what stops it.
     private const string BranchingFixture = """
         {
-          "spectramap": 6,
+          "spectramap": 7,
           "minimumReadableVersion": 3,
           "engine": "1.0.0",
           "scene": {

@@ -35,6 +35,12 @@ public static class AttributeName
     }
 
     /// <summary>
+    /// Whether a name holds a period, a hyphen or a slash. A map reader from
+    /// before map format 7 refuses such a name.
+    /// </summary>
+    public static bool HasLaterCharacter(ReadOnlySpan<char> name) => name.IndexOfAny('.', '-', '/') >= 0;
+
+    /// <summary>
     /// What to say of a name that breaks the rule: the name, and the rule. A
     /// name longer than the rule allows is not said back.
     /// </summary>

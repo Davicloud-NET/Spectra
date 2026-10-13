@@ -10,7 +10,7 @@ internal static class NoCodeLoopLevel
 {
     public const string Text = """
         {
-          "spectramap": 6,
+          "spectramap": 7,
           "minimumReadableVersion": 4,
           "engine": "1.0.0",
           "scene": {

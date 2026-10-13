@@ -35,9 +35,10 @@ namespace SpectraEngine.Core
         // 4: the node flags collide, query, touch and render.
         // 5: the script payload, and a save keeps a node's realm and state.
         // 6: a node's tags and attributes.
+        // 7: a period, a hyphen and a slash in an attribute's name.
         // A document only declares the version it needs, so a map without
         // any of them still says 1.
-        public const int MapFormatVersion = 6;
+        public const int MapFormatVersion = 7;
 
         // The floor a new document gets. Maps are user data and must survive
         // older and newer engines, so this stays 1; a document that needs a
@@ -47,13 +48,14 @@ namespace SpectraEngine.Core
         // Declared by a document carrying a light shape, an entity payload, a
         // node flag that is off, a script, a realm or state on a node, or a
         // tag or an attribute on one. An older editor would drop those on its
-        // next save.
+        // next save. The last is for an attribute name an older reader refuses.
         public const int LightShapeMapVersion = 2;
         public const int EntityMapVersion = 3;
         public const int NodeFlagsMapVersion = 4;
         public const int ScriptMapVersion = 5;
         public const int NodeRealmMapVersion = 5;
         public const int NodeTagsMapVersion = 6;
+        public const int AttributeNameMapVersion = 7;
 
         // Versioned like the map: authored by a person.
         public const int ProjectFormatVersion = 1;
