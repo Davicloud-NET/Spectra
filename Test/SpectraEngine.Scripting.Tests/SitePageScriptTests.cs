@@ -13,6 +13,7 @@ public sealed class SitePageScriptTests
         ["guides/write-your-first-script.mdx"] = typeof(FirstScriptGuideTests),
         ["guides/move-a-part-with-a-script.mdx"] = typeof(MovePartGuideTests),
         ["guides/talk-to-the-level.mdx"] = typeof(TalkToLevelGuideTests),
+        ["guides/hear-what-the-level-does.mdx"] = typeof(HearLevelGuideTests),
         ["guides/kill-brick-and-checkpoints.mdx"] = typeof(PlayerGuideTests),
         ["guides/make-things-while-the-level-plays.mdx"] = typeof(MakeThingsGuideTests),
         ["guides/change-how-the-player-moves.mdx"] = typeof(MoverGuideTests),

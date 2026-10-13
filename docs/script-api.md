@@ -440,4 +440,4 @@ What luau-lsp cannot check is in `AGENTS.md`: a write to a `read` property passe
 
 The scripts on the site's pages are samples too. A block of Luau on a page is the whole text of one sample, and `SitePageScriptTests` holds every page under `site/src/content/docs` to that. A guide's samples are under `Guides`, in a folder for the page. One that asks for a module by a path is under `Scripts`, where the path is the one a reader's project has.
 
-Each page that shows a script has a test class that plays its samples in a level and holds what the page quotes of Output: `FirstScriptGuideTests`, `MovePartGuideTests`, `TalkToLevelGuideTests`, `PlayerGuideTests`, `MakeThingsGuideTests` and `MoverGuideTests`. A new page with a script gets one, and a line in `SitePageScriptTests`.
+Each page that shows a script has a test class that plays its samples in a level and holds what the page quotes of Output: `FirstScriptGuideTests`, `MovePartGuideTests`, `TalkToLevelGuideTests`, `HearLevelGuideTests`, `PlayerGuideTests`, `MakeThingsGuideTests` and `MoverGuideTests`. A new page with a script gets one, and a line in `SitePageScriptTests`.

@@ -22,6 +22,9 @@ public sealed class MakeThingsGuideTests
     private const string Board = "Scripts/score_board.luau";
     private const string WrongPath = ScriptSamples.MistakesFolder + "/score_board_path.luau";
 
+    // No mistake to luau-lsp, which is why it is kept with the clean samples.
+    private const string WithExtension = "Scripts/score_with_extension.luau";
+
     // Ten coins, one every two seconds.
     private const int TicksToLayTheRow = 10 * 120;
     private const int Patience = 900;
@@ -36,7 +39,7 @@ public sealed class MakeThingsGuideTests
         Page.Blocks("luau").ShouldBe(
         [
             Code(Folder + "new_part.luau"), Code(Folder + "coins.luau"), Code(Module), Code(Spawner), Code(Board),
-            Code(WrongPath),
+            Code(WrongPath), Code(WithExtension),
         ]);
     }
 
@@ -200,6 +203,29 @@ public sealed class MakeThingsGuideTests
             "the new solver reports the page's path now, so the page's sentence on it is out of date");
         Page.Text.ShouldContain("new type solver");
         Page.Text.ShouldContain("`--!strict`");
+    }
+
+    // luau-lsp finds the file and reports nothing: the sample is among the
+    // clean ones, which LuauLspTests holds to no report under both solvers.
+    [Fact]
+    public void A_path_that_ends_in_the_extension_passes_the_checker_and_is_refused_with_the_sentence_the_page_quotes()
+    {
+        // Strict, or the new solver would say nothing whatever it found.
+        ScriptSamples.At(WithExtension).IsMistake.ShouldBeFalse();
+        ScriptSamples.At(WithExtension).Lines[0].ShouldBe("--!strict");
+
+        using var level = new ScriptLevel();
+        level.FileAt(Module, Code(Module));
+        level.ScriptAt(WithExtension, Code(WithExtension));
+
+        level.Play().Tick();
+
+        ScriptMessage failure = level.Sink.Messages.ShouldHaveSingleItem();
+        failure.Severity.ShouldBe(ScriptSeverity.Error);
+        failure.Line.ShouldBe(3);
+        failure.Text.ShouldEndWith(". A path leaves the extension out");
+        Page.Text.ShouldContain($"`{failure.Text}`");
+        Page.Text.ShouldContain("Visual Studio Code finds the file and marks nothing.");
     }
 
     // The coin the level was built with: a part the player walks through,

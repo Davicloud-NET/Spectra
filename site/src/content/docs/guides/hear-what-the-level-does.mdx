@@ -1,0 +1,137 @@
+---
+title: Hear what the level does
+description: A script hears a door's outputs, reads its settings, gets a counter's number and makes a lamp flicker until the door opens.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+An entity's output is a signal. So a script can hear a door as well as open it, and it gets the value an output sends as a value of its own kind.
+
+Start with the level [Open a door three ways](/guides/talk-to-the-level/) ends with: a door named `Door` with Wait at -1, a button named `Button`, no wire between them, and a script under the door whose file is `Assets/Scripts/Door.luau`.
+
+## Hear a door
+
+Put this in the door's file, and save it:
+
+```luau
+-- Says what the door does, and how fast it was built to do it.
+local door = script.Parent
+
+print("the door moves", door:GetAttribute("speed"), "units a second")
+
+door.OnOpen:Connect(function()
+	print("opening")
+end)
+
+door.OnFullyOpen:Once(function()
+	print("open for the first time")
+end)
+
+while true do
+	door.OnFullyClosed:Wait()
+	print("closed again")
+end
+```
+
+Open the Output panel and press Play. Open and close the door from the console: press <kbd>&#96;</kbd>, type `ent_fire Door Open` and press <kbd>Enter</kbd>, and later `ent_fire Door Close`.
+
+The first line of Output is `the door moves 2 units a second`. `GetAttribute` reads a setting of the entity under the name a level file uses for it, which the [reference pages](/reference/mover-entities/#func_door) list in the first column. A number comes back as a number and not as text.
+
+A script cannot change a setting this way. `door:SetAttribute("speed", 9)` leaves a value for other scripts to read, and the door never sees it.
+
+`Connect` calls its function every time, `Once` the first time only, and `Wait` holds the script until the output fires.
+
+Scripts start on the level's first tick. What fired while the level was starting is over by then, so no script hears the `OnMapSpawn` of a `logic_auto`. A script that connects to such an output gets a warning in Output.
+
+## Values that come with an output
+
+Some outputs send a value. A counter's `OutValue` sends its number, and a script gets it as a number.
+
+<Steps>
+
+1. Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop.
+
+2. Click the arrow beside Entity and pick Math Counter. Name it `Presses` and set its Maximum to 3.
+
+3. Select the button and add a wire under Sends: `OnPressed`, Target `Presses`, Input `Add`. The counter gets no wire to the door this time.
+
+4. Press <kbd>Esc</kbd>, which clears the selection, and then press Script. With nothing selected it makes a script for the whole level. In its file, write:
+
+   ```luau
+   -- Hears the counter count, and opens the door a second after it is full.
+   local counter = workspace:WaitForChild("Presses")
+   local door = workspace:WaitForChild("Door")
+
+   counter.OutValue:Connect(function(count)
+   	print("pressed", count, "of 3 times,", 3 - count, "to go")
+   end)
+
+   counter.OnHitMax:Connect(function()
+   	task.wait(1)
+   	door:Open()
+   end)
+   ```
+
+5. Press Play and press the button three times.
+
+</Steps>
+
+The first press prints `pressed 1 of 3 times, 2 to go`. The button's wire feeds the counter, the script hears the counter, and a second after the third press the door opens.
+
+What a value is to a script goes by what the reference pages say the output sends:
+
+| The output sends | A script gets |
+|---|---|
+| Nothing | nothing |
+| A number | a number |
+| `0` or `1` | a boolean |
+| Text | a string |
+| A vector, a colour or angles | a `Vector3` |
+| Two or four numbers | that many numbers |
+| A node | the node, or `nil` |
+
+An input takes the same kinds: `counter:Add(2)`, `counter:SetValue(0)`. The built-in classes send and take only the first four today.
+
+## A lamp that flickers
+
+A light is a node, and a script sets what a light has: `Enabled`, `Brightness`, `Color` and `Range`.
+
+<Steps>
+
+1. Stop. Press Light on the Build tab and move the light near the door.
+
+2. With the light selected, press Script, and write:
+
+   ```luau
+   -- Makes the light this script sits under flicker until the door opens.
+   local lamp = script.Parent
+   local door = workspace:WaitForChild("Door")
+
+   local flickers = true
+   door.OnOpen:Once(function()
+   	flickers = false
+   	lamp.Enabled = true
+   end)
+
+   while flickers do
+   	lamp.Enabled = not lamp.Enabled
+   	task.wait(0.1)
+   end
+   ```
+
+3. Press Play. The lamp flickers. Press the button three times, and when the door opens the lamp stays on.
+
+</Steps>
+
+No wire could do this. A light is not an entity, so it has no inputs, and a flicker is a loop.
+
+Stop, and the lamp is as you built it, whatever a script last set.
+
+## What differs from Roblox
+
+- A setting of an entity reads through `GetAttribute`. A script cannot set one.
+- A script starts on the level's first tick, and does not hear what fired while the level was starting.
+- A light is a node of its own in the scene tree, with a place of its own. It is not a child that lights its part from wherever the part is.
+- `Brightness` and `Range` are not on Roblox's scale. A unit is a metre, so a range of 16 here is far more than 16 studs.
+
+[Coming from Roblox](/start/coming-from-roblox/) has the whole list.

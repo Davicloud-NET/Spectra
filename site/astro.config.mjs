@@ -50,6 +50,7 @@ export default defineConfig({
 						{ label: 'Write your first script', slug: 'guides/write-your-first-script' },
 						{ label: 'Move a part with a script', slug: 'guides/move-a-part-with-a-script' },
 						{ label: 'Open a door three ways', slug: 'guides/talk-to-the-level' },
+						{ label: 'Hear what the level does', slug: 'guides/hear-what-the-level-does' },
 						{ label: 'Make a kill brick and checkpoints', slug: 'guides/kill-brick-and-checkpoints' },
 						{ label: 'Make things while the level plays', slug: 'guides/make-things-while-the-level-plays' },
 						{ label: 'Change how the player moves', slug: 'guides/change-how-the-player-moves' },

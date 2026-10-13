@@ -84,7 +84,13 @@ A tag is a word on a node. It is saved with the level, and a script finds every 
 
 ## Checkpoints
 
-Press Script with nothing selected. That makes a script for the whole level, `Assets/Scripts/Script.luau`. Write:
+Press <kbd>Esc</kbd>, which clears the selection, and then press Script. With nothing selected it makes a script for the whole level, and names the file after the level. For a level called `Lobby` the status bar says:
+
+```text
+Added a level script and made its file, Assets/Scripts/Lobby.luau.
+```
+
+In that file, write:
 
 ```luau
 -- Remembers the last checkpoint the player walked through. A player who
@@ -127,7 +133,7 @@ A tag says what a part is. An attribute says how much.
 
 2. Under Attributes, type `Speed` into Add an attribute, pick Number in the list below it and press Add. Type 9 into the row that appears.
 
-3. Put this in a second level script:
+3. Press <kbd>Esc</kbd> and then Script again, for a second level script. Its file has a 2 after the level's name, `Lobby2.luau`. Write:
 
    ```luau
    -- Makes the player faster while they stand on a part tagged SpeedPad.

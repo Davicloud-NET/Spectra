@@ -18,6 +18,11 @@ public sealed class PlayerGuideTests
     private const string Humanoid = ScriptSamples.MistakesFolder + "/kill_brick_humanoid.luau";
     private const int Patience = 600;
 
+    // The files Insert Script makes with nothing selected, in a level called
+    // Lobby. The editor's tests hold the page to those names.
+    private const string LevelScript = "Scripts/Lobby.luau";
+    private const string SecondLevelScript = "Scripts/Lobby2.luau";
+
     private static readonly SitePage Page = SitePage.At("guides/kill-brick-and-checkpoints.mdx");
 
     private static string Code(string name) => ScriptSamples.At(Folder + name).Code;
@@ -67,7 +72,7 @@ public sealed class PlayerGuideTests
         using var level = new ScriptLevel();
         TouchParts.Wall(level, "First", x: 3f, isSolid: false).Tags = TagSet.Of("Checkpoint");
         TouchParts.Pad(level, "Pool", x: 7f).Tags = TagSet.Of("Lava");
-        level.ScriptAt("Scripts/Script.luau", Code("checkpoints.luau"));
+        level.ScriptAt(LevelScript, Code("checkpoints.luau"));
         level.Play();
         CharacterSimulation walker = Walker(level);
 
@@ -85,7 +90,7 @@ public sealed class PlayerGuideTests
     {
         using var level = new ScriptLevel();
         TouchParts.Pad(level, "Pool", x: 4f).Tags = TagSet.Of("Lava");
-        level.ScriptAt("Scripts/Script.luau", Code("checkpoints.luau"));
+        level.ScriptAt(LevelScript, Code("checkpoints.luau"));
         level.Play();
         CharacterSimulation walker = Walker(level);
 
@@ -102,7 +107,7 @@ public sealed class PlayerGuideTests
         SceneNode pad = TouchParts.Pad(level, "Pad", x: 4f);
         pad.Tags = TagSet.Of("SpeedPad");
         pad.Attributes = AttributeSet.Empty.With("Speed", MemberValue.Of(8d));
-        level.ScriptAt("Scripts/Script.luau", Code("speed_pad.luau"));
+        level.ScriptAt(SecondLevelScript, Code("speed_pad.luau"));
         level.Play();
         CharacterSimulation walker = Walker(level);
         float built = walker.Tuning.WalkSpeed;
@@ -122,7 +127,7 @@ public sealed class PlayerGuideTests
     {
         using var level = new ScriptLevel();
         TouchParts.Pad(level, "Pad", x: 4f, halfWidth: 3f).Tags = TagSet.Of("SpeedPad");
-        level.ScriptAt("Scripts/Script.luau", Code("speed_pad.luau"));
+        level.ScriptAt(SecondLevelScript, Code("speed_pad.luau"));
         level.Play();
         CharacterSimulation walker = Walker(level);
         float built = walker.Tuning.WalkSpeed;

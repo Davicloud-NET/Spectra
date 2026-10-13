@@ -87,7 +87,7 @@ There is no `ReplicatedStorage` and no `ServerStorage` to keep a template in. It
 
 Stop takes away every node a script made and brings back every node a script destroyed. A node a script moved under another parent is back under the one it was built with.
 
-So a level can spawn and destroy all it likes. The level you edit is the one you built.
+So a level can spawn and destroy all it likes, and you never tidy up after a play.
 
 ## What a script cannot make
 
@@ -151,7 +151,7 @@ The row of coins should count, and something else should hear the count. Two scr
 
 3. Build a door named `Exit`, as in [Make a door that opens](/guides/make-a-door-that-opens/), with no wire to it.
 
-4. Press Script with nothing selected, for a script of the whole level, and write:
+4. Press <kbd>Esc</kbd>, which clears the selection, and then press Script. With nothing selected it makes a script for the whole level. In its file, write:
 
    ```luau
    -- Says the score when it changes, and opens the exit at five points.
@@ -207,7 +207,21 @@ The script stops at that line, and Output says why:
 
 Visual Studio Code marks the path as well, as an unknown require. With the extension's new type solver switched on it says nothing of a script that does not start with `--!strict`. It goes by the same rules as the engine, and by the `.luaurc` in the project's folder for `@assets`.
 
-One thing it lets pass that the engine refuses is a path that ends in `.luau`. And a path in another case than the file's works on Windows and fails on Linux, so write the path as the file is spelled.
+One thing it lets pass that the engine refuses is a path that ends in `.luau`:
+
+```luau
+--!strict
+-- Asks for the score by a path that ends in .luau.
+local Score = require("./lib/score.luau")
+
+Score.add(1)
+```
+
+Visual Studio Code finds the file and marks nothing. The level stops the script at that line:
+
+`no module at './lib/score.luau': looked for Scripts/lib/score.luau.luau and Scripts/lib/score.luau/init.luau. A path leaves the extension out`
+
+The engine finds a path in another case than the file's on Windows and not on Linux, so write the path as the file is spelled.
 
 A module can also be a node. A script with Module switched on in the Properties panel does not run by itself, and another script asks for it by the node: `require(workspace.Rules)`. A file asked for by its node and the same file asked for by its path are two modules, each run once. Pick one way for a file.
 
