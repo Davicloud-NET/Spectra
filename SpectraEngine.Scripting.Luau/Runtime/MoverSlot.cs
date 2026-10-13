@@ -59,12 +59,17 @@ internal sealed class MoverSlot
     }
 
     // The built-in mover goes into the mover's place, so nothing asks the
-    // one that failed again. That one finishes the tick it failed in.
-    private void Failed()
+    // one that failed again. False for a mover whose own call put another
+    // in its place before it failed: the other one stays.
+    private bool Failed(LuauCharacterMover mover)
     {
+        if (!ReferenceEquals(_mover, mover))
+            return false;
+
         _hasFailed = true;
         _mover = null;
         _door.TrySetMover(null, out _);
+        return true;
     }
 
     private int Install(LuauStack stack, LuauCharacterMover? mover)

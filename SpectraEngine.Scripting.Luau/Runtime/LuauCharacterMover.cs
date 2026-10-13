@@ -11,18 +11,27 @@ internal sealed class LuauCharacterMover : ICharacterMover
 {
     public const string TookOver = "The built-in mover took over.";
 
+    // For a mover that was no longer the level's when it failed.
+    public const string MovedThisTick = "The built-in mover moved the player on this tick.";
+
     private readonly LuauHost _host;
     private readonly MoverCall _call;
     private readonly MoverFrame _frame;
     private readonly MoverCollision _collision;
     private readonly LuauReference[] _handed;
-    private readonly Action _failed;
+    private readonly Func<LuauCharacterMover, bool> _failed;
     private bool _isOut;
 
     // `handed` is what the function is called with before the step, in its
-    // order. `failed` is told once, when the built-in mover takes over.
+    // order. `failed` is told once, when this mover fails, and says whether
+    // the built-in mover took its place.
     public LuauCharacterMover(
-        LuauHost host, MoverCall call, MoverFrame frame, MoverCollision collision, LuauReference[] handed, Action failed)
+        LuauHost host,
+        MoverCall call,
+        MoverFrame frame,
+        MoverCollision collision,
+        LuauReference[] handed,
+        Func<LuauCharacterMover, bool> failed)
     {
         _host = host;
         _call = call;
@@ -100,11 +109,11 @@ internal sealed class LuauCharacterMover : ICharacterMover
     // line is told, whatever the sink then does.
     private void Say(in ScriptMessage failure)
     {
-        _failed();
+        string after = _failed(this) ? TookOver : MovedThisTick;
         if (_host.IsClosed)
             return;
 
         string end = failure.Text.Length > 0 && failure.Text[^1] is '.' or '!' or '?' ? " " : ". ";
-        _host.Report(failure with { Text = failure.Text + end + TookOver });
+        _host.Report(failure with { Text = failure.Text + end + after });
     }
 }

@@ -180,6 +180,59 @@ public sealed class LuauMoverFailureTests
         level.Errors.Length.ShouldBe(2);
     }
 
+    // The other one is the level's mover by then, and nothing it did failed.
+    [Fact]
+    public void A_mover_that_fails_after_it_put_another_in_its_place_leaves_the_other_there()
+    {
+        using MoverLevel level = new MoverLevel().WithScript("""
+            local character = game:GetService("Players").LocalPlayer.Character
+            local run = game:GetService("RunService")
+            local walk = require("./movers/walk")
+            character:SetMover(function()
+                character:SetMover(function(...) print("second") walk(...) end)
+                error("no legs")
+            end)
+            run.Heartbeat:Wait()
+            run.Heartbeat:Wait()
+            print(pcall(function() character:SetMover(walk) end))
+            """);
+        CharacterCommand ahead = MoverCourse.Walk(0f);
+
+        level.Play().Tick(in ahead);
+        ICharacterMover second = level.Character.Mover;
+        level.Tick(in ahead, 29);
+
+        ScriptMessage line = level.Sink.Messages.Single(message => message.Severity == ScriptSeverity.Error);
+        line.Text.ShouldBe("The mover failed: no legs. The built-in mover moved the player on this tick.");
+        line.Position.ShouldBe("Scripts/test1.luau:6");
+        second.ShouldBeOfType<LuauCharacterMover>();
+        level.Printed.ShouldBe(["second", "true"]);
+        level.Character.Mover.ShouldBeOfType<LuauCharacterMover>().ShouldNotBeSameAs(second);
+        level.State.Position.X.ShouldBeGreaterThan(126f, "the player walked on");
+    }
+
+    [Fact]
+    public void A_mover_that_fails_after_it_asked_for_the_built_in_one_does_not_bar_the_next()
+    {
+        using MoverLevel level = new MoverLevel().WithScript("""
+            local character = game:GetService("Players").LocalPlayer.Character
+            local walk = require("./movers/walk")
+            character:SetMover(function()
+                character:SetMover(nil)
+                error("no legs")
+            end)
+            game:GetService("RunService").Heartbeat:Wait()
+            print(pcall(function() character:SetMover(walk) end))
+            """);
+
+        level.Play().Tick(MoverCourse.Walk(0f), 30);
+
+        level.Errors.ShouldBe(["The mover failed: no legs. The built-in mover moved the player on this tick."]);
+        level.Printed.ShouldBe(["true"]);
+        level.Character.Mover.ShouldBeOfType<LuauCharacterMover>();
+        level.State.Position.X.ShouldBeGreaterThan(126f, "the player walked on");
+    }
+
     // Its listener looped, which is no fault of the mover. The mover goes
     // with the script all the same.
     [Fact]
