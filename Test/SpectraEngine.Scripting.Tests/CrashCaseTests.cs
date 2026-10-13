@@ -163,4 +163,18 @@ public sealed class CrashCaseTests
         result.Output.ShouldContain("NativeAOT: True");
         result.Output.ShouldContain("sent 600 inputs in a level, 800 refused");
     }
+
+    // Tags, attributes of every kind and their signals as native code, with
+    // every refusal raised as a script's error and a tagged node that leaves.
+    [Fact]
+    public async Task A_script_of_a_level_tags_nodes_and_sets_attributes_in_a_native_build()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("tags-in-a-level");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+        result.Output.ShouldContain("NativeAOT: True");
+        result.Output.ShouldContain("tagged and set 400 times in a level, 140 refused");
+    }
 }
