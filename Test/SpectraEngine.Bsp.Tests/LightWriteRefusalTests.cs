@@ -20,8 +20,8 @@ public sealed class LightWriteRefusalTests
     // A colour is raised to the power 2.4 on its way to the light, so a part
     // far below the largest float is already past it.
     [Theory]
-    [InlineData(1e17f, "Color cannot be 0, 1E+17, 0: with the light's Brightness " + TooMuch)]
-    [InlineData(3e38f, "Color cannot be 0, 3E+38, 0: with the light's Brightness " + TooMuch)]
+    [InlineData(1e17f, "Color cannot be 0, 1E+17, 0: " + TooMuch)]
+    [InlineData(3e38f, "Color cannot be 0, 3E+38, 0: " + TooMuch)]
     public void A_colour_whose_part_is_a_number_and_too_large_to_light_with_is_refused(float part, string words)
     {
         SceneNode lamp = Lamp();

@@ -65,7 +65,10 @@ internal static class LightMembers
         if (!(value >= 0f) || float.IsInfinity(value))
             return Refused("Brightness", value, "of 0 or more");
         if (!Shines(light.Color, value))
-            return TooMuch("Brightness", "Color", string.Create(CultureInfo.InvariantCulture, $"{value}"));
+        {
+            return TooMuch(
+                "Brightness", string.Create(CultureInfo.InvariantCulture, $"{value}"), "with the light's Color ");
+        }
 
         journal.Record(light, LightJournalKind.Intensity);
         light.Intensity = value;
@@ -99,8 +102,11 @@ internal static class LightMembers
                 "each of red, green and blue is a number of 0 or more that is not infinite.";
         }
 
-        if (!Shines(value.ToLinear(), light.Intensity))
-            return TooMuch("Color", "Brightness", Written(value));
+        Vector3 linear = value.ToLinear();
+        if (!Shines(linear, 1f))
+            return TooMuch("Color", Written(value), "");
+        if (!Shines(linear, light.Intensity))
+            return TooMuch("Color", Written(value), "with the light's Brightness ");
 
         journal.Record(light, LightJournalKind.Color);
         light.DisplayColor = value;
@@ -119,8 +125,8 @@ internal static class LightMembers
         return float.IsFinite(radiance.X) && float.IsFinite(radiance.Y) && float.IsFinite(radiance.Z);
     }
 
-    private static string TooMuch(string member, string other, string value) =>
-        $"{member} cannot be {value}: with the light's {other} that is more light than a number holds.";
+    private static string TooMuch(string member, string value, string with) =>
+        $"{member} cannot be {value}: {with}that is more light than a number holds.";
 
     private static string Written(Color3 value) =>
         string.Create(CultureInfo.InvariantCulture, $"{value.R}, {value.G}, {value.B}");
