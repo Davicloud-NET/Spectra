@@ -154,6 +154,8 @@ Entities
 - While a level plays, a node changes only through the play journal (`PlayJournal`), which keeps the first value and puts it back at Stop. An entity moves a node with `EntityWorld.SetLocalTransform`. A script sets a member with `ScriptWrites.TryWrite`, and the binding has no other way to change a node.
 - A wire carries one string. `ParameterText` is the one place that turns a typed value into that string and back, and a generated `Fire` method goes through it too.
 - The player is not an entity. A trigger or a button the player sets off is its own activator.
+- A script makes, clones, destroys and reparents nodes only through `TreeWrites`. `PlayJournal.Tree` keeps each authored parent's first list of children and Stop puts the lists back. A node the level made records nothing anywhere.
+- A clone keeps its source's names. The nodes of one clone share a number (`SceneNode.CopyGroup`), and `TargetNameIndex.Resolve` sends what an entity of a clone names to the entities of that clone when one has the name. Whoever resolves a name for a view does the same, or it draws a clone's wire to every door of the name.
 - A script changes the player only through `PlayerWrites`. `EntityWorld.Player` is set after the script runtime is made, so it is asked on every use and never kept.
 - Everything an entity waits for counts ticks: a wire's delay, a think, a mover's trip. Seconds become whole ticks once, when the wait starts, by `WholeTicks`. World time is the tick number times the step and is only for a person to read.
 
@@ -191,7 +193,8 @@ Scripting
 - An entity class reaches a script through its schema: an input is a method and an output is a signal. `EntityClassApi` in Core reads a schema that way, and the binding answers from it (`EntityMembers`). A member of the node's own class wins, then an input, then an output, then a child.
 - `door:Open()` and a listener's call are events in the scripts' share of the queue (`EntityWorld.QueueScriptInput`, `EntityWorld.Listeners`). Neither runs inside the call that made it. A listener is numbered on from the output's own wires.
 - `Touched` and `TouchEnded` of a part are found by the pass that tells trigger entities (`TouchTracker`, with `PartTouches`). A script's listener sits in `EntityWorld.Listeners` under the node and a name of `TouchSignal`, and only a node with one is measured.
-- Tags and the attributes scripts set live in the runtime (`TagTable`, `AttributeTable`) and on no node. Nothing of them is saved or journalled, and an entity never sees them: a keyvalue's name a script sets is hidden from scripts only.
+- A builder's tags and attributes are on the node (`SceneNode.Tags`, `SceneNode.Attributes`), two sets that never change once made, saved in the map and the baked map. `LevelSeed` copies them into the runtime's `TagTable` and `AttributeTable` before the first script starts. Scripts change that copy and never the node, so nothing of it is journalled, and an entity never sees it.
+- A script replaces how the player moves with `character:SetMover(fn)`. `LuauCharacterMover` calls the function on one thread kept for it (`MoverCall`) with objects that live for the play session, and the function works on a copy of the state. `docs/physics.md` has the seam. The demo's level installs `Scripts/player_mover.luau`.
 - A level's scripts run in a `LuauScriptRuntime`, one for each play session. A host sets `SceneManager.Scripts.RuntimeFactory`, `StartEntityWorld` makes the runtime and `StopEntityWorld` closes it. A thread that waits is an event in the entity queue (`EntityWorld.QueueScriptWake`).
 
 ## Things that fail quietly
@@ -218,6 +221,8 @@ Avalonia
 - `ApplyViewArrangement` sizes and shows the view panes and never moves one. The 3D view's track never goes to zero: a swap chain with no width may not come back.
 - The compositor waits on the shared target's key with no deadline. An engine that dies must keep answering (`Renderer.OfferSharedTurn`) until the shell has cleared `viewport.Host` and `IsAwaitingEngine` is false, or the whole window freezes.
 - When the engine's render thread dies the editor restarts the viewport and keeps the level (`MainWindow.Recovery.cs`, `SessionRecovery`). Anything a session owns must be rebuilt by that path too, or it works until the first restart.
+- Focus begins an edit and losing it commits, so a click into a cell and out runs `PropertyFieldModel.Commit` with nothing typed. It leaves an empty mixed cell alone and takes the box as it was shown for no change. A new kind of cell relies on both.
+- `TagPanelInfo` and `AttributePanelInfo` come back as the same instance while the selected nodes hold the same sets, and the panel's models skip an instance they have seen. After a cancelled colour drag the view calls `AttributesModel.ShowAgain` for that reason.
 - A text or number a property refuses goes in `PropertyLimits`. The panel reads it to say why and `PropertyEditor` reads it to refuse. A rule in only the editor is a value dropped on the render thread with no message.
 
 Host
@@ -284,12 +289,19 @@ Entities and play
 - A world brush fires no touch, loose or baked, and listening to one is an error (`TouchSignal.WhyNone`). A subtractive part fires none either. A mesh is touched by the box around it, and under a baked map it is not loaded and nothing touches it: the log warns once.
 - A touch tells a trace nothing, so `ent_watch` and the Logic view do not show it.
 - The mover builds the planes of every solid part near the player on each tick, which allocates. An allocation test of touch uses parts with `CanCollide` off, or a fake player.
+- An entity is not restarted when a script gives its node another parent in the level. A class that keeps what `CollectOwnedBrushes` gave it overrides `OnOwnedBrushesChanged`, and one that keeps a local transform has to see the new parent, as `LinearMover` does.
+- On a node with an entity a keyvalue wins over an attribute of its name: `LevelSeed` leaves the attribute out and warns, and the editor refuses to make one. `AttributePanelInfo.RoomFor` is the one answer to whether a node can get an attribute it lacks. A new reason goes into `AttributeRoom` and `PropertyLimits.LeftOut`, or the editor skips a node while the row says the value goes on all.
+- The level's root is not saved, so it takes no tag and no attribute, and the panel says why.
+- `NTAG` and `NATR` are optional sections of a baked map, so `CompiledMapFormatVersion` did not move. `MapRule.Version` still has to go up with such a section, or a cached bake from before it is served.
+- Nothing holds a mover in Luau to being a function of what it is handed. What has to come back with a restored state goes into `CharacterState.Memory`. The bit-for-bit tests hold for `walk.luau` and `double_jump.luau` alone.
+- A mover in Luau that fails, or returns a value, is out for the play session and the built-in one moves the player from that tick. One that fails after its own call put another in its place takes nothing out (`MoverSlot.Failed`). A level closed under the mover's call says nothing.
+- `PlayerWrites.TrySetMover` records the mover the level started with. A host that sets `CharacterSimulation.Mover` itself while a level plays has it replaced at Stop when a script set one first.
 - The character and its `CharacterTuning` outlive a play session. What a level changes on the tuning records in the play journal with a `TuningJournalKind`, or it is still there on the next Play. `PlayerSettingTests` catches a settable member of the character that records nothing.
 - The player's frame looks along `LookVector` (`CharacterFacing`). A player start and a teleport destination face along their node's +Z, so `character:Teleport(start.CFrame)` turns the player round.
 - The facing is `CharacterState.Yaw`, written by `CharacterSimulation` and not by the mover. A facing a teleport named holds until `TryTakeTeleport` is called. A host with no view calls it itself, or the facing never follows its commands again.
 - A velocity that rises off the ground has to leave it as a jump does (`CharacterSimulation.SetVelocity`), or the ground snap takes the rise back. It asks the ground normal, not Y alone: a walk up a ramp has a Y above zero.
 - A teleport into solid is taken, from a script and from `trigger_teleport`. The mover pushes the player out through the nearest face, which under a floor can be down and out of the level.
-- A speed past about 1.8e19 squares to infinity and the capsule maths then throws inside the tick. `PlayerWrites` caps what a script sets. Nothing caps a replaced mover.
+- A speed past about 1.8e19 squares to infinity and the capsule maths then throws inside the tick. `PlayerWrites` caps what a script sets, and `MoverLimits` what a mover in Luau hands over: four times that speed, and a reach of 1000 units from where the player began the tick. Nothing caps a mover replaced in C#.
 - Whatever puts the play camera somewhere else in one frame calls `SoundPresenter.ListenerJumped`. A hop under 8 units is otherwise heard as motion, and every sound chirps.
 
 Luau
@@ -335,6 +347,11 @@ Luau
 - Tags and the attributes scripts set are outside `MemoryBudget`. `AttributeLimits` and `TagLimits` bound them, and `AttributeMethods` and `TagMethods` do the refusing. What is put into the tables directly goes past the checks.
 - A tag's list keeps a node that lost the tag until `TagTable.InOrder` is asked, and is put in order only after a node joined or `NodeReparented` fired. Read a tag's nodes through `InOrder`.
 - A property or signal of a static script class may take the `ScriptContext` in front of the object. One with `Sets` may not.
+- `NodeLifetime.Forget` is what ends everything kept of a destroyed node: its connections, waits, tags, attributes, modules and its script's owner. A new table keyed by node is emptied there, and `SpawnKeepsNothingTests` holds a clone to keeping nothing.
+- A destroyed node a script made counts against `TreeLimits.MaxMadeNodes` while a script holds it (`HeldNodes`), so `TreeWrites.MadeCount` is above what is in the level until Luau has collected.
+- `LuauObjects.Reached` runs inside the push of an object no script held. It may count and list. It pushes nothing and runs no script.
+- `LuauFunction.Start` makes a Luau thread per call. What the host calls every tick keeps one thread, as `MoverCall` does.
+- What a mover is handed reads between ticks and writes only inside the call. A mover's `Sweep` or `Gather` that leaves the tick's volume builds the part lane again (`MoverCollision.Cover`).
 - A listener whose script was switched off or whose thread was cancelled stays in `EntityWorld.Listeners` until its output fires next or `NodeSignals` looks them over. `ent_watch` counts it until then.
 - The door gives a member to the class `NodeClass.KindOf` names and to no other. A part that carries a light is a Part, and no script reaches its light.
 - A light's colour or brightness that is a number is still refused when the linear colour times the brightness is none.
@@ -360,6 +377,10 @@ Tests and tools
 - `Data/cframe-studio.json` in the Bsp tests holds what Roblox Studio answered to `cframe-probe.luau`. A new case in `CFrameProbeCases` fails both comparisons until Studio has been asked again. An answer the engine keeps against Studio's goes in `KeptOurs` with its reason.
 - Studio's log file cuts a printed message at about 1000 characters. What a probe prints is copied from the Output window, or printed one case a line.
 - The scripts and quoted lines of the site's `write-your-first-script.mdx` are held by the two `FirstScriptGuideTests`. A code block added there has to be a sample file.
+- A mover test that shortens `CallLimit` calls `MoverLevel.StopTheNextHangSoon` right before the call that hangs. The watchdog goes by the wall clock, and a short limit left on stops a call that only stalled.
+- `TagsAndAttributesKeysTests` drives the real boxes. `KeyTextInput` sends text and no key press, so a test of what a key does after Enter presses a key first.
+- A render test that edits and then saves a sheet runs the jobs and a render tick several times before it captures, or the PNG is the frame before the last change.
+- `CsgBench openworld` times edits of a tenth of a millisecond, and its MOVE verdict moves with the machine: read it over several runs on a quiet one.
 - `ScriptCostTests` fails on an allocation. Its table of times is explicit and runs only with `-- -explicit only`, so a normal run reports one test as not run.
 - Everything that opens a script goes through `ScriptLauncher`, and it starts a program only for a `.luau` file (`ScriptOpenPlan.IsScriptFile`), since a level can name any file as its script. No test starts a program, except `LuauLspTests`, which starts luau-lsp where the variable names it: `FakeProgramStarter` keeps what was asked.
 - An agent's worktree keeps about 4.6 GB of build output. Delete `bin` and `obj` in a worktree once its branch is merged, or the drive fills.
