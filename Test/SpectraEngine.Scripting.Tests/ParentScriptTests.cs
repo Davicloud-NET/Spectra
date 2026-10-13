@@ -121,9 +121,14 @@ public sealed class ParentScriptTests
             key.Name = "Key"
             key.Parent = box
             print("put in")
+
+            -- A node that leaves the level for the box is a child that arrives there too.
+            task.spawn(function() print("got", box:WaitForChild("Door").Name) end)
+            workspace.House.Door.Parent = box
+            print("moved in")
             """);
 
-        printed.ShouldBe(["put in", "got Key"]);
+        printed.ShouldBe(["put in", "moved in", "got Key", "got Door"]);
     }
 
     [Fact]
