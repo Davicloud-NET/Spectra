@@ -72,15 +72,18 @@ internal static class OneOfEverything
     }
 
     // Sends the relay a Say, so its wire fires and counts one use down. By
-    // its node and not its name, which a script may have changed. A script
-    // may have taken the relay out of the level too, and then nothing fires.
-    public static void FireTheWire(ScriptLevel level)
+    // its node and not its name, which a script may have changed. False when
+    // a script has taken the relay out of the level, and nothing fires.
+    public static bool FireTheWire(ScriptLevel level)
     {
         EntityWorld world = level.Entities;
         SceneNode? relay = level.Scene.EntityNodes.FirstOrDefault(
             node => node.Entity is { Connections.Count: > 0 } && !TreeWrites.IsMade(node));
-        if (relay is not null && world.Index is { } index && index.TryGetByNodeId(relay.Id, out Entity? entity))
-            world.QueueInput(entity, "Say", "go");
+        if (relay is null || world.Index is not { } index || !index.TryGetByNodeId(relay.Id, out Entity? entity))
+            return false;
+
+        world.QueueInput(entity, "Say", "go");
+        return true;
     }
 
     // A scale may sit above a light, a mesh or a plain node, and never above

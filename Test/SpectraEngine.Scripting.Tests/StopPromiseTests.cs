@@ -43,6 +43,8 @@ public sealed class StopPromiseTests
 
             // One tick first: a script of the level reads the node above it
             // when it starts, and the writes give every node another parent.
+            // The relay is in the level here, so its wire fires in every run.
+            OneOfEverything.FireTheWire(level).ShouldBeTrue($"{run}: the relay was not there to fire its wire");
             level.Tick();
             var started = new LevelState(level.Scene);
             int taken = WriteToEveryMember(door, coverage, nodes, random);
@@ -109,13 +111,15 @@ public sealed class StopPromiseTests
         var coverage = new WriteCoverage(level.Scene);
 
         level.Play();
+        bool hasFired = false;
         for (int tick = 0; tick < WritingScript.TicksFor(WritesPerScript); tick++)
         {
-            OneOfEverything.FireTheWire(level);
+            hasFired |= OneOfEverything.FireTheWire(level);
             level.Tick();
             coverage.Look();
         }
 
+        hasFired.ShouldBeTrue($"{run}: the relay was never there to fire its wire");
         level.Errors.ShouldBeEmpty(run);
         (int scripts, IReadOnlyDictionary<string, int> taken, int refused) = WritingScript.Tally(level.Printed);
         scripts.ShouldBe(nodes.Length, $"{run}: not every script reached its last line");
