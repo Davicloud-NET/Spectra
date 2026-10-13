@@ -23,3 +23,10 @@ CollectionService:HasTag(board) --> expects 3 arguments, but only 2 are specifie
 CollectionService:GetInstanceAddedSignal("Lava"):Connect(function(part: string) end) --> '(Instance) -> ()'
 CollectionService:GetInstanceRemovedSignal("Lava"):Fire(board) --> Key 'Fire' not found
 CollectionService:GetTaged("Lava") --> GetTaged
+
+-- What a call gives back is typed too.
+print(math.abs(board:HasTag("Open"))) --> 'number', but got 'boolean'
+print(math.abs(board:GetAttributes())) --> 'number', but got '{ [string]: any }'
+print(math.abs(CollectionService:GetTagged("Lava")[1])) --> 'number', but got 'Instance'
+print(math.abs(CollectionService:HasTag(board, "Open"))) --> 'number', but got 'boolean'
+print(math.abs(CollectionService:GetTags(board)[1])) --> 'number', but got 'string'
