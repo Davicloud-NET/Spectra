@@ -378,6 +378,32 @@ public sealed class PartTouchTests
         world.Listeners.TouchListenerCount.ShouldBe(1);
     }
 
+    // What a touch queues waits with what scripts made, and takes no room
+    // from what entities send.
+    [Fact]
+    public void A_listeners_call_for_a_touch_takes_the_scripts_room_in_the_queue_and_none_of_the_entities()
+    {
+        var scene = new Scene("Touch");
+        SceneNode block = Block(scene, "block", isSolid: false);
+        EntityRuntime.Place(scene.Root, "door", "recorder");
+        var logger = new CapturingLogger();
+        EntityWorld world = Touching.Play(scene, _log, _player, logger);
+        world.Scripts = new FakeScriptRuntime(_log);
+        world.MaxPendingEvents = 2;
+        for (int listener = 1; listener <= 3; listener++)
+            world.Listeners.Add(block, TouchSignal.Touched, listener);
+
+        Stand(0f);
+        world.QueueInput("door", "First");
+        world.QueueInput("door", "Second");
+        world.Tick(Dt);
+
+        _log.Skip(1).ShouldBe(["door:First::-:-", "door:Second::-:-", "hear touch 1 by 0", "hear touch 2 by 0"]);
+        world.DiscardedEventCount.ShouldBe(1);
+        logger.MessagesAt(Microsoft.Extensions.Logging.LogLevel.Error).ShouldHaveSingleItem()
+            .ShouldContain("a listener's call for 'Touched' at 'block' was dropped");
+    }
+
     [Theory]
     [InlineData(Edge + 0.03f)]
     [InlineData(0f)]

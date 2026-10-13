@@ -284,6 +284,35 @@ public sealed class TouchScriptTests
         level.Printed.ShouldBe(["Coin touched true", "Coin left true"]);
     }
 
+    // A part's own Touched wins the name, so the output cannot be reached
+    // there. What the entity fires under it is no touch, and hands no
+    // character over.
+    [Fact]
+    public void An_entitys_own_output_of_the_name_of_a_touch_calls_no_listener_of_the_touch()
+    {
+        using var level = new ScriptLevel();
+        SceneNode sign = TouchParts.Box(level, "Sign", new Vector3(20f, 1f, 0f), new Vector3(0.5f), isSolid: false);
+        sign.Entity = new EntityData(TouchyEntity.Class);
+        level.AddScript(level.Scene.Root, """
+            local sign = workspace.Sign
+            sign.Touched:Connect(function(...) print("touched", select("#", ...)) end)
+            sign.TouchEnded:Connect(function(...) print("left", select("#", ...)) end)
+            sign:Poke()
+            task.wait(0.1)
+            print("poked")
+            """);
+
+        level.Play().Tick(30);
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["poked"]);
+        level.Sink.Texts(SpectraEngine.Core.Scripting.ScriptSeverity.Warning).ShouldBe(
+        [
+            "No script reaches the output Touched of touchy: Part has a member of that name, which wins.",
+            "No script reaches the output TouchEnded of touchy: Part has a member of that name, which wins.",
+        ]);
+    }
+
     [Fact]
     public void A_part_with_a_listener_only_for_the_end_of_a_touch_hears_it()
     {

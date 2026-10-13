@@ -60,12 +60,6 @@ internal sealed class FakeScriptRuntime : IScriptRuntime
         _log.Add("close scripts");
     }
 
-    // What a function connected to a touch would do when it is called.
-    public Action<long>? OnHearTouch { get; set; }
-
-    public void HearTouch(long listener, in TouchVisitor visitor)
-    {
+    public void HearTouch(long listener, in TouchVisitor visitor) =>
         _log.Add($"hear touch {listener} by {visitor.Id}");
-        OnHearTouch?.Invoke(listener);
-    }
 }

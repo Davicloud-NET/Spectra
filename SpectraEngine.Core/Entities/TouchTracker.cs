@@ -217,6 +217,7 @@ public sealed class TouchTracker
 
         _candidates.Clear();
         _world.Scene.GetPartBoundsInBox(in box, _candidates, in SensorFilter);
+        bool hasParts = _parts.HasWork;
 
         for (int i = 0; i < _candidates.Count; i++)
         {
@@ -229,7 +230,7 @@ public sealed class TouchTracker
             if (node.Brush is not null && _sensorByNode.TryGetValue(node.Id, out Sensor? registered) && registered.IsSensing)
                 sensor = registered;
 
-            bool isWatched = _parts.Watches(node);
+            bool isWatched = hasParts && _parts.Watches(node);
             if (sensor is null && !isWatched)
                 continue;
             if (!TouchMeasure.TryDistance(node, in capsule, out float distance))

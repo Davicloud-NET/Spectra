@@ -39,6 +39,7 @@ internal sealed class ScriptLevel : IDisposable
         catalog.Add(new EntitySchema(SensingEntity.Class), () => new SensingEntity(Sink));
         catalog.Add(SignEntity.Schema, () => new SignEntity());
         catalog.Add(TriggerMultiple.SpectraSchema, static () => new TriggerMultiple());
+        catalog.Add(TouchyEntity.Schema, static () => new TouchyEntity());
 
         Manager = new SceneManager(NullLogger<SceneManager>.Instance)
         {
