@@ -122,7 +122,14 @@ internal sealed class ScriptContext
         if (!Utf8.IsValid(text))
             return stack.Fail($"Unable to assign property {ScriptWrites.Settable[(int)member].Name}. The string is not valid UTF-8");
 
-        return Write(stack, node, member, MemberValue.Of(TextOf(text, ScriptWrites.Read(node, member).Text)));
+        int written = Write(stack, node, member, MemberValue.Of(TextOf(text, ScriptWrites.Read(node, member).Text)));
+
+        // The scene tells of a new name in the level. One under a node in
+        // no level is told of here, for a thread that waits for that child.
+        if (written == 0 && member == SettableMemberId.Name && node.Parent is not null && !Tree.IsInLevel(node))
+            ChildWaits.Arrived(node);
+
+        return written;
     }
 
     public int WriteBoolean(LuauStack stack, SceneNode node, SettableMemberId member) =>

@@ -23,6 +23,12 @@ public sealed unsafe class LuauObjects
     public int Count => _slotOf.Count;
 
     /// <summary>
+    /// Is told of an object each time a script comes to hold one that no
+    /// script held. It runs inside the push: it pushes nothing and runs no script.
+    /// </summary>
+    public Action<object>? Reached { get; set; }
+
+    /// <summary>
     /// Takes the table on top of the stack and makes it the metatable of every object
     /// pushed with this tag. The table is frozen with all it holds, since all scripts share it. Do this
     /// before the host is sealed. A tag takes one metatable, once.
@@ -55,6 +61,9 @@ public sealed unsafe class LuauObjects
             _slots[index].Generation = generation + 1;
         else if (isNew)
             Free(index);
+
+        if (isNew && created != 0)
+            Reached?.Invoke(value);
 
         return status == LuaStatus.Ok;
     }

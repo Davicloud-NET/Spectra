@@ -71,6 +71,7 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
             return Said(module);
 
         script.Owner = owner;
+        module.Script = script;
         if (module.Node is { } node && !script.SetGlobal("script"u8, LuauValue.Object(ScriptTags.Object, node)))
             return Error(module, "the module could not be given its node");
 

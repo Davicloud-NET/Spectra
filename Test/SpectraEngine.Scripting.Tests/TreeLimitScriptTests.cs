@@ -27,7 +27,8 @@ public sealed class TreeLimitScriptTests
         error.Line.ShouldBe(3);
         error.Text.ShouldBe(
             $"Instance.new made nothing: scripts would have made more than {TreeLimits.MaxMadeNodes} nodes that are " +
-            "still there, and a level holds no more. Destroy the ones that are done with");
+            "still there or still held, and a level holds no more. Destroy the ones that are done with, and keep " +
+            "none of them in a variable");
         new ScriptWrites(level.Entities).Tree.MadeCount.ShouldBe(TreeLimits.MaxMadeNodes);
     }
 
@@ -54,7 +55,8 @@ public sealed class TreeLimitScriptTests
         line.ShouldStartWith($"{TreeLimits.MaxMadeNodes / 9} ");
         line.ShouldEndWith(
             $"House was not cloned: with its copy, scripts would have made more than {TreeLimits.MaxMadeNodes} " +
-            "nodes that are still there, and a level holds no more. Destroy the ones that are done with");
+            "nodes that are still there or still held, and a level holds no more. Destroy the ones that are done " +
+            "with, and keep none of them in a variable");
     }
 
     [Fact]
@@ -73,6 +75,9 @@ public sealed class TreeLimitScriptTests
 
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(["done"]);
+
+        // One a script may still hold counts until Luau has collected it.
+        level.Runtime.ShouldNotBeNull().Collect();
         new ScriptWrites(level.Entities).Tree.MadeCount.ShouldBe(0);
     }
 

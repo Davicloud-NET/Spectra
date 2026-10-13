@@ -1,5 +1,6 @@
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
@@ -17,13 +18,25 @@ internal sealed class QueuedSignal(NodeSignals signals, SceneNode node, EntityPo
     // Whether the touch pass fires it, and hands a listener who touches.
     public bool IsTouch => isTouch;
 
-    public void Listen(ScriptConnection connection) => signals.Listen(node, output.Name, connection);
+    // A node that was destroyed fires nothing more. A script can still
+    // connect, as in Roblox, and the level keeps nothing for it.
+    public void Listen(ScriptConnection connection)
+    {
+        if (!TreeWrites.IsDestroyed(node))
+            signals.Listen(node, output.Name, connection);
+    }
 
     public void Forget(ScriptConnection connection) => signals.Forget(node, output.Name, connection);
 
     // Why nothing can listen to it, as the script's error says it: a touch
     // of a world brush can never be told. Null for any other.
     public string? WhyNoListener() => isTouch ? TouchSignal.WhyNone(node) : null;
+
+    // Why no thread can wait for it: nothing would ever resume one that
+    // waits on a node that was destroyed. Null for any other.
+    public string? WhyNoWait() => TreeWrites.IsDestroyed(node)
+        ? $"{output.Name}:Wait() will not return: '{node.Name}' was destroyed"
+        : null;
 
     public void Hide(ScriptConnection connection) => signals.Hide(node, output.Name, connection);
 

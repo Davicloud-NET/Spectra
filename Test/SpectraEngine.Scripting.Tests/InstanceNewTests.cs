@@ -100,6 +100,9 @@ public sealed class InstanceNewTests
         level.Play().Tick();
 
         level.Printed.ShouldBe(["false Scripts/Main1.luau:3: Part cannot get Folder as its parent: Folder was destroyed"]);
+
+        // The folder counts while the script holds it, which has ended by now.
+        level.Runtime.ShouldNotBeNull().Collect();
         new ScriptWrites(level.Entities).Tree.MadeCount.ShouldBe(0);
         level.Runtime.ShouldNotBeNull().LooseTreeCount.ShouldBe(0);
     }

@@ -113,7 +113,7 @@ internal sealed partial class ScriptSignal : ScriptObject
     [ScriptMethod(Returns = "T...")]
     private int Wait(LuauStack stack)
     {
-        if (_queued?.WhyNoListener() is { } refused)
+        if ((_queued?.WhyNoListener() ?? _queued?.WhyNoWait()) is { } refused)
             return stack.Fail(refused);
 
         LuauThread thread = _hub.Host.ThreadOf(stack);

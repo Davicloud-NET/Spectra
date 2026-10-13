@@ -55,16 +55,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         try
         {
             var context = new ScriptContext(_host, new ScriptWrites(_world), _childWaits, tagMethods, _attributes);
-            Vector3Members.Install(context);
-            Vector3Library.ScriptInstall(context);
-
-            // Before the library: a userdata gets its tag's metatable when it
-            // is made, and the library makes CFrame.identity.
-            CFrameMembers.Install(context);
-            CFrameLibrary.ScriptInstall(context);
-            ObjectMembers.Install(context);
-            Color3Members.Install(context);
-            Color3Library.ScriptInstall(context);
+            InstallValues(context);
 
             _tasks = new TaskLibrary(_host, _world, _waiting);
             _tasks.ScriptInstall(context);
@@ -76,7 +67,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             _character = players.Body;
             var game = new DataModel(_host, workspace, _runService, players, new CollectionService(tagMethods));
             new LevelGlobals(game, workspace).ScriptInstall(context);
-            new ModuleLoader(_host, setup.Source, _sink, _waiting).ScriptInstall(context);
+            var modules = new ModuleLoader(_host, setup.Source, _sink, _waiting);
+            modules.ScriptInstall(context);
 
             // No library: an entity class is data, and its members are found by name.
             _signals = new NodeSignals(new SignalHub(_host, _waiting), _world);
@@ -84,9 +76,10 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             context.Signals = _signals;
 
             _starter = new ScriptStarter(_host, _world, setup.Source, _sink);
-            _lifetime = new NodeLifetime(_host, context.Tree, _starter, _childWaits, _signals, _tags, _attributes);
+            _lifetime = new NodeLifetime(context, _starter, modules, _signals, _tags);
             context.Lifetime = _lifetime;
             new InstanceLibrary(_lifetime).ScriptInstall(context);
+            _host.Objects.Reached = _lifetime.Reached;
 
             _host.Seal();
 
@@ -99,6 +92,21 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             _host.Dispose();
             throw;
         }
+    }
+
+    // The types a script holds by value, and the objects.
+    private static void InstallValues(ScriptContext context)
+    {
+        Vector3Members.Install(context);
+        Vector3Library.ScriptInstall(context);
+
+        // Before the library: a userdata gets its tag's metatable when it
+        // is made, and the library makes CFrame.identity.
+        CFrameMembers.Install(context);
+        CFrameLibrary.ScriptInstall(context);
+        ObjectMembers.Install(context);
+        Color3Members.Install(context);
+        Color3Library.ScriptInstall(context);
     }
 
     /// <summary>
@@ -145,8 +153,19 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     /// <summary>How many nodes and other objects scripts hold, or held until Luau's collector says otherwise. One that only grows is a leak.</summary>
     public int HeldObjectCount => _host.IsClosed ? 0 : _host.Objects.Count;
 
-    // Has Luau collect in full, so the counts above say what is held now.
-    internal void Collect() => _host.Collect();
+    // How many destroyed nodes scripts made count on, as far as is known.
+    internal int HeldDestroyedCount => _lifetime.HeldCount;
+
+    // Has Luau collect in full, so the counts above say what is held now,
+    // and so does the count of made nodes.
+    internal void Collect()
+    {
+        if (_isClosed)
+            return;
+
+        _host.Collect();
+        _lifetime.LetGoOfUnheld();
+    }
 
     /// <summary>
     /// Whether the Luau state is gone, and every thread with it. After

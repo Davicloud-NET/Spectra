@@ -10,8 +10,8 @@ namespace SpectraEngine.Bsp.Tests;
 public sealed class TreeLimitTests
 {
     private const string TooMany =
-        "scripts would have made more than 16384 nodes that are still there, and a level holds no more. " +
-        "Destroy the ones that are done with";
+        "scripts would have made more than 16384 nodes that are still there or still held, and a level holds " +
+        "no more. Destroy the ones that are done with, and keep none of them in a variable";
 
     private readonly TreeLevel _level = new();
 

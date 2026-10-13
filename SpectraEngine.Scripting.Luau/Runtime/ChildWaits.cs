@@ -85,11 +85,18 @@ internal sealed class ChildWaits
             return true;
         }
 
-        // No child comes to a node that was destroyed, so a wait with a
-        // timeout is over there and then.
+        // No child comes to a node that was destroyed. A wait with a timeout
+        // is over there and then, and one with none has its thread ended.
         long tick = _world.TickNumber;
+        bool isGone = TreeWrites.IsDestroyed(wait.Parent);
         SceneNode? child = NodeTree.Child(wait.Parent, NodeMatch.Name, wait.Name);
-        if (child is null && tick < wait.Deadline && !TreeWrites.IsDestroyed(wait.Parent))
+        if (child is null && isGone && wait.Deadline == WholeTicks.Never)
+        {
+            End(index, in wait);
+            return true;
+        }
+
+        if (child is null && tick < wait.Deadline && !isGone)
         {
             if (tick >= wait.WarnAt)
             {
@@ -206,6 +213,11 @@ internal sealed class ChildWaits
             Deadline: hasTimeout ? due : WholeTicks.Never,
             WarnAt: hasTimeout ? WholeTicks.Never : due,
             ScriptReport.Line(stack.State, _host.ScriptOf(stack), ScriptSeverity.Warning, string.Empty)));
+
+        // A wait on a node that is destroyed already ends as one does that
+        // began before: its wake finds the node gone.
+        if (TreeWrites.IsDestroyed(parent))
+            QueueWake(token, 0);
 
         return LuauStack.Yield();
     }

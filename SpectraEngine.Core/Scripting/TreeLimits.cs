@@ -11,7 +11,8 @@ public static class TreeLimits
 {
     /// <summary>
     /// The most nodes scripts have made that are still there at one time. A
-    /// node that was destroyed no longer counts.
+    /// node that was destroyed stops counting once no script holds it: what
+    /// a script holds of one keeps the whole node.
     /// </summary>
     public const int MaxMadeNodes = 16384;
 

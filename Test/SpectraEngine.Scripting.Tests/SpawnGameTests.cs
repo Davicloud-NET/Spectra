@@ -78,7 +78,9 @@ public sealed class SpawnGameTests
             "collected Coin5 5 true",
         ]);
 
-        // What is left are the coins the player has not come to yet.
+        // What is left are the coins the player has not come to yet. A coin
+        // its own listener destroyed counts until Luau has let go of it.
+        level.Runtime.ShouldNotBeNull().Collect();
         TreeWrites tree = new ScriptWrites(level.Entities).Tree;
         string[] coins = [.. level.Scene.Root.Children.Select(node => node.Name).Where(name => name.StartsWith("Coin", StringComparison.Ordinal))];
         coins.ShouldNotContain("Coin5");

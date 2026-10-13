@@ -12,13 +12,16 @@ internal sealed class NodeLifetime
     // What a script reads when it changes the tree before the runtime is whole.
     public const string NotSetUp = "the level's tree cannot be changed before its scripts are set up";
 
+    private readonly LuauHost _host;
     private readonly TreeWrites _tree;
     private readonly ScriptStarter _starter;
+    private readonly ModuleLoader _modules;
     private readonly ChildWaits _waits;
     private readonly NodeSignals _signals;
     private readonly LevelTags _tags;
     private readonly AttributeMethods _attributes;
     private readonly LooseNodes _loose;
+    private readonly HeldNodes _held;
 
     // Ending a thread can run a script, which can come back in here. So
     // each call takes a list of its own, and gives it back.
@@ -26,16 +29,18 @@ internal sealed class NodeLifetime
     private readonly Stack<List<NodeCopy>> _spareCopies = [];
 
     public NodeLifetime(
-        LuauHost host, TreeWrites tree, ScriptStarter starter, ChildWaits waits, NodeSignals signals, LevelTags tags,
-        AttributeMethods attributes)
+        ScriptContext context, ScriptStarter starter, ModuleLoader modules, NodeSignals signals, LevelTags tags)
     {
-        _tree = tree;
+        _host = context.Host;
+        _tree = context.Tree;
         _starter = starter;
-        _waits = waits;
+        _modules = modules;
+        _waits = context.ChildWaits;
         _signals = signals;
         _tags = tags;
-        _attributes = attributes;
-        _loose = new LooseNodes(host, tree, Forget);
+        _attributes = context.Attributes;
+        _loose = new LooseNodes(_host, _tree, Forget);
+        _held = new HeldNodes(_host, _tree);
     }
 
     // What a script reads when it puts a tag or an attribute on a node that
@@ -46,14 +51,17 @@ internal sealed class NodeLifetime
     // How many made trees are in no level and may still be reached.
     public int LooseCount => _loose.Count;
 
+    // How many destroyed nodes scripts made count on, as far as is known.
+    public int HeldCount => _held.Count;
+
     // Instance.new: a node of a class, in no tree. Null with the reason
     // when none was made.
     public SceneNode? Make(ReadOnlySpan<char> className, out string? refusal)
     {
         // A node scripts made and let go of counts until it is found. So
         // when there is no room, they are looked for and it is tried again.
-        _loose.LookOver();
-        if (!_tree.TryMake(className, out SceneNode? made, out refusal) && _tree.IsOutOfRoom && _loose.Sweep())
+        LookOver();
+        if (!_tree.TryMake(className, out SceneNode? made, out refusal) && _tree.IsOutOfRoom && MakeRoom())
             _tree.TryMake(className, out made, out refusal);
 
         if (made is not null)
@@ -66,9 +74,9 @@ internal sealed class NodeLifetime
     // and attributes scripts left on each.
     public SceneNode? Clone(SceneNode source, out string? refusal)
     {
-        _loose.LookOver();
+        LookOver();
         List<NodeCopy> copies = _spareCopies.Count > 0 ? _spareCopies.Pop() : [];
-        if (!_tree.TryClone(source, copies, out SceneNode? copy, out refusal) && _tree.IsOutOfRoom && _loose.Sweep())
+        if (!_tree.TryClone(source, copies, out SceneNode? copy, out refusal) && _tree.IsOutOfRoom && MakeRoom())
             _tree.TryClone(source, copies, out copy, out refusal);
 
         for (int i = 0; i < copies.Count; i++)
@@ -93,6 +101,13 @@ internal sealed class NodeLifetime
         {
             for (int i = 0; i < destroyed.Count; i++)
                 Forget(destroyed[i]);
+
+            // After the forgetting, which can run a script that lets go.
+            for (int i = 0; i < destroyed.Count; i++)
+            {
+                if (_host.Objects.Holds(destroyed[i]))
+                    _held.Add(destroyed[i]);
+            }
         }
 
         Return(destroyed);
@@ -113,6 +128,50 @@ internal sealed class NodeLifetime
         // arrives under a node in no level is told of here.
         if (!isInLevel && node.Parent is not null)
             _waits.Arrived(node);
+    }
+
+    // A script came to hold an object none held. A made node that had
+    // stopped counting counts again: one that was destroyed, or one of a
+    // tree that was let go of and came back from the level's queue.
+    public void Reached(object reached)
+    {
+        if (reached is not SceneNode node || !TreeWrites.IsMade(node))
+            return;
+
+        if (TreeWrites.IsDestroyed(node))
+            _held.Add(node);
+        else if (_tree.CountAgain(node) && !_tree.IsInLevel(node))
+            _loose.Add(TopOf(node));
+    }
+
+    // Stops counting every made node no script holds any more, so the count
+    // says what is held now. For a test, which need not wait for a look-over.
+    public void LetGoOfUnheld()
+    {
+        _loose.Sweep();
+        _held.LetGo();
+    }
+
+    private void LookOver()
+    {
+        _loose.LookOver();
+        _held.LookOver();
+    }
+
+    // Both ask Luau which nodes scripts still hold, by a full collection.
+    private bool MakeRoom()
+    {
+        bool isFound = _loose.Sweep();
+        return _held.Sweep() || isFound;
+    }
+
+    private static SceneNode TopOf(SceneNode node)
+    {
+        SceneNode top = node;
+        while (top.Parent is { } above)
+            top = above;
+
+        return top;
     }
 
     // Tells the starter of every script at or below a node that came into
@@ -140,12 +199,13 @@ internal sealed class NodeLifetime
     }
 
     // Lets go of all the runtime keeps for a node that is gone for good:
-    // its script, the connections to what it fires, the waits on it, its
-    // tags and its attributes. What a script still holds of it stays.
+    // its script, the module it is, the connections to what it fires, the
+    // waits on it, its tags and its attributes. What a script holds stays.
     private void Forget(SceneNode node)
     {
         _loose.Remove(node);
         _starter.Left(node);
+        _modules.Forget(node);
         _signals.Forget(node);
         _waits.Destroyed(node);
         _tags.Table.Forget(node);

@@ -43,21 +43,19 @@ internal sealed class NodeSignals
         var port = new Port(node.Id, output.Name);
         if (_signals.TryGetValue(port, out ScriptSignal? signal))
             return signal;
-        if (TreeWrites.IsDestroyed(node))
-            return NeverFires(output.Name);
-
         signal = new ScriptSignal($"Signal {output.Name}", _hub, new QueuedSignal(this, node, output));
-        Keep(port, signal);
+
+        // What a node that was destroyed has for a signal: one a script can
+        // connect to, as in Roblox, that never fires. Nothing is kept for it.
+        if (!TreeWrites.IsDestroyed(node))
+            Keep(port, signal);
+
         return signal;
     }
 
-    // What a node that was destroyed has for a signal: one a script can
-    // connect to, as in Roblox, that never fires. Nothing is kept for it.
-    private ScriptSignal NeverFires(string name) => new($"Signal {name}", _hub);
-
     // Ends every connection to what a node fires and lets go of its signals,
     // for a node that is gone for good. A script that still holds one of the
-    // signals holds one that never fires.
+    // signals holds one that never fires, and the level keeps no listener of it.
     public void Forget(SceneNode node)
     {
         if (!_namesOf.Remove(node.Id, out List<string>? names))
@@ -157,12 +155,11 @@ internal sealed class NodeSignals
         var port = new Port(node.Id, name);
         if (_signals.TryGetValue(port, out ScriptSignal? signal))
             return signal;
-        if (TreeWrites.IsDestroyed(node))
-            return NeverFires(name);
-
         var touch = new QueuedSignal(this, node, new EntityPort(name, ParameterType.None), isTouch: true);
         signal = new ScriptSignal($"Signal {name}", _hub, touch);
-        Keep(port, signal);
+        if (!TreeWrites.IsDestroyed(node))
+            Keep(port, signal);
+
         return signal;
     }
 

@@ -7,7 +7,7 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 [ScriptLibrary("Instance")]
 internal sealed partial class InstanceLibrary(NodeLifetime lifetime)
 {
-    /// <summary>Makes a node of a class, named after its class. It is in no level until it gets a Parent, and with a second argument it gets that one at once. A Part is a solid cube one unit to a side. A light is white, with a Brightness of 1 and a Range of 8, or 16 for a SpotLight, a SurfaceLight and a DiscLight. Any other node is cloned from one of the level. Scripts hold at most 16384 nodes they made at a time, and Destroy frees one.</summary>
+    /// <summary>Makes a node of a class, named after its class. It is in no level until it gets a Parent, and with a second argument it gets that one at once. A Part is a solid cube one unit to a side. A light is white, with a Brightness of 1 and a Range of 8, or 16 for a SpotLight, a SurfaceLight and a DiscLight. Any other node is cloned from one of the level. Scripts hold at most 16384 nodes they made at a time. Destroy frees one, once no variable holds it.</summary>
     // Written by hand: what comes back is of the class the name says.
     [ScriptFunction(Name = "new")]
     [ScriptOverload("className: \"Part\", parent: Instance?", "Part")]

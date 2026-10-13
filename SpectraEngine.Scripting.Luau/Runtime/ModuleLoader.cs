@@ -82,6 +82,10 @@ internal sealed partial class ModuleLoader(
             return stack.Fail($"{InvalidArgument} '{node.Name}' ({NodeClassName.Of(node)}) is not a ModuleScript");
         if (_byNode.TryGetValue(node, out ScriptModule? known))
             return Give(stack, known);
+
+        // Nothing is kept for a destroyed node, so it would run on every ask.
+        if (TreeWrites.IsDestroyed(node))
+            return stack.Fail($"the module '{node.Name}' was destroyed, and a destroyed module cannot be asked for");
         if (!script.IsEnabled)
             return stack.Fail($"the module '{node.Name}' is switched off");
         if (TooDeep() is { } deep)
@@ -187,7 +191,34 @@ internal sealed partial class ModuleLoader(
         if (module.Value is null && !module.IsKept)
             Forget(module);
 
-        return Give(stack, module);
+        int given = Give(stack, module);
+
+        // Its own code destroyed its node. The asker has what it returned.
+        if (module.Node is { } node && TreeWrites.IsDestroyed(node))
+            LetGo(module);
+
+        return given;
+    }
+
+    // The node of a module was destroyed. Its own threads end, and what it
+    // returned stays with the scripts that hold it and with nothing else.
+    public void Forget(SceneNode node)
+    {
+        if (_byNode.Remove(node, out ScriptModule? module))
+            LetGo(module);
+    }
+
+    private static void LetGo(ScriptModule module)
+    {
+        module.Value?.Dispose();
+        module.Value = null;
+        if (module.Script is not { } script)
+            return;
+
+        // The script that asked first was the one its code counted for.
+        module.Script = null;
+        script.Owner = null;
+        script.SwitchOff();
     }
 
     // The next ask reads the module's file and runs it again.

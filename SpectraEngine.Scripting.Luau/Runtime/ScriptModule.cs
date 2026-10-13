@@ -15,6 +15,10 @@ internal sealed class ScriptModule(string path, SceneNode? node)
     // What it returned. Null while it runs and when it failed.
     public LuauReference? Value { get; set; }
 
+    // What its file was loaded as, which holds its globals and its threads.
+    // Null when it did not compile.
+    public LuauScript? Script { get; set; }
+
     // Why it returned nothing: the first failure, with its file and line in front.
     public string Failure { get; set; } = $"{path}: the module did not run to its end";
 

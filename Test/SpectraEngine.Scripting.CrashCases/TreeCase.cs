@@ -9,12 +9,10 @@ using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.CrashCases;
 
-// A script of a level that plays makes nodes, clones, gives nodes other
-// parents and destroys them, and is refused every way those are refused. A
-// refusal is an error raised from a host function, a destroyed node ends
-// threads and connections from inside one, a clone's script starts from the
-// tick, and every print puts the collector to work. Stop then puts the
-// level's tree back.
+// A script of a level makes, clones, moves and destroys nodes, and is refused
+// every way those are refused. A refusal is an error raised from a host
+// function, a destroyed node ends threads and connections from inside one,
+// and a clone's script starts from the tick. Stop then puts the tree back.
 internal static class TreeCase
 {
     private const int Rounds = 20;
@@ -60,6 +58,15 @@ internal static class TreeCase
         ("for i = 1, 300 do Instance.new('Folder'):AddTag('loose') end return 'kept none'", true, "kept none"),
         ("for i = 1, 100 do local made = crate:Clone() made.Parent = workspace made:Destroy() end return 'gone'", true, "gone"),
         ("local deep = workspace for i = 1, 300 do deep = Instance.new('Folder', deep) end", false, "nodes deep"),
+
+        // What a script holds of a destroyed node: a signal that takes no
+        // wait, a wait that ends its thread, and nodes that count on.
+        ("local gone = Instance.new('Part') local touched = gone.Touched gone:Destroy() " +
+            "touched:Connect(function() end) touched:Wait()", false, "will not return: 'Part' was destroyed"),
+        ("local gone = Instance.new('Folder') gone:Destroy() task.spawn(function() gone:WaitForChild('Never') end) " +
+            "task.wait() return 'ended'", true, "ended"),
+        ("local kept = {} for i = 1, 20000 do local made = Instance.new('Folder') made:Destroy() kept[i] = made end",
+            false, "still there or still held"),
     ];
 
     internal static int Run()

@@ -191,7 +191,7 @@ internal static partial class NodeApi
     private static int GetTags(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Tags.PushTagsOf(stack, node);
 
-    /// <summary>A copy of the node and everything below it, in no level until it gets a Parent. The copy stands where the node stands in the world, and has the tags and attributes scripts left on the node. A script below the copy starts and an entity below it runs once the copy is in the level. A world brush cannot be cloned.</summary>
+    /// <summary>A copy of the node and everything below it, in no level until it gets a Parent. The copy stands where the node stands in the world, and has the tags and attributes scripts left on the node. A script below the copy starts and an entity below it runs once the copy is in the level. Every node of the copy has the name of its source. A wire of the copy that names an entity of the copy goes to that one alone, and a wire from anywhere else that names the source reaches the copy as well. A world brush cannot be cloned.</summary>
     [ScriptMethod(Returns = "Instance")]
     private static int Clone(ScriptContext context, LuauStack stack, SceneNode node)
     {
