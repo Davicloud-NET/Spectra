@@ -1,6 +1,9 @@
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scripting.Api;
+using SpectraEngine.Entities;
 using SpectraEngine.Scripting.Luau.Runtime;
 using System;
+using System.Collections.Generic;
 
 namespace SpectraEngine.Editor.Shell.Scripts;
 
@@ -15,11 +18,16 @@ public static class ScriptDefinitions
     /// <summary>The file's text, with a line feed at the end of each line.</summary>
     public static string Read() => Text.Value;
 
-    // The demo's call, word for word, and a test holds the two together.
+    // The demo's calls, word for word, and a test holds the two together.
     // What a build adds to its script API then reaches a project too.
     private static string Write()
     {
-        ScriptApiDescription api = LuauScriptApi.Description;
+        IReadOnlyList<EntitySchema> schemas = BuiltinSchemas();
+        ScriptApiDescription api = LuauScriptApi.Description.WithEntityClasses(schemas);
         return LuauDefinitions.Write(api);
     }
+
+    // Through .sentdef bytes, as a session learns its classes.
+    private static IReadOnlyList<EntitySchema> BuiltinSchemas() =>
+        EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(BuiltinEntities.Schemas)).Schemas;
 }

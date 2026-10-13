@@ -1,7 +1,9 @@
 using System.Text.Json;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Projects;
 using SpectraEngine.Core.Scripting.Api;
 using SpectraEngine.Core.Scripting.Tooling;
+using SpectraEngine.Entities;
 using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.Tests;
@@ -16,9 +18,12 @@ internal sealed class SampleProject : IDisposable
 
     public SampleProject()
     {
-        // What the editor writes, by the code it writes it with.
+        // What the editor writes, by the code it writes it with, and with
+        // the entity classes a project of the built-in ones gets.
+        IReadOnlyList<EntitySchema> schemas =
+            EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(BuiltinEntities.Schemas)).Schemas;
         ScriptProjectReport report = ScriptProjectSetup.Prepare(
-            Root, LuauDefinitions.Write(LuauScriptApi.Description));
+            Root, LuauDefinitions.Write(LuauScriptApi.Description.WithEntityClasses(schemas)));
         report.IsRefused.ShouldBeFalse(report.Describe());
 
         foreach (ScriptSample sample in ScriptSamples.All)
