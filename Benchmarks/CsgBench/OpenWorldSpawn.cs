@@ -21,7 +21,7 @@ internal static class OpenWorldSpawn
     public static void Run(int[] sizes, Func<int, List<BrushPlacement>> placementsOf, int timedReps)
     {
         Console.WriteLine();
-        Console.WriteLine("  SPAWN (openworld) — a level that plays in each world: on every tick a part is made, placed and parented,");
+        Console.WriteLine("  SPAWN (openworld): a level plays in each world. On every tick a part is made, placed and parented,");
         Console.WriteLine($"  the part made {LiveParts} ticks before is destroyed, the entity world ticks and one ray is cast, as a mover casts.");
         Console.WriteLine("  The world's brushes are world brushes, so a compile would show as a change of what a compile reads.");
         Console.WriteLine("  parts  | tick us | alloc B/tick | compiles | world unchanged");
@@ -42,7 +42,7 @@ internal static class OpenWorldSpawn
             $"{sizes[0] / 1000}k parts -> " +
             (ratio <= 2.0
                 ? "world-size independent (the scene's tree of boxes is a few levels taller)"
-                : "NOT world-size independent — investigate before accepting this as a baseline"));
+                : "NOT world-size independent. Investigate before accepting this as a baseline"));
     }
 
     private static double RunSize(int parts, List<BrushPlacement> placements, int timedReps)

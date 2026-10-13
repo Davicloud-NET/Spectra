@@ -3,7 +3,6 @@ using SpectraEngine.Core.Scene;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Numerics;
 
 namespace SpectraEngine.Core.Scripting;
 
@@ -76,7 +75,7 @@ public sealed class TreeWrites
         if (_journal.MadeCount >= TreeLimits.MaxMadeNodes)
         {
             IsOutOfRoom = true;
-            refusal = $"Instance.new made nothing: {TooMany}";
+            refusal = $"Instance.new made nothing: {TreeRefusals.TooMany}";
             return false;
         }
 
@@ -110,11 +109,11 @@ public sealed class TreeWrites
 
         copy = null;
         copies.Clear();
-        refusal = WhyNotCloned(source);
+        refusal = TreeRefusals.OfClone(source, _world.Scene.Root, _world.IsRunningEntities);
         IsOutOfRoom = refusal is null
             && !NodeCopies.Fill(source, copies, TreeLimits.MaxMadeNodes - _journal.MadeCount);
         if (IsOutOfRoom)
-            refusal = $"{source.Name} was not cloned: with its copy, {TooMany}";
+            refusal = $"{source.Name} was not cloned: with its copy, {TreeRefusals.TooMany}";
 
         if (refusal is not null)
         {
@@ -143,7 +142,7 @@ public sealed class TreeWrites
     {
         ArgumentNullException.ThrowIfNull(node);
 
-        refusal = WhyNotParented(node, parent);
+        refusal = TreeRefusals.OfParent(node, parent, _world.Scene.Root, _world.IsRunningEntities);
         if (refusal is not null)
             return false;
 
@@ -166,7 +165,7 @@ public sealed class TreeWrites
         ArgumentNullException.ThrowIfNull(destroyed);
 
         destroyed.Clear();
-        refusal = WhyNotDestroyed(node);
+        refusal = TreeRefusals.OfDestroy(node, _world.Scene.Root, _world.IsRunningEntities);
         if (refusal is not null)
             return false;
         if (node.IsDestroyed)
@@ -279,88 +278,6 @@ public sealed class TreeWrites
         }
 
         _walk.Clear();
-    }
-
-    private string? WhyNotParented(SceneNode node, SceneNode? parent)
-    {
-        if (ReferenceEquals(node, _world.Scene.Root))
-            return $"The Parent property of {node.Name} is locked: it is the root of the level";
-        if (node.IsDestroyed)
-            return $"The Parent property of {node.Name} is locked: {node.Name} was destroyed";
-        if (ReferenceEquals(node.Parent, parent))
-            return null;
-        if (!_world.IsRunningEntities)
-            return $"{node.Name} cannot be changed: the level has stopped.";
-        if (node.HoldsWorldBrush)
-            return $"{node.Name} cannot get another parent: {OnlyPartsCan("move")}";
-
-        return parent is null ? null : WhyNotUnder(node, parent);
-    }
-
-    private static string? WhyNotUnder(SceneNode node, SceneNode parent)
-    {
-        if (parent.IsDestroyed)
-            return $"{node.Name} cannot get {parent.Name} as its parent: {parent.Name} was destroyed";
-
-        for (SceneNode? above = parent; above is not null; above = above.Parent)
-        {
-            if (ReferenceEquals(above, node))
-                return $"Attempt to set parent of {node.Name} to {parent.Name} would result in circular reference";
-        }
-
-        if (node.SubtreeBrushCount > 0 && IsScaled(parent))
-        {
-            return $"{node.Name} cannot get {parent.Name} as its parent: that node or one above it is scaled, " +
-                "and a node cannot scale a brush at or below it. Put it under a node that is not scaled.";
-        }
-
-        int room = TreeLimits.MaxDepth - TreeLimits.LevelOf(parent);
-        return TreeLimits.HeightUpTo(node, room) > room
-            ? $"{node.Name} cannot get {parent.Name} as its parent: that would make the tree more than " +
-              $"{TreeLimits.MaxDepth} nodes deep, which is as deep as a tree may be"
-            : null;
-    }
-
-    private string? WhyNotCloned(SceneNode source)
-    {
-        if (ReferenceEquals(source, _world.Scene.Root))
-            return $"{source.Name} is the root of the level and cannot be cloned";
-        if (!_world.IsRunningEntities)
-            return $"{source.Name} was not cloned: the level has stopped";
-
-        return source.HoldsWorldBrush ? $"{source.Name} cannot be cloned: {OnlyPartsCan("be made")}" : null;
-    }
-
-    private string? WhyNotDestroyed(SceneNode node)
-    {
-        if (ReferenceEquals(node, _world.Scene.Root))
-            return $"{node.Name} is the root of the level and cannot be destroyed";
-        if (node.IsDestroyed)
-            return null;
-        if (!_world.IsRunningEntities)
-            return $"{node.Name} cannot be changed: the level has stopped.";
-
-        return node.HoldsWorldBrush ? $"{node.Name} cannot be destroyed: {OnlyPartsCan("be destroyed")}" : null;
-    }
-
-    // What the count of nodes scripts made says when no more fit.
-    private static string TooMany =>
-        $"scripts would have made more than {TreeLimits.MaxMadeNodes} nodes that are still there, " +
-        "and a level holds no more. Destroy the ones that are done with";
-
-    // The words the other refusals for a world brush use.
-    private static string OnlyPartsCan(string what) =>
-        $"a world brush sits at or below it, and only parts can {what} while a level plays. Convert the brush to a part.";
-
-    private static bool IsScaled(SceneNode node)
-    {
-        for (SceneNode? at = node; at is not null; at = at.Parent)
-        {
-            if (at.LocalScale != Vector3.One)
-                return true;
-        }
-
-        return false;
     }
 
     // A node before what is below it. The list is its own stack, so no walk
