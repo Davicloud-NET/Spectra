@@ -6,7 +6,7 @@ As of 2026-10-13 scripting is built. A script is a `.luau` file on a node. It ru
 
 The text below is the design of August 2026, kept for its reasoning. It was built by the Luau plan of October 2026, in 22 steps, and not as written. Each milestone below has a note that says how it stands, and each decision in §5 has its answer.
 
-What a script author reads is on the site: `site/src/content/docs/start/coming-from-roblox.mdx`, the guides beside it, and the script reference that `npm run api` writes. How a member is added to the script API is in [`script-api.md`](script-api.md).
+What a script author reads is on the site: `site/src/content/docs/start/coming-from-roblox.md`, the guides beside it, and the script reference that `npm run api` writes. How a member is added to the script API is in [`script-api.md`](script-api.md).
 
 | Milestone | Stands |
 |---|---|

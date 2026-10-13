@@ -9,17 +9,18 @@ This page lists what differs. Read the first part before you write a line, and c
 
 ## What you can keep
 
-These work as they do in Roblox:
+These are here under the names you know. Most do what they do in Roblox. Where one does not, its line says so, and the rest of the page has the detail.
 
 - `script`, `script.Parent`, `workspace`, `game`, `game:GetService`.
 - `workspace.Door` for a child by its name. A member wins over a child of the same name.
 - `FindFirstChild` and its relatives, `WaitForChild`, `GetChildren`, `GetDescendants`, `IsA`, `ClassName`, `Name`, `Parent`, `GetFullName`.
-- `Instance.new`, `Clone`, `Destroy`.
+- `Instance.new`, which makes a part, a folder or a light and nothing else. `Clone` and `Destroy`.
 - `Position` and `CFrame`, both in the world. The `CFrame` maths is Roblox's own.
 - `Vector3` and `Color3`.
-- Signals: `Connect`, `Once`, `Wait`, and `Disconnect` on the connection.
-- `task.wait`, `task.spawn`, `task.defer`, `task.delay`, `task.cancel`. The old `wait`, `spawn` and `delay` too.
-- `RunService.Heartbeat` and `Stepped`, `Players.LocalPlayer`, `CollectionService`.
+- Signals: `Connect`, `Once`, `Wait`, and `Disconnect` on the connection. Connected functions are called in another order than Studio calls them.
+- `task.wait`, `task.spawn`, `task.defer`, `task.delay`, `task.cancel`. The old `wait`, `spawn` and `delay` too. A wait counts whole ticks.
+- `RunService.Heartbeat` and `Stepped`. They fire on the level's tick, and not once a frame.
+- `Players.LocalPlayer` and `CollectionService`.
 - Attributes and tags: `SetAttribute`, `GetAttribute`, `AddTag`, `HasTag`, `GetTagged`.
 - `print`, `warn`, `error`, `pcall`, `typeof`, and Luau's own libraries.
 - The words of an error. A name a node does not have fails with `Anchored is not a valid member of Part "Wall"`, and never gives a silent `nil`.
@@ -72,14 +73,16 @@ A node that gets another `Parent` keeps its place in the world, as a Roblox part
 
 ### A unit is a metre
 
-Roblox counts in studs. Here one unit is one metre, and the player is 1.8 units tall. Numbers copied from a Roblox script are several times too big.
+Roblox counts in studs, and a stud is about 0.28 metres. Here one unit is one metre, and the player is 1.8 units tall. So a number copied from a Roblox script is three to four times too big.
 
-| | Roblox | Here |
-|---|---|---|
-| `WalkSpeed` | 16 | 4.5 |
-| `JumpHeight` | 7.2 | 1.2 |
-| A new `Part` | 4 × 1.2 × 2 | a cube of 1 |
-| A light's `Range` of 16 | 16 studs | 16 metres |
+| | Roblox's default | The same in metres | The default here |
+|---|---|---|---|
+| `WalkSpeed` | 16 | about 4.5 | 4.5 |
+| `JumpHeight` | 7.2 | about 2 | 1.2 |
+
+The player walks as fast as in Roblox and jumps lower.
+
+A new `Part` is 4 × 1.2 × 2 studs in Roblox and a cube of 1 unit here. A light with a `Range` of 16 reaches 16 metres, which is about 57 studs.
 
 Angles are radians wherever Roblox uses radians.
 
@@ -95,13 +98,17 @@ There is no `RenderStepped` yet, and a script cannot reach the camera.
 
 ### Signals wait their turn
 
-A connected function never runs in the middle of the call that fired its signal. It is put in the level's queue and runs when its turn comes. Roblox calls this deferred.
+A connected function never runs in the middle of the call that fired its signal. It is put in the level's queue and runs when its turn comes. Roblox calls this deferred, and a place with deferred signals does the same.
 
-Inputs of entities go the same way. `door:Open()` puts the input in the queue, so the door has not moved on the next line.
+The order is what differs. Functions connected to one signal are called in the order they connected, and Studio calls the one connected last first.
+
+An entity's input waits its turn too. `door:Open()` puts the input in the queue, so the door has not moved on the next line.
 
 ### The player
 
 The player is `Players.LocalPlayer.Character`. It is not a model and not in `workspace`, and it has no `Humanoid`, no `HumanoidRootPart` and no health.
+
+There is one player, and the character is there from a script's first line. So there is no `PlayerAdded` and no `CharacterAdded`, and the lines that open most Roblox scripts, `Players.PlayerAdded:Connect` and `player.CharacterAdded:Wait()`, are errors here. Leave them out and read `Players.LocalPlayer.Character`.
 
 - `character.Position`, `character.CFrame` and `character.Velocity` say where it is and how it moves.
 - `character.WalkSpeed` and `character.JumpHeight` are yours to set.
@@ -133,13 +140,11 @@ Nothing carries over to the next Play. Every script starts from its first line.
 
 A door, a button, a trigger, a timer and a sound are entities: nodes with settings, inputs and outputs. Wiring an output to an input is how a level does things with no code at all.
 
-To a script an input is a method and an output is a signal:
+To a script an input is a method and an output is a signal. `door:Open()` sends a door its `Open` input, and `button.OnPressed:Connect` takes a function to call when the button is pressed.
 
-`button.OnPressed:Connect(function() door:Open() end)`
+A setting reads through `GetAttribute`. What a script sends and hears shows beside the wires in the editor's Logic view. [Open a door three ways](/guides/talk-to-the-level/) builds one door with a wire, with a counter and with a script, and says when to use which. [Hear what the level does](/guides/hear-what-the-level-does/) listens to it.
 
-A setting reads through `GetAttribute`. What a script sends and hears shows beside the wires in the editor's Logic view. [Open a door three ways](/guides/talk-to-the-level/) builds one door with a wire, with a counter and with a script, and says when to use which.
-
-A Roblox `ProximityPrompt` is a Button entity here, and a `Sound` is a Sound entity: `workspace.Alarm:Play()`.
+A Roblox `ProximityPrompt` is a Button entity here. A `Sound` is a Sound entity, and a script plays one through its `Play` input.
 
 ## The rest
 
@@ -149,10 +154,13 @@ A Roblox `ProximityPrompt` is a Button entity here, and a `Sound` is a Sound ent
 | A value of the wrong type written to a property | Often taken: `light.Enabled = 1` switches the light on. | An error at that line. |
 | A light's `Range` | 0 and less are taken as 0, and more than 120 as 120. | 0 and less are an error. There is no upper bound. |
 | A light's `Brightness` | Roblox's own scale. | The light's colour is multiplied by it. A number from a Roblox place is a first guess. |
-| `CanQuery` | A ray still hits a part with `CanCollide` on. | `CanQuery` decides alone. |
+| `CanQuery` | Counts only while `CanCollide` is off. | Decides alone whether the engine's own rays find a part, such as the one the player presses a button with. |
 | A light | A child that lights from where its part is. | A node with a place of its own. There are also `DirectionalLight` and `DiscLight`, and a `SurfaceLight` is a rectangle that shines. |
 | `Transparency` | Hides a part at 1. | `Visible` draws or hides a part. |
 | An attribute | Can hold an `Instance`. | Cannot. It holds a string, a number, a boolean, a `Vector3`, a `CFrame` or a `Color3`. |
+| An attribute's name | May have `.`, `-` and `/` in it. | Letters, digits and `_` only. |
+| `GetTags` | Sorted by name. | In the order the node got its tags. |
+| The tags and attributes of a destroyed node | Kept, and `AddTag` and `SetAttribute` still work. | Gone. `HasTag` is false, `GetAttribute` is `nil`, and `AddTag` and `SetAttribute` are errors. |
 | `Parent` set to a destroyed node | Taken. | An error. |
 | `WaitForChild` with a timeout, on a destroyed node | `nil` when the time is over. | `nil` at once. |
 | A signal a script kept of a node that was destroyed since | `Connect` gives a live connection. | `Connect` gives a connection that is never called, and `Wait` is an error. |
@@ -168,6 +176,8 @@ A Roblox `ProximityPrompt` is a Button entity here, and a `Sound` is a Sound ent
 ## What is not there yet
 
 A script cannot do these today. One that reaches for a service, a class or a member that is not there gets an error that names it, and never a silent `nil`.
+
+A global is the exception. `Enum`, `Vector2`, `tick` and the others in the table above are `nil`, like any name nobody set. So `Vector2.new(1, 2)` fails with Luau's own words, `attempt to index nil with 'new'`, and `local kinds = Enum` fails nowhere. Visual Studio Code marks each as an unknown global before you play.
 
 - Read keys or the mouse. There is no `UserInputService`. The player's mover is handed walk, look, jump, sprint, crouch and use.
 - Run once a frame, or reach the camera: `RenderStepped`, `workspace.CurrentCamera`.
@@ -192,8 +202,9 @@ A script cannot do these today. One that reaches for a service, a class or a mem
 1. [Write your first script](/guides/write-your-first-script/)
 2. [Move a part with a script](/guides/move-a-part-with-a-script/)
 3. [Open a door three ways](/guides/talk-to-the-level/)
-4. [Make a kill brick and checkpoints](/guides/kill-brick-and-checkpoints/)
-5. [Make things while the level plays](/guides/make-things-while-the-level-plays/)
-6. [Change how the player moves](/guides/change-how-the-player-moves/)
+4. [Hear what the level does](/guides/hear-what-the-level-does/)
+5. [Make a kill brick and checkpoints](/guides/kill-brick-and-checkpoints/)
+6. [Make things while the level plays](/guides/make-things-while-the-level-plays/)
+7. [Change how the player moves](/guides/change-how-the-player-moves/)
 
 The [script reference](/reference/script/) lists every class, member and global a script can reach.

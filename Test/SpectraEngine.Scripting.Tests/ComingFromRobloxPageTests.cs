@@ -1,6 +1,7 @@
 using System.Globalization;
 using SpectraEngine.Core.Physics.Character;
 using SpectraEngine.Core.Scripting.Api;
+using SpectraEngine.Entities;
 using SpectraEngine.Scripting.Luau;
 using SpectraEngine.Scripting.Luau.Runtime;
 
@@ -13,7 +14,9 @@ namespace SpectraEngine.Scripting.Tests;
 /// </summary>
 public sealed class ComingFromRobloxPageTests
 {
-    private static readonly string Page = SitePage.At("start/coming-from-roblox.mdx").Text;
+    private const string MissingGlobals = ScriptSamples.MistakesFolder + "/roblox_globals.luau";
+
+    private static readonly string Page = SitePage.At("start/coming-from-roblox.md").Text;
 
     private static ScriptApiDescription Api => LuauScriptApi.Description;
 
@@ -37,8 +40,13 @@ public sealed class ComingFromRobloxPageTests
     {
         var tuning = new CharacterTuning();
 
-        Page.ShouldContain(Invariant($"| `WalkSpeed` | 16 | {tuning.WalkSpeed} |"));
-        Page.ShouldContain(Invariant($"| `JumpHeight` | 7.2 | {tuning.JumpHeight} |"));
+        // Roblox's default, what that is in metres, and the default here.
+        // The middle column is the one the member's own summary gives.
+        ScriptClassDescription character = Api.Classes.Single(described => described.Name == "Character");
+        Summary(character, "WalkSpeed").ShouldContain("Roblox's 16 is about 4.5 here");
+        Summary(character, "JumpHeight").ShouldContain("Roblox's 7.2 is about 2 here");
+        Page.ShouldContain(Invariant($"| `WalkSpeed` | 16 | about 4.5 | {tuning.WalkSpeed} |"));
+        Page.ShouldContain(Invariant($"| `JumpHeight` | 7.2 | about 2 | {tuning.JumpHeight} |"));
         Page.ShouldContain(Invariant($"the player is {tuning.StandHeight} units tall"));
         Page.ShouldContain($"print {PrintCap.MaxPrintsPerTick} lines a tick");
         LuauHost.DefaultCallLimit.ShouldBe(TimeSpan.FromSeconds(3));
@@ -83,6 +91,8 @@ public sealed class ComingFromRobloxPageTests
     [InlineData("part.Color = Color3.new(1, 0, 0)", "Color is not a valid member of Part \"North\"", "`Color`")]
     [InlineData("part.Transparency = 1", "Transparency is not a valid member of Part \"North\"", "`Transparency`")]
     [InlineData("return character.Humanoid", "Humanoid is not a valid member of Character \"Character\"", "`Humanoid`")]
+    [InlineData("game:GetService('Players').PlayerAdded:Connect(print)", "PlayerAdded is not a valid member of Players \"Players\"", "`Players.PlayerAdded:Connect`")]
+    [InlineData("game:GetService('Players').LocalPlayer.CharacterAdded:Wait()", "CharacterAdded is not a valid member of Player \"Player\"", "`player.CharacterAdded:Wait()`")]
     [InlineData("return RunService.RenderStepped", "RenderStepped is not a valid member of RunService \"RunService\"", "`RenderStepped`")]
     [InlineData("Instance.new('BindableEvent')", "Unable to create an Instance of type \"BindableEvent\"", "`BindableEvent`")]
     [InlineData("Instance.new('ScreenGui')", "Unable to create an Instance of type \"ScreenGui\"", "`ScreenGui`")]
@@ -116,6 +126,74 @@ public sealed class ComingFromRobloxPageTests
         Page.ShouldContain("| `tick`, `time`, `elapsedTime`, `Random` | There. | Not there. `os.clock`, `os.time` and `math.random` are. |");
         Page.ShouldContain("| `Enum`, `Vector2`, `UDim2`, `TweenInfo` | There. | Not there. |");
         Page.ShouldContain("there is no `shared`");
+    }
+
+    // A missing global is nil, so the page cannot promise an error that
+    // names it. It quotes what Luau says, and that the checker marks the name.
+    [Fact]
+    public void A_missing_global_fails_in_Luaus_own_words_or_not_at_all_and_the_checker_marks_every_one()
+    {
+        string[] printed = House.Ask("""
+            print(pcall(function() return Vector2.new(1, 2) end))
+            print(pcall(function() local kinds = Enum return kinds end))
+            """);
+
+        printed.Length.ShouldBe(2);
+        printed[0].ShouldStartWith("false ");
+        printed[0].ShouldEndWith("attempt to index nil with 'new'");
+        printed[1].ShouldBe("true nil");
+        Page.ShouldContain("`attempt to index nil with 'new'`");
+        Page.ShouldContain("`local kinds = Enum` fails nowhere");
+
+        ScriptSample sample = ScriptSamples.At(MissingGlobals);
+        foreach (string name in new[]
+        {
+            "shared", "tick", "time", "elapsedTime", "Random", "Enum", "Vector2", "UDim2", "TweenInfo",
+        })
+        {
+            sample.Lines.ShouldContain(line => line.EndsWith($"{ScriptSample.Arrow} Unknown global '{name}'", StringComparison.Ordinal));
+            Page.ShouldContain($"`{name}`");
+        }
+
+        Page.ShouldContain("Visual Studio Code marks each as an unknown global");
+    }
+
+    // Studio sorts GetTags, takes a dot, a dash and a slash in an attribute's
+    // name, and keeps a destroyed part's tags. The page has a row for each
+    // while the engine answers otherwise, and must lose it when it does not.
+    [Fact]
+    public void The_page_lists_tags_and_attribute_names_as_different_only_where_they_are()
+    {
+        string[] printed = House.Ask("""
+            local part = Instance.new("Part")
+            part:AddTag("b") part:AddTag("a") part:AddTag("c")
+            print(table.concat(part:GetTags(), " "))
+            print((pcall(function() part:SetAttribute("a.b", 1) part:SetAttribute("a-b", 1) part:SetAttribute("a/b", 1) end)))
+            part:Destroy()
+            print(part:HasTag("a"), (pcall(function() part:AddTag("d") end)))
+            """);
+
+        Listed("| `GetTags` | Sorted by name. | In the order the node got its tags. |", printed[0] != "a b c");
+        Listed("| An attribute's name | May have `.`, `-` and `/` in it. | Letters, digits and `_` only. |", printed[1] != "true");
+        Listed(
+            "| The tags and attributes of a destroyed node | Kept, and `AddTag` and `SetAttribute` still work. | Gone. " +
+            "`HasTag` is false, `GetAttribute` is `nil`, and `AddTag` and `SetAttribute` are errors. |",
+            printed[2] != "true true");
+    }
+
+    // The members the page names where it speaks of entities.
+    [Fact]
+    public void The_inputs_and_outputs_the_page_names_are_the_built_in_classes()
+    {
+        FuncDoor.SpectraSchema.InputNames.ShouldContain("Open");
+        FuncButton.SpectraSchema.OutputNames.ShouldContain("OnPressed");
+        FuncButton.SpectraSchema.DisplayName.ShouldBe("Button");
+        PointSound.SpectraSchema.DisplayName.ShouldBe("Sound");
+        PointSound.SpectraSchema.InputNames.ShouldContain("Play");
+
+        Page.ShouldContain("`door:Open()` sends a door its `Open` input");
+        Page.ShouldContain("`button.OnPressed:Connect` takes a function");
+        Page.ShouldContain("a script plays one through its `Play` input");
     }
 
     // Studio takes each of these. The page says they are errors here.
@@ -162,6 +240,17 @@ public sealed class ComingFromRobloxPageTests
         printed.ShouldBe(["true true"]);
         Page.ShouldContain("`CFrame.lookAt(light.Position, target) * CFrame.Angles(0, math.pi, 0)`");
     }
+
+    private static void Listed(string row, bool differs)
+    {
+        if (differs)
+            Page.ShouldContain(row, customMessage: "The engine differs from Studio here, and the page has no row that says so.");
+        else
+            Page.ShouldNotContain(row, customMessage: "The engine answers as Studio does now. Take this row out of the page.");
+    }
+
+    private static string Summary(ScriptClassDescription described, string property) =>
+        described.Properties.Single(one => one.Name == property).Summary;
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }

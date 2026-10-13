@@ -2,7 +2,7 @@
 
 What each Roblox concept is in the engine's code, and how it stands. This page is for work on the engine.
 
-What a script author reads is on the site: `site/src/content/docs/start/coming-from-roblox.mdx`. It has every difference a script meets, grouped by what comes up in the first hour, and the list of what is not there yet. A fact about scripts belongs there, and this page only points at the types behind it.
+What a script author reads is on the site: `site/src/content/docs/start/coming-from-roblox.md`. It has every difference a script meets, grouped by what comes up in the first hour, and the list of what is not there yet. A fact about scripts belongs there, and this page only points at the types behind it.
 
 This page replaces the concept map of August 2026, which was written when the engine had no editor, no scripting and no save format. Other documents cite its rows by name, so the tables keep them: the `Lighting` row, the `NegateOperation` row and the Instance API table.
 
