@@ -14,4 +14,13 @@ public enum MemberValueKind : byte
 
     /// <summary>A position and a rotation.</summary>
     CFrame,
+
+    /// <summary>True or false.</summary>
+    Boolean,
+
+    /// <summary>A number.</summary>
+    Number,
+
+    /// <summary>A colour as a person picks one.</summary>
+    Color,
 }

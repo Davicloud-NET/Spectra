@@ -24,6 +24,17 @@ public sealed class ScriptWrites
         new(SettableMemberId.LocalPosition, "LocalPosition", MemberValueKind.Vector3),
         new(SettableMemberId.LocalCFrame, "LocalCFrame", MemberValueKind.CFrame),
         new(SettableMemberId.Name, "Name", MemberValueKind.Text),
+        new(SettableMemberId.Enabled, "Enabled", MemberValueKind.Boolean) { Classes = [NodeClass.Light] },
+        new(SettableMemberId.Brightness, "Brightness", MemberValueKind.Number) { Classes = [NodeClass.Light] },
+        new(SettableMemberId.Color, "Color", MemberValueKind.Color) { Classes = [NodeClass.Light] },
+        new(SettableMemberId.Range, "Range", MemberValueKind.Number)
+        {
+            Classes = ["PointLight", "SpotLight", "SurfaceLight", "DiscLight"],
+        },
+        new(SettableMemberId.CanCollide, "CanCollide", MemberValueKind.Boolean) { Classes = [NodeClass.BasePart] },
+        new(SettableMemberId.CanQuery, "CanQuery", MemberValueKind.Boolean) { Classes = [NodeClass.BasePart] },
+        new(SettableMemberId.CanTouch, "CanTouch", MemberValueKind.Boolean) { Classes = [NodeClass.BasePart] },
+        new(SettableMemberId.Visible, "Visible", MemberValueKind.Boolean) { Classes = [NodeClass.BasePart] },
     ];
 
     private static readonly byte[][] Utf8Names =
@@ -78,8 +89,24 @@ public sealed class ScriptWrites
             SettableMemberId.LocalPosition => MemberValue.Of(node.LocalPosition),
             SettableMemberId.LocalCFrame => MemberValue.Of(node.LocalCFrame),
             SettableMemberId.Name => MemberValue.Of(node.Name),
+            SettableMemberId.Enabled or SettableMemberId.Brightness or SettableMemberId.Color
+                or SettableMemberId.Range => LightMembers.Read(node, member),
+            SettableMemberId.CanCollide or SettableMemberId.CanQuery or SettableMemberId.CanTouch
+                or SettableMemberId.Visible => PartMembers.Read(node, member),
             _ => throw NoSuchMember(member),
         };
+    }
+
+    /// <summary>
+    /// Whether the node has the member: every node has a name, and only a
+    /// light has a brightness. <see cref="Read"/> gives no value for a member
+    /// the node does not have.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The id names no member.</exception>
+    public static bool Has(SceneNode node, SettableMemberId member)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        return Has(node, Describe(member));
     }
 
     /// <summary>
@@ -95,6 +122,12 @@ public sealed class ScriptWrites
         ArgumentNullException.ThrowIfNull(node);
 
         SettableMember described = Describe(member);
+        if (!Has(node, in described))
+        {
+            refusal = $"{described.Name} is not a valid member of {NodeClassName.Of(node)} \"{node.Name}\"";
+            return false;
+        }
+
         if (value.Kind != described.Kind)
         {
             refusal = WrongKind(described, MemberValue.TypeName(value.Kind));
@@ -116,12 +149,38 @@ public sealed class ScriptWrites
                 TryMove(node, node.LocalTransform with { Position = value.Vector }, out refusal),
             SettableMemberId.LocalCFrame => TryMove(node, LocalUnderParent(node, value.Frame), out refusal),
             SettableMemberId.Name => TryRename(node, value.Text, out refusal),
+            SettableMemberId.Enabled or SettableMemberId.Brightness or SettableMemberId.Color
+                or SettableMemberId.Range => TryWriteLight(node, member, in value, out refusal),
+            SettableMemberId.CanCollide or SettableMemberId.CanQuery or SettableMemberId.CanTouch
+                or SettableMemberId.Visible =>
+                PartMembers.TryWrite(_world.Journal, node, in described, value.Boolean, out refusal),
             _ => throw NoSuchMember(member),
         };
     }
 
     private static SettableMember Describe(SettableMemberId member) =>
         (uint)member < (uint)Members.Length ? Members[(int)member] : throw NoSuchMember(member);
+
+    // A member every node has is not asked for: a move is written every tick.
+    private static bool Has(SceneNode node, in SettableMember member) =>
+        ReferenceEquals(member.Classes, SettableMember.EveryNode) || Read(node, member.Id).Kind != MemberValueKind.None;
+
+    /// <summary>
+    /// The level these writes belong to, for what a script only reads of
+    /// it: the schema of an entity's class, a node by its id.
+    /// </summary>
+    public EntityWorld World => _world;
+
+    // Has has answered that the node is a light.
+    private bool TryWriteLight(
+        SceneNode node, SettableMemberId member, in MemberValue value, [NotNullWhen(false)] out string? refusal)
+    {
+        if (node.Light is { } light)
+            return LightMembers.TryWrite(_world.Journal, light, member, in value, out refusal);
+
+        refusal = $"{node.Name} is no light.";
+        return false;
+    }
 
     private static ArgumentOutOfRangeException NoSuchMember(SettableMemberId member) =>
         new(nameof(member), member, "This is no member a script can set.");
