@@ -82,7 +82,14 @@ internal static class ScriptPropertyReader
     {
         if (state.TakesObjectFirst)
         {
-            if (member is not IMethodSymbol { IsStatic: true, IsGenericMethod: false, ReturnsVoid: false, Parameters.Length: 1 } getter)
+            // The context may come in front of the object, as it may in a
+            // method written by hand: every read is written where there is one.
+            int contexts = member is IMethodSymbol { Parameters.Length: 2 } withContext
+                ? ScriptFunctionReader.ContextCountOf(withContext)
+                : 0;
+
+            if (member is not IMethodSymbol { IsStatic: true, IsGenericMethod: false, ReturnsVoid: false } getter
+                || getter.Parameters.Length != contexts + 1)
             {
                 state.Report(
                     ScriptApiDiagnostics.NoObjectParameter, LocationInfo.From(member), member.Name,
@@ -90,10 +97,12 @@ internal static class ScriptPropertyReader
                 return null;
             }
 
-            if (!state.IsSelf(getter.Parameters[0].Type, member))
+            if (!state.IsSelf(getter.Parameters[contexts].Type, member))
                 return null;
 
-            return ($"{state.FullTypeName}.{member.Name}({{0}})", getter.ReturnType, getter.Parameters[0].Name);
+            string handed = contexts == 0 ? "" : "context, ";
+            return (
+                $"{state.FullTypeName}.{member.Name}({handed}{{0}})", getter.ReturnType, getter.Parameters[contexts].Name);
         }
 
         string owner = member.IsStatic ? state.FullTypeName : state.HoldsObjects ? "{0}" : "this";
@@ -182,6 +191,8 @@ internal static class ScriptPropertyReader
             return "the door takes a string, a number, a boolean, a Vector3, a CFrame or a Color3";
         if (member is not IMethodSymbol { IsPartialDefinition: true, PartialImplementationPart: null })
             return "declare it as a partial method with no body. The generator writes the body, which reads the member from the door";
+        if (member is IMethodSymbol { Parameters.Length: not 1 })
+            return "the generator writes its body, which takes the node and nothing else, so it cannot take the context";
 
         return null;
     }

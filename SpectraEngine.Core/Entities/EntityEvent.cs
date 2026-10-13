@@ -46,4 +46,7 @@ internal struct EntityEvent
     // for what no script sent. Only a trace reads them.
     public string? SenderScript;
     public int SenderLine;
+
+    // Who touches, for a touch on its way to a listener: a TouchVisitor's id.
+    public int Visitor;
 }

@@ -79,7 +79,7 @@ internal static class ScriptArguments
     // no longer has. A reader of objects answers false for it, as for a number.
     private static bool HasLeft(LuauStack stack, int index) =>
         LuauHost.From(stack) is { } host
-        && host.Objects.TryGet(stack, index, ScriptTags.Object, out _) == LuauObjectLookup.Released;
+        && ScriptTags.TryGet(host.Objects, stack, index, out _) == LuauObjectLookup.Released;
 
     // What a script would call the kind of value at the index.
     public static string TypeName(LuauStack stack, int index) => stack.TypeOf(index) switch
@@ -104,7 +104,7 @@ internal static class ScriptArguments
     // message would read "Instance expected, got Instance".
     private static string ObjectName(LuauStack stack, int index) =>
         LuauHost.From(stack) is { } host
-        && host.Objects.TryGet(stack, index, ScriptTags.Object, out object? held) == LuauObjectLookup.Found
+        && ScriptTags.TryGet(host.Objects, stack, index, out object? held) == LuauObjectLookup.Found
         && held is ScriptObject other
             ? other.ClassName
             : "Instance";

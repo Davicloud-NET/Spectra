@@ -1,29 +1,44 @@
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The one metatable every managed object shares: a node, a service, a
-// signal, a connection. The members are in the generated glue of each
-// class. This finds the object. A name it does not have is an error, never
-// nil, and on a node it is the name of a child before it is that.
+// The metatable every managed object has: a node, a service, a signal, a
+// connection. The members are in the generated glue of each class. This
+// finds the object. A name it does not have is an error, never nil, and on a
+// node it is the name of a child before it is that.
 internal sealed class ObjectMembers
 {
     private readonly ScriptContext _context;
+    private readonly int _tag;
 
-    private ObjectMembers(ScriptContext context) => _context = context;
+    private ObjectMembers(ScriptContext context, int tag)
+    {
+        _context = context;
+        _tag = tag;
+    }
 
+    // One table for each tag, alike but for what typeof says: in Roblox a
+    // signal and a connection are no Instance.
     public static void Install(ScriptContext context)
     {
-        ObjectMembers members = new(context);
+        Install(context, ScriptTags.Object, "Instance");
+        Install(context, ScriptTags.Signal, LuauDefinitions.SignalType);
+        Install(context, ScriptTags.Connection, "RBXScriptConnection");
+    }
+
+    private static void Install(ScriptContext context, int tag, string typeName)
+    {
+        ObjectMembers members = new(context, tag);
 
         new ApiTable(context.Host)
             .Function("__index"u8, members.Index)
             .Function("__newindex"u8, members.NewIndex)
             .Function("__namecall"u8, members.NameCall)
             .Function("__tostring"u8, members.ToText)
-            .Value("__type"u8, "Instance")
+            .Value("__type"u8, typeName)
             .Value("__metatable"u8, "The metatable is locked")
-            .SetAsObjectMetatable(ScriptTags.Object);
+            .SetAsObjectMetatable(tag);
     }
 
     private int Index(LuauStack stack)
@@ -136,7 +151,7 @@ internal sealed class ObjectMembers
 
     // Null for an object that has left the level, and for what is no object.
     private object? TargetOf(LuauStack stack) =>
-        _context.Host.Objects.TryGet(stack, 1, ScriptTags.Object, out object? target) == LuauObjectLookup.Found
+        _context.Host.Objects.TryGet(stack, 1, _tag, out object? target) == LuauObjectLookup.Found
             ? target
             : null;
 

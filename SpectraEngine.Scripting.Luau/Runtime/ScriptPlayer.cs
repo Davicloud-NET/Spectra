@@ -24,4 +24,7 @@ internal sealed partial class ScriptPlayer : ScriptObject
     /// <summary>The player's body in the level. Nil while the player has none.</summary>
     [ScriptProperty]
     public ScriptCharacter? Character => _door.Player is null ? null : _character;
+
+    // The same object, whether or not a player walks the level right now.
+    public ScriptCharacter Body => _character;
 }

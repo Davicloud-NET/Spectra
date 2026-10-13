@@ -4,10 +4,11 @@ using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The signals the level's queue fires: the outputs of entities. There is one
-// for each node and output, so a script reads the same object every time. A
-// listener is kept twice: in the level's own table, which a fire reads, and
-// here under the number the queue hands back when the listener's turn comes.
+// The signals the level's queue fires: the outputs of entities, and the
+// touch of a part. There is one for each node and name, so a script reads
+// the same object every time. A listener is kept twice: in the level's own
+// table, which a fire reads, and here under the number the queue hands back
+// when the listener's turn comes.
 internal sealed class NodeSignals
 {
     // With fewer listeners than this none is looked over.
@@ -71,6 +72,10 @@ internal sealed class NodeSignals
         if (!_listeners.TryGetValue(listener, out ScriptConnection? connection) || !connection.IsConnected)
             return;
 
+        // An entity's own output of the name of a touch is no touch.
+        if (connection.Source is { IsTouch: true })
+            return;
+
         // The class fired what its schema does not say. No script's mistake,
         // so the warning names no line.
         if (!WireValues.Hand(connection, parameter, _world.Scene) && connection.Source?.TakeUnreadFire(parameter) is { } unread)
@@ -95,6 +100,34 @@ internal sealed class NodeSignals
 
         _dead.Clear();
         _lookOverAt = Math.Max(FirstLookOver, _listeners.Count * 2);
+    }
+
+    // The Touched or the TouchEnded of a part or a mesh: a name of
+    // TouchSignal. The level's touch pass fires it, and finds its listeners
+    // where it finds those of an output.
+    public ScriptSignal OfTouch(SceneNode node, string name)
+    {
+        var port = new Port(node.Id, name);
+        if (_signals.TryGetValue(port, out ScriptSignal? signal))
+            return signal;
+
+        var touch = new QueuedSignal(this, node, new EntityPort(name, ParameterType.None), isTouch: true);
+        signal = new ScriptSignal($"Signal {name}", _hub, touch);
+        _signals.Add(port, signal);
+        return signal;
+    }
+
+    // A touch that started or ended has come due for one listener, which is
+    // handed who touches. Null hands it nothing.
+    public void HearTouch(long listener, object? toucher)
+    {
+        if (!_listeners.TryGetValue(listener, out ScriptConnection? connection) || !connection.IsConnected)
+            return;
+
+        if (toucher is null)
+            connection.Run([]);
+        else
+            connection.Run([LuauValue.Object(ScriptTags.Object, toucher)]);
     }
 
     private readonly record struct Port(Guid Node, string Name);

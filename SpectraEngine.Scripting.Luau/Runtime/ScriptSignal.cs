@@ -90,6 +90,9 @@ internal sealed partial class ScriptSignal : ScriptObject
     [ScriptMethod(Returns = "T...")]
     private int Wait(LuauStack stack)
     {
+        if (_queued?.WhyNoListener() is { } refused)
+            return stack.Fail(refused);
+
         LuauThread thread = _hub.Host.ThreadOf(stack);
         if (!thread.IsAlive)
             return stack.Fail("this thread cannot wait for a signal");
@@ -113,12 +116,15 @@ internal sealed partial class ScriptSignal : ScriptObject
 
     private int Listen(LuauStack stack, string method, bool isOnce)
     {
+        // Before the function is kept: a signal nothing can listen to.
+        if (_queued?.WhyNoListener() is { } refused)
+            return stack.Fail(refused);
         if (_hub.Host.KeepFunction(stack, 2) is not { } function)
             return ScriptArguments.Wrong(stack, 2, method, "function", isMethod: true);
 
         ScriptConnection connection = Connect(function, isOnce);
         SayWhatWasMissed(stack);
-        return ScriptResult.Of(_hub.Host.Objects.Push(stack, ScriptTags.Object, connection));
+        return ScriptResult.Of(_hub.Host.Objects.Push(stack, ScriptTags.Connection, connection));
     }
 
     // An output that fired while the level spawned was heard by no script.

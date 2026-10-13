@@ -13,4 +13,7 @@ internal enum EntityEventKind : byte
     // A fired output on its way to one listener of a script. The runtime
     // knows the listener by its token.
     ScriptSignal = 3,
+
+    // A touch that started or ended, on its way to one listener of a script.
+    ScriptTouch = 4,
 }

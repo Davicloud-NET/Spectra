@@ -34,6 +34,15 @@ public interface IScriptRuntime
     /// <param name="parameter">What was sent with the fire, as a wire carries it. Empty for nothing.</param>
     void Hear(long listener, string parameter);
 
+    /// <summary>
+    /// A touch of a part has started or ended, and has come due for one
+    /// listener the runtime added to <see cref="EntityWorld.Listeners"/>
+    /// under a name of <see cref="TouchSignal"/>.
+    /// </summary>
+    /// <param name="listener">What the runtime named the listener by when it added it.</param>
+    /// <param name="visitor">Who touches. Its player is null when the player has left the level since.</param>
+    void HearTouch(long listener, in TouchVisitor visitor);
+
     /// <summary>The point of a tick before the physics step.</summary>
     void BeforeSimulation();
 

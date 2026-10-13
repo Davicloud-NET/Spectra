@@ -12,6 +12,9 @@ namespace SpectraEngine.Core.Entities;
 /// each one when a touch starts and when it ends. An entity senses with the
 /// part brushes it registered that have <see cref="SceneNode.CanTouch"/>,
 /// each tested as its real shape. What one tick finds is told in entity order.
+/// The same pass finds which parts and meshes with a listener under a name
+/// of <see cref="TouchSignal"/> the player touches, and queues a call for
+/// each listener after the entities have been told.
 /// </summary>
 // Runs from the visitor: one box query, then the brushes it returns. A level
 // full of triggers costs what the ones near the player cost.
@@ -43,15 +46,26 @@ public sealed class TouchTracker
     private readonly List<SceneNode> _candidates = [];
     private readonly List<Sensor> _near = [];
     private readonly List<TouchEvent> _events = [];
+    private readonly PartTouches _parts;
     private long _pass;
 
-    internal TouchTracker(EntityWorld world) => _world = world;
+    internal TouchTracker(EntityWorld world)
+    {
+        _world = world;
+        _parts = new PartTouches(world);
+    }
 
     /// <summary>How many entities are registered to sense.</summary>
     public int SensorCount => _sensors.Count;
 
-    /// <summary>How many touches are going on.</summary>
+    /// <summary>How many touches of sensing entities are going on.</summary>
     public int TouchCount => _touches.Count;
+
+    /// <summary>
+    /// How many parts and meshes the player touches that scripts listened to
+    /// when the touch began.
+    /// </summary>
+    public int PartTouchCount => _parts.Count;
 
     /// <summary>
     /// Makes <paramref name="entity"/> sense with <paramref name="brushes"/>.
@@ -125,7 +139,9 @@ public sealed class TouchTracker
     internal void Update()
     {
         _events.Clear();
-        if (_sensors.Count == 0)
+
+        // All a level pays that has no trigger and no listener for a touch.
+        if (_sensors.Count == 0 && !_parts.HasWork)
             return;
 
         IPlayerPresence? player = _world.Player;
@@ -133,8 +149,9 @@ public sealed class TouchTracker
 
         _pass++;
         _near.Clear();
+        _parts.BeginPass(player);
         if (player is { IsPresent: true })
-            MeasureNearSensors(player.Capsule);
+            MeasureWhatIsNear(player.Capsule);
 
         for (int i = 0; i < _touches.Count; i++)
         {
@@ -156,11 +173,15 @@ public sealed class TouchTracker
         }
 
         _near.Clear();
-        if (_events.Count == 0)
-            return;
+        if (_events.Count > 0)
+        {
+            SortEventsByEntityOrder();
+            FireEvents();
+        }
 
-        SortEventsByEntityOrder();
-        FireEvents();
+        // After the entities: what a trigger's own outputs send is queued
+        // ahead of what a script hears of the same touch.
+        _parts.EndPass(in visitor);
     }
 
     // A despawn. Its touches end first, so each start gets its end.
@@ -181,13 +202,15 @@ public sealed class TouchTracker
         _sensorByNode.Clear();
         _touches.Clear();
         _events.Clear();
+        _parts.Clear();
         _pass = 0;
     }
 
-    private void MeasureNearSensors(in CharacterCapsule capsule)
+    private void MeasureWhatIsNear(in CharacterCapsule capsule)
     {
-        // Grown by the margin, so a touch about to end is still measured.
-        var reach = new Vector3(capsule.Radius + ExitMargin);
+        // Grown by the margin, so a touch about to end is still measured,
+        // and by how far off a solid part is touched from.
+        var reach = new Vector3(capsule.Radius + ExitMargin + _parts.SolidReach);
         var box = new Aabb(
             Vector3.Min(capsule.Center1, capsule.Center2) - reach,
             Vector3.Max(capsule.Center1, capsule.Center2) + reach);
@@ -198,22 +221,24 @@ public sealed class TouchTracker
         for (int i = 0; i < _candidates.Count; i++)
         {
             SceneNode node = _candidates[i];
-            if (!node.CanTouch || node.Brush is not { } brush)
-                continue;
-            if (!_sensorByNode.TryGetValue(node.Id, out Sensor? sensor) || !sensor.IsSensing)
+            if (!node.CanTouch)
                 continue;
 
-            // A brush node's transform is rigid, so a distance measured in
-            // the brush's frame is a world distance.
-            if (!Matrix4x4.Invert(node.WorldMatrix, out Matrix4x4 toLocal))
+            // An entity senses with a brush. A script also listens to a mesh.
+            Sensor? sensor = null;
+            if (node.Brush is not null && _sensorByNode.TryGetValue(node.Id, out Sensor? registered) && registered.IsSensing)
+                sensor = registered;
+
+            bool isWatched = _parts.Watches(node);
+            if (sensor is null && !isWatched)
+                continue;
+            if (!TouchMeasure.TryDistance(node, in capsule, out float distance))
                 continue;
 
-            var local = new CharacterCapsule(
-                Vector3.Transform(capsule.Center1, toLocal),
-                Vector3.Transform(capsule.Center2, toLocal),
-                capsule.Radius);
-            float distance = CapsuleGeometry.Distance(
-                in local, brush.LocalPlaneSpan, brush.LocalFaceSpan, out _, out _);
+            if (isWatched)
+                _parts.Measured(node, distance);
+            if (sensor is null)
+                continue;
 
             if (sensor.Pass != _pass)
             {

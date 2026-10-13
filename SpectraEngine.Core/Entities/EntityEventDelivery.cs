@@ -46,6 +46,14 @@ internal sealed class EntityEventDelivery
             return;
         }
 
+        if (due.Kind == EntityEventKind.ScriptTouch)
+        {
+            // The player as it is now. It may have left since the touch.
+            IPlayerPresence? player = due.Visitor == TouchVisitor.PlayerId ? _world.Player : null;
+            _world.Scripts?.HearTouch(due.Token, new TouchVisitor(due.Visitor, player));
+            return;
+        }
+
         var context = new EntityInputContext(due.Activator, due.Entity, due.Parameter);
 
         if (due.Target is { } instance)

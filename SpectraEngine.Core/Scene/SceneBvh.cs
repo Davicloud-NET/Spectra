@@ -233,7 +233,7 @@ internal sealed class SceneBvh
         return has ? result : new Aabb(world.Translation, world.Translation);
     }
 
-    private static Aabb MeshLocalBounds(Mesh mesh) =>
+    internal static Aabb MeshLocalBounds(Mesh mesh) =>
         mesh.HasLocalBounds || mesh.Positions.Count > 0 ? mesh.LocalBounds : UnitFallbackBox;
 
     private int AllocateNode()

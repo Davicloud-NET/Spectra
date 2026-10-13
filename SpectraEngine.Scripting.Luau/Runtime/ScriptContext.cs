@@ -43,18 +43,22 @@ internal sealed class ScriptContext
     // sets it once the signals behind it are made. Null until then.
     public EntityMembers? Entities { get; set; }
 
+    // The signals the level's queue fires, where a part's Touched is made.
+    // The runtime sets it with Entities.
+    public NodeSignals? Signals { get; set; }
+
     // The level, for what a script only reads of it. A change of a node
     // goes through the writes below and no other way.
     public EntityWorld World => _writes.World;
 
     // Nil for null. False: an error value is on top instead.
     public bool PushObject(LuauStack stack, object? value) =>
-        value is null ? stack.PushNil() : Host.Objects.Push(stack, ScriptTags.Object, value);
+        value is null ? stack.PushNil() : Host.Objects.Push(stack, ScriptTags.Of(value), value);
 
     public bool TryGetObject<T>(LuauStack stack, int index, [NotNullWhen(true)] out T? value)
         where T : class
     {
-        value = Host.Objects.TryGet(stack, index, ScriptTags.Object, out object? target) == LuauObjectLookup.Found
+        value = ScriptTags.TryGet(Host.Objects, stack, index, out object? target) == LuauObjectLookup.Found
             ? target as T
             : null;
         return value is not null;

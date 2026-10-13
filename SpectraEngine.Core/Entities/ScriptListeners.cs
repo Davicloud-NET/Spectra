@@ -28,6 +28,12 @@ public sealed class ScriptListeners
     public int Count { get; private set; }
 
     /// <summary>
+    /// How many of them listen for a touch of a part to start or to end,
+    /// under one of the names of <see cref="TouchSignal"/>.
+    /// </summary>
+    public int TouchListenerCount { get; private set; }
+
+    /// <summary>
     /// Adds a listener to what <paramref name="node"/> fires under
     /// <paramref name="name"/>. Listeners of one name are called in the order
     /// they were added.
@@ -47,6 +53,8 @@ public sealed class ScriptListeners
 
         listeners.Add(listener);
         Count++;
+        if (TouchSignal.IsOne(name))
+            TouchListenerCount++;
     }
 
     /// <summary>
@@ -62,6 +70,9 @@ public sealed class ScriptListeners
             return false;
 
         Count--;
+        if (TouchSignal.IsOne(name))
+            TouchListenerCount--;
+
         return true;
     }
 
@@ -92,14 +103,18 @@ public sealed class ScriptListeners
 
     // The list itself. Queueing an event runs no script, so it holds still
     // while a fire walks it.
-    internal List<long>? Find(SceneNode node, string name) =>
-        Count > 0 && _byPort.TryGetValue(new Port(node.Id, name), out List<long>? listeners) ? listeners : null;
+    internal List<long>? Find(SceneNode node, string name) => Find(node.Id, name);
+
+    // By the node's id, for a node that may have left the scene since.
+    internal List<long>? Find(Guid node, string name) =>
+        Count > 0 && _byPort.TryGetValue(new Port(node, name), out List<long>? listeners) ? listeners : null;
 
     internal void Clear()
     {
         _byPort.Clear();
         _missed.Clear();
         Count = 0;
+        TouchListenerCount = 0;
     }
 
     private readonly record struct Port(Guid Node, string Name);

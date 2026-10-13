@@ -23,6 +23,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     private readonly ScriptStarter _starter;
     private readonly ChildWaits _childWaits;
     private readonly NodeSignals _signals;
+    private readonly ScriptCharacter _character;
     private volatile bool _isClosed;
 
     /// <summary>Opens a Luau state and gives it everything a script of this level can reach.</summary>
@@ -61,12 +62,14 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             _runService = new RunService(new SignalHub(_host, _waiting));
             SceneNode workspace = _world.Scene.Root;
             var players = new Players(new PlayerWrites(_world));
+            _character = players.Body;
             new LevelGlobals(new DataModel(_host, workspace, _runService, players), workspace).ScriptInstall(context);
             new ModuleLoader(_host, setup.Source, _sink, _waiting).ScriptInstall(context);
 
             // No library: an entity class is data, and its members are found by name.
             _signals = new NodeSignals(new SignalHub(_host, _waiting), _world);
             context.Entities = new EntityMembers(_host, _world, _signals);
+            context.Signals = _signals;
 
             _host.Seal();
             _starter = new ScriptStarter(_host, setup.Source, _sink);
@@ -178,6 +181,24 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         try
         {
             _signals.Hear(listener, parameter);
+        }
+        catch (Exception e) // boundary: nothing of a script may throw into the tick
+        {
+            ReportFault(e);
+        }
+    }
+
+    /// <inheritdoc/>
+    // The player's touch hands the listener the one character the level's
+    // scripts have, so a script can hold it against the one it knows.
+    public void HearTouch(long listener, in TouchVisitor visitor)
+    {
+        if (_isClosed)
+            return;
+
+        try
+        {
+            _signals.HearTouch(listener, visitor.Id == TouchVisitor.PlayerId ? _character : null);
         }
         catch (Exception e) // boundary: nothing of a script may throw into the tick
         {

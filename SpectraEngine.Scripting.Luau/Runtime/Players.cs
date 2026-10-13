@@ -23,4 +23,8 @@ internal sealed partial class Players : ScriptObject
     // level has started.
     [ScriptProperty]
     public ScriptPlayer? LocalPlayer => _door.Player is null ? null : _player;
+
+    // The one character, for what hands it to a script without being asked
+    // for it, as a touch does.
+    public ScriptCharacter Body => _player.Body;
 }

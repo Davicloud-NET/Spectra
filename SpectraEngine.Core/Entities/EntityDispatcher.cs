@@ -168,6 +168,14 @@ internal sealed class EntityDispatcher
             TryPush(_scripts, ScriptEvents.Signal(_world.TickNumber, _sequence++, source, output, parameter, listeners[i]));
     }
 
+    // The same for a touch of a part that started or ended. It is numbered
+    // on from whatever the touch pass has fired before it.
+    public void QueueTouch(string part, string signal, int visitor, List<long> listeners)
+    {
+        for (int i = 0; i < listeners.Count; i++)
+            TryPush(_scripts, ScriptEvents.Touch(_world.TickNumber, _sequence++, part, signal, visitor, listeners[i]));
+    }
+
     // Sends what is due, the earlier of the two lanes' next events first. A
     // lane that has used up its share stops for this drain, and the other
     // goes on.

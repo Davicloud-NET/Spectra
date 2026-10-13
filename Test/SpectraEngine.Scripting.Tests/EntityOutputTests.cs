@@ -138,7 +138,7 @@ public sealed class EntityOutputTests
         string here = level.Scene.ScriptNodes[0].Script.ShouldNotBeNull().Path;
         level.Printed.ShouldBe(
         [
-            "Signal OnPing Instance",
+            "Signal OnPing RBXScriptSignal",
             "true true",
             "false false",
             $"{here}:6: attempt to call a RBXScriptSignal value",

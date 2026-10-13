@@ -103,6 +103,7 @@ internal sealed class EntityDispatchLog
         EntityEventKind.Think => "a think",
         EntityEventKind.ScriptWake => "the wake of a waiting thread",
         EntityEventKind.ScriptSignal => $"a listener's call for output '{made.Output}'",
+        EntityEventKind.ScriptTouch => $"a listener's call for '{made.Output}'",
         _ when made.Output.Length > 0 => $"output '{made.Output}' sending '{made.Input}'",
         _ => $"input '{made.Input}'",
     };

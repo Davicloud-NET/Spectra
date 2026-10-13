@@ -101,7 +101,7 @@ internal static class ScriptFunctionReader
 
     // One when the method takes the ScriptContext first, as one written by
     // hand may, to reach what the level keeps for its scripts.
-    private static int ContextCountOf(IMethodSymbol method) =>
+    internal static int ContextCountOf(IMethodSymbol method) =>
         method.Parameters.Length > 0
         && method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == ScriptNames.Context
             ? 1

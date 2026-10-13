@@ -28,6 +28,8 @@ internal sealed class FakePlayerPresence : IPlayerPresence, ITunedPlayer
             CharacterState state = CharacterState.AtFeet(Feet);
             state.Velocity = Velocity;
             state.Yaw = Yaw;
+            state.Grounded = StandsOn != default;
+            state.GroundNodeId = StandsOn;
             return state;
         }
     }
@@ -48,4 +50,7 @@ internal sealed class FakePlayerPresence : IPlayerPresence, ITunedPlayer
     public void Respawn() => Respawns++;
 
     public void SetVelocity(Vector3 velocity) => Velocity = velocity;
+
+    // The part a mover would say the player stands on. None unless a test sets it.
+    public Guid StandsOn { get; set; }
 }
