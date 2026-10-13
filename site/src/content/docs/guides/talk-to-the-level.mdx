@@ -114,7 +114,7 @@ end)
 
 `func_door` and `func_button` are the classes of the two entities: the names on their cards in the Logic view, and the headings of the reference pages. `::` tells the checker that a node is of a class. `--!strict` on the first line makes it check everything.
 
-Now make a slip. Change `Open` to `Opn` and save:
+Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop. Now make a slip: change `Open` to `Opn` and save.
 
 ```luau
 --!strict
@@ -146,7 +146,7 @@ Roblox calls this deferred, and is moving to it.
 
 ## Hear what an entity does
 
-An output is a signal, so a script can hear a door as well as open it. Put this in the door's file:
+An output is a signal, so a script can hear a door as well as open it. Stop, and put this in the door's file:
 
 ```luau
 -- Says what the door does, and how fast it was built to do it.
@@ -180,7 +180,7 @@ Scripts start on the level's first tick. What fired while the level was starting
 
 Some outputs send a value. A counter's `OutValue` sends its number, and a script gets it as a number.
 
-Build the counter again as it was under [With a counter](#with-a-counter), without the wire to the door. Then press Script with nothing selected, which makes a script for the whole level, and write:
+Stop. Build the counter again as it was under [With a counter](#with-a-counter), without the wire to the door. Then press Script with nothing selected, which makes a script for the whole level, and write:
 
 ```luau
 -- Hears the counter count, and opens the door a second after it is full.
@@ -197,7 +197,7 @@ counter.OnHitMax:Connect(function()
 end)
 ```
 
-The first press prints `pressed 1 of 3 times, 2 to go`. The button's wire still feeds the counter, the script hears the counter, and a second after the third press the door opens.
+Press Play and press the button three times. The first press prints `pressed 1 of 3 times, 2 to go`. The button's wire still feeds the counter, the script hears the counter, and a second after the third press the door opens.
 
 What a value is to a script goes by what the reference pages say the output sends:
 
@@ -217,7 +217,7 @@ A light is a node, and a script sets what a light has: `Enabled`, `Brightness`, 
 
 <Steps>
 
-1. Press Light on the Build tab and move the light near the door.
+1. Stop. Press Light on the Build tab and move the light near the door.
 
 2. With the light selected, press Script, and write:
 
@@ -261,7 +261,7 @@ ent 412 fire Door.OnOpen wires=0
 
 The player's use key sent the button `Use`. The button fired `OnPressed`, which has no wire and one function connected. That function, at line 10 of `Door.luau`, sent the door `Open`. The number after `ent` is the tick. [Console](/reference/console/#watch-lines) explains every word of a line.
 
-The Logic view draws the same while the level plays. Press <kbd>Ctrl</kbd> + <kbd>L</kbd> and then Play: the script gets a card of its own, with a dashed wire from `OnPressed` to it and, once it has sent the input, a dashed wire from it to the door's `Open`. Each lights up when it carries something. [See and wire a level's logic](/guides/see-and-wire-a-levels-logic/#scripts) has the rest.
+The Logic view draws the same while the level plays. Open it with <kbd>Ctrl</kbd> + <kbd>L</kbd>: the script has a card of its own, with a dashed wire from `OnPressed` to it and, once it has sent the input, a dashed wire from it to the door's `Open`. Each lights up when it carries something. [See and wire a level's logic](/guides/see-and-wire-a-levels-logic/#scripts) has the rest.
 
 ## What differs from Roblox
 

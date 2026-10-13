@@ -111,6 +111,12 @@ The console can print every output that fires and every input that arrives while
 
 The console also lists a level's entities, shows one entity's wires and state, and sends an input by hand. See [Console](/reference/console/).
 
+## From a script
+
+A script reaches the same inputs and outputs. An input is a method, `door:Open()`, and an output is a signal, `button.OnPressed:Connect(...)`. What a script sends and hears shows in the Logic view and in `ent_watch` beside the wires.
+
+[Open a door three ways](/guides/talk-to-the-level/) builds one door with a wire, with a counter and with a script, and says when to use which.
+
 ## Classes the engine doesn't know
 
 If a level uses a class this build doesn't have, the entity is kept exactly as written, settings and wires included. It does nothing when you play, and the editor marks it.

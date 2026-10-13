@@ -382,7 +382,9 @@ Every line is `ent`, the tick, a verb, and what happened. Ticks count from 0, wh
 
 `miss`, `deny` and `drop` are warnings.
 
-The sender is written `name.Output`. An input from `ent_fire` has the sender `console`. One the engine sent itself, such as the player's use key, has the sender `game`.
+The sender is written `name.Output`. An input from `ent_fire` has the sender `console`. One the engine sent itself, such as the player's use key, has the sender `game`. One a script sent has the script's file and line as its sender: `Scripts/Door.luau:10`.
+
+A `fire` line also counts the functions scripts have connected to the output, as `listeners=`, when there are any.
 
 `by=` names the activator, and is left out when the activator is the sender. A parameter follows its input in brackets: `Add("5")`. A name is put in quotes when it is empty or holds a space, a dot or a quote.
 

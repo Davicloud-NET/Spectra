@@ -10,7 +10,7 @@ There are no downloads yet, so the way in is a clone.
 - Windows 10 or 11
 - The [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - Git
-- CMake and Visual Studio with the C++ workload, for the physics library
+- CMake and Visual Studio with the C++ workload, for the physics library and for Luau
 
 ## Get the code
 
@@ -19,7 +19,7 @@ git clone --recursive https://github.com/Davicloud-NET/Spectra.git
 cd Spectra
 ```
 
-If you cloned without `--recursive`, fetch the physics source afterwards:
+If you cloned without `--recursive`, fetch the source of the physics library and of Luau afterwards:
 
 ```bash
 git submodule update --init --recursive
@@ -27,11 +27,14 @@ git submodule update --init --recursive
 
 ## Build
 
-Physics comes from Box3D, which is native code. Build it once:
+Physics comes from Box3D and scripts run in Luau. Both are native code. Build each once:
 
 ```powershell
 native/build-box3d.ps1
+native/build-luau.ps1
 ```
+
+Without the second one everything still builds and runs. A level then plays without its scripts, and says so once.
 
 Then build everything else:
 

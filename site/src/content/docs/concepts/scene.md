@@ -22,6 +22,7 @@ A node with nothing on it is a group. It turns into something by carrying one of
 | A mesh | A model from a file, such as a prop. |
 | A light | A sun, a point light, a spot light or an area light. |
 | An entity | Logic that runs while you play. See [Entities and wiring](/concepts/entities-and-wiring/). |
+| A script | A Luau file that runs while you play. See [Write your first script](/guides/write-your-first-script/). |
 
 The scene tree in the editor shows the kind next to each name.
 

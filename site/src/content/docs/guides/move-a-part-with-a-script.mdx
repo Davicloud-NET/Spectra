@@ -54,6 +54,8 @@ RunService.Heartbeat:Connect(function(step)
 end)
 ```
 
+Save and press Play. The part turns once round in the time it takes to slide up and down. Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop.
+
 `CFrame` works as it does in Roblox. `CFrame.new(place)` is a frame at that place with no turn, `CFrame.Angles` takes radians, and `a * b` is `b` as seen from `a`.
 
 ## The world and the parent
@@ -95,7 +97,7 @@ So to move a group of things, put them under one node and move that node. There 
 
 ## Wait between moves
 
-A script does not need `Heartbeat` to move something. It can wait. Put this in the first part's file:
+A script does not need `Heartbeat` to move something. It can wait. Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop, and put this in the first part's file:
 
 ```luau
 -- Rides the part up three units and down again, with a second of rest at each end.
@@ -118,7 +120,7 @@ while true do
 end
 ```
 
-The part takes two seconds to ride up, rests for one, rides down and rests again.
+Press Play. The part takes two seconds to ride up, rests for one, rides down and rests again.
 
 `task.wait()` waits for the next tick. `task.wait(1)` waits 60 ticks. A wait is always a whole number of ticks, rounded up: `task.wait(0.04)` waits 3 ticks, which is 0.05 seconds. It returns the seconds that passed.
 
@@ -126,7 +128,7 @@ The part takes two seconds to ride up, rests for one, rides down and rests again
 
 ## A loop with no wait
 
-Leave the wait out and the loop never lets the level go on:
+Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop. Now leave the wait out, and the loop never lets the level go on:
 
 ```luau
 -- A loop with no wait in it.
@@ -147,7 +149,7 @@ Put the sliding script on a block and it fails. Output has this line once for ev
 
 `Block cannot be moved: a world brush sits at or below it, and only parts can move while a level plays. Convert the brush to a part.`
 
-A world brush is a block: it is merged into the level's geometry and cannot move while the level plays. Stop, select the block and press Convert in the Arrange group of the Build tab, or <kbd>Ctrl</kbd> + <kbd>T</kbd>. [Blocks, parts and cuts](/concepts/blocks-parts-and-cuts/) says what changes.
+A world brush is a block: it is merged into the level's geometry and cannot move while the level plays. To make it a part, select it while the level is stopped and press Convert in the Arrange group of the Build tab, or <kbd>Ctrl</kbd> + <kbd>T</kbd>. [Blocks, parts and cuts](/concepts/blocks-parts-and-cuts/) says what changes.
 
 ## What Stop puts back
 

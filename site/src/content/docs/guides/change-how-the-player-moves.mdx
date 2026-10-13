@@ -49,11 +49,11 @@ The files are in the engine's repository, not in a new project. Copy two of them
 
 Output says `The player moves by a mover in Luau`, and the player walks as before. Every step is now made by `walk.luau`.
 
-`character:SetMover` takes a function. From then on the level calls it once a tick in place of the built-in mover. `character:SetMover(nil)` puts the built-in mover back, and so does Stop.
+`character:SetMover` takes a function. From then on the level calls it once a tick in place of the built-in mover. `character:SetMover(nil)` puts the built-in mover back, and Stop does too.
 
 ## A second jump
 
-In the level script, change the path `./movers/walk` to `./movers/double_jump`, save and press Play. Jump, and press <kbd>Space</kbd> again in the air.
+Stop. In the level script, change the path `./movers/walk` to `./movers/double_jump`, save and press Play. Jump, and press <kbd>Space</kbd> again in the air.
 
 This is all of `double_jump.luau`:
 
@@ -114,7 +114,7 @@ The [script reference](/reference/script/) lists every member of the four: `Char
 
 ## Write your own
 
-A mover of your own can start as small as the double jump. This one is the walk under a third of the gravity. Make the file `Assets/Scripts/movers/moon.luau`:
+A mover of your own can start as small as the double jump. This one is the walk under a third of the gravity. Stop, and make the file `Assets/Scripts/movers/moon.luau`:
 
 ```luau
 --!strict
@@ -150,7 +150,7 @@ For a change that is not an addition, edit `walk.luau` itself. It is yours once 
 
 ## When a mover fails
 
-Make a slip in `moon.luau`. Change `tuning.Gravity` to `tuning.Gravty` and save.
+Stop, and make a slip in `moon.luau`: change `tuning.Gravity` to `tuning.Gravty` and save.
 
 Visual Studio Code puts a red line under the name at once. Press Play all the same, and jump.
 
@@ -158,7 +158,7 @@ The jump is an ordinary one. Output has one line in red:
 
 `The mover failed: Gravty is not a valid member of CharacterTuning "CharacterTuning". The built-in mover took over.`
 
-At its right end is `moon.luau:16`. Click the line to go there.
+At its right end is `moon.luau:16`. Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop. Click the line, and Visual Studio Code comes up at that line.
 
 A mover that fails is taken out on that tick. The built-in mover moves the player on the same tick and for the rest of the level, so the player never stands frozen because of a mistake. Put the name right and press Play again.
 
