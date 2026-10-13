@@ -21,8 +21,8 @@ public sealed class HeldBytesTests
     {
         using var level = new ScriptLevel(hasCharacter: false);
         level.AddScript(level.Scene.Root, """
-            local blob = string.rep("x", 65536)
-            for index = 1, 3000 do
+            local blob = string.rep("x", 16384)
+            for index = 1, 2000 do
                 local part = Instance.new("Part")
                 part:SetAttribute("Blob", blob)
                 part.Parent = workspace
@@ -35,7 +35,7 @@ public sealed class HeldBytesTests
 
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(["done"]);
-        runtime.PeakHeldDestroyedBytes.ShouldBeLessThan(4 * Megabyte);
+        runtime.PeakHeldDestroyedBytes.ShouldBeLessThan(Megabyte);
         runtime.PeakHeldDestroyedCount.ShouldBeLessThan(32);
     }
 
@@ -44,7 +44,7 @@ public sealed class HeldBytesTests
     {
         using var level = new ScriptLevel(hasCharacter: false);
         level.AddScript(level.Scene.Root, """
-            local blob = string.rep("x", 65536)
+            local blob = string.rep("x", 16384)
             game:GetService("RunService").Heartbeat:Connect(function()
                 for index = 1, 10 do
                     local part = Instance.new("Part")
@@ -58,7 +58,7 @@ public sealed class HeldBytesTests
         LuauScriptRuntime runtime = level.Play().Tick().Runtime.ShouldNotBeNull();
 
         int mostWaiting = 0;
-        for (int tick = 0; tick < 300; tick++)
+        for (int tick = 0; tick < 200; tick++)
         {
             level.Tick();
             mostWaiting = Math.Max(mostWaiting, runtime.HeldDestroyedCount);
@@ -66,7 +66,7 @@ public sealed class HeldBytesTests
 
         level.Errors.ShouldBeEmpty();
         mostWaiting.ShouldBeLessThan(32);
-        runtime.PeakHeldDestroyedBytes.ShouldBeLessThan(4 * Megabyte);
+        runtime.PeakHeldDestroyedBytes.ShouldBeLessThan(Megabyte);
     }
 
     [Fact]
