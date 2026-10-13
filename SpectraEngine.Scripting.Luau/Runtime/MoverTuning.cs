@@ -85,7 +85,11 @@ internal sealed partial class MoverTuning : ScriptObject
     [ScriptProperty]
     public float GroundSuppressTicks => Tuning.GroundSuppressTicks;
 
-    /// <summary>The Y of the normal of the steepest ground the player can stand on.</summary>
+    /// <summary>The steepest ground the player can stand on, in degrees off level.</summary>
+    [ScriptProperty]
+    public float MaxSlopeAngle => Tuning.MaxSlopeAngleDegrees;
+
+    /// <summary>The Y of the normal of the steepest ground the player can stand on, which is the cosine of MaxSlopeAngle.</summary>
     [ScriptProperty]
     public float MinGroundNormalY => Tuning.MinGroundNormalY;
 
