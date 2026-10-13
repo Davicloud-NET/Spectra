@@ -11,16 +11,17 @@ using SpectraEngine.Scripting.Luau.Runtime;
 namespace SpectraEngine.Scripting.CrashCases;
 
 // A level that plays with a mover in Luau. Every tick it sweeps, slides and
-// is refused a wrong write: an error raised out of a host function inside a
-// thread the host resumes. Then it goes wrong in one of the ways a mover
-// can, and the built-in mover takes over. Every line runs the collector.
+// is refused a wrong write, raised out of a host function in a thread the
+// host resumes. Then it goes wrong in one of a mover's ways, or the level is
+// closed from another thread under its call. Every line runs the collector.
 internal static class MoverCase
 {
     private const int Ticks = 240;
     private const int FailsAt = 120;
 
     // How the mover goes wrong, and how the one line about it has to begin.
-    private static readonly (string Way, string Said)[] _ways =
+    // No line for the close: nobody is told of a level that stopped.
+    private static readonly (string Way, string? Said)[] _ways =
     [
         ("error('no legs')", "The mover failed: no legs."),
         ("state.Velocity = Vector3.new(0 / 0, 0, 0)", "The mover failed: Velocity cannot be (NaN, 0, 0)"),
@@ -29,6 +30,7 @@ internal static class MoverCase
         ("coroutine.yield()", "The mover waited"),
         ("return state", "The mover returned a value"),
         ("while true do end", "The mover was stopped: the script ran for more than"),
+        ("print('close')", null),
     ];
 
     internal static int Run()
@@ -37,7 +39,7 @@ internal static class MoverCase
 
         for (int round = 0; round < _ways.Length * 2; round++)
         {
-            (string way, string said) = _ways[round % _ways.Length];
+            (string way, string? said) = _ways[round % _ways.Length];
             string? failure = Play(way, said) ?? Stress.FindDamage(canaries);
             if (failure is not null)
             {
@@ -53,8 +55,9 @@ internal static class MoverCase
     }
 
     // Null when the mover moved the player until it went wrong, one line
-    // said so, and the built-in mover walked the player on.
-    private static string? Play(string way, string said)
+    // said so or the level was closed, and the built-in mover walked the
+    // player on.
+    private static string? Play(string way, string? said)
     {
         Scene scene = new();
         Box(scene, "Floor", new Vector3(0f, -0.5f, 0f), new Vector3(30f, 0.5f, 8f)).BrushKind = BrushKind.Part;
@@ -68,10 +71,12 @@ internal static class MoverCase
             CallLimit = TimeSpan.FromMilliseconds(100),
         };
         world.Scripts = runtime;
+        sink.Runtime = runtime;
 
         var walker = new CharacterSimulation(scene) { SpawnPosition = new Vector3(0f, 0.05f, 0f) };
         var forward = new CharacterCommand { MoveForward = CharacterCommand.Axis(1f) };
         float failedAt = 0f;
+        bool wasClosed = false;
         try
         {
             world.Activate();
@@ -84,7 +89,10 @@ internal static class MoverCase
                 walker.Tick(in forward, world.FixedDeltaTime);
                 runtime.AfterSimulation();
                 if (tick == FailsAt)
+                {
                     failedAt = walker.State.Position.X;
+                    wasClosed = runtime.IsClosed;
+                }
             }
 
             world.Deactivate();
@@ -94,17 +102,40 @@ internal static class MoverCase
             runtime.Close();
         }
 
-        return Judge(sink, walker, said, failedAt);
+        string? told = said is null ? JudgeClose(sink, wasClosed) : JudgeLine(sink, said);
+        return told ?? JudgeWalk(walker, failedAt);
     }
 
-    private static string? Judge(Heard sink, CharacterSimulation walker, string said, float failedAt)
+    private static string? JudgeLine(Heard sink, string said)
     {
         if (sink.Errors.Count != 1)
             return $"{sink.Errors.Count} errors were reported: {string.Join(" | ", sink.Errors)}";
         if (!sink.Errors[0].StartsWith(said, StringComparison.Ordinal) || !sink.Errors[0].EndsWith(LuauCharacterMover.TookOver, StringComparison.Ordinal))
             return $"the one error said '{sink.Errors[0]}'";
-        if (sink.Refused != FailsAt - 1)
-            return $"the mover was refused a wrong write {sink.Refused} times before it went wrong";
+
+        return sink.Refused == FailsAt - 1
+            ? null
+            : $"the mover was refused a wrong write {sink.Refused} times before it went wrong";
+    }
+
+    // The call the close came in went on to its end, the state went with it,
+    // and nobody was told anything.
+    private static string? JudgeClose(Heard sink, bool wasClosed)
+    {
+        if (sink.Errors.Count != 0)
+            return $"{sink.Errors.Count} errors were reported of a level that closed: {string.Join(" | ", sink.Errors)}";
+        if (!sink.OutlivedTheClose)
+            return "the state was gone before the mover's call had returned";
+        if (!wasClosed)
+            return "the state was still there after the mover's call had returned";
+
+        return sink.Refused == FailsAt
+            ? null
+            : $"the mover was refused a wrong write {sink.Refused} times, and it ran {FailsAt} times";
+    }
+
+    private static string? JudgeWalk(CharacterSimulation walker, float failedAt)
+    {
         if (!ReferenceEquals(walker.Mover, DefaultCharacterMover.Instance))
             return "the built-in mover is not back after the level stopped";
 
@@ -186,11 +217,18 @@ internal static class MoverCase
     }
 
     // Keeps what the host reports, and runs the collector on every line.
+    // A line that says close has the level's runtime closed by another
+    // thread, as the editor does after its engine thread died.
     private sealed class Heard : IScriptSink
     {
         public List<string> Errors { get; } = [];
 
         public int Refused { get; private set; }
+
+        public LuauScriptRuntime? Runtime { get; set; }
+
+        // Whether the state was still there when the close came back.
+        public bool OutlivedTheClose { get; private set; }
 
         public void Report(in ScriptMessage message)
         {
@@ -199,6 +237,16 @@ internal static class MoverCase
                 Errors.Add(message.Text);
             else if (message.Text.StartsWith("refused ", StringComparison.Ordinal))
                 Refused++;
+            else if (message.Text == "close" && Runtime is { } runtime)
+                OutlivedTheClose = CloseFromAnotherThread(runtime);
+        }
+
+        private static bool CloseFromAnotherThread(LuauScriptRuntime runtime)
+        {
+            Thread closer = new(runtime.Close);
+            closer.Start();
+            closer.Join();
+            return !runtime.IsClosed;
         }
     }
 }
