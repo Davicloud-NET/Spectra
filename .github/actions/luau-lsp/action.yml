@@ -1,0 +1,51 @@
+# The luau-lsp program, for the tests that check the script API's definitions
+# file with it (the trait Suite=LuauLsp). It is no part of the build, so it
+# is fetched: one release, by its version, held to a hash that is written here.
+#
+# To move to another release, change the version and both hashes. The hashes
+# are those of the two zip files on the release's page.
+
+name: luau-lsp
+description: Fetches the pinned luau-lsp release and names the program in SPECTRA_LUAU_LSP.
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch luau-lsp and check its hash
+      shell: pwsh
+      run: |
+        $version = '1.70.1'
+        if ($IsWindows) {
+          $file = 'luau-lsp-win64.zip'
+          $hash = '64225b9738102a30de6ee09fb28e5a3827edc402ecf2a6364af570312468159f'
+          $name = 'luau-lsp.exe'
+        } else {
+          $file = 'luau-lsp-linux-x86_64.zip'
+          $hash = '1a2ea1ae4f98f8946cefd970a4b54853e11ab4775e6932faa7f60cf920346567'
+          $name = 'luau-lsp'
+        }
+
+        $folder = Join-Path $env:RUNNER_TEMP 'luau-lsp'
+        New-Item -ItemType Directory -Force -Path $folder | Out-Null
+        $zip = Join-Path $folder $file
+        Invoke-WebRequest -Uri "https://github.com/JohnnyMorganz/luau-lsp/releases/download/$version/$file" -OutFile $zip
+
+        # Before anything of it is unpacked or run.
+        $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLowerInvariant()
+        if ($actual -ne $hash) {
+          Write-Host "::error title=luau-lsp hash::$file of release $version has the sha256 $actual. This action expects $hash."
+          exit 1
+        }
+
+        Expand-Archive -Path $zip -DestinationPath $folder -Force
+        $program = Join-Path $folder $name
+        if (-not (Test-Path $program)) {
+          Write-Host "::error title=luau-lsp layout::$file of release $version holds no $name."
+          exit 1
+        }
+
+        # A zip unpacked this way has no executable bit.
+        if (-not $IsWindows) { chmod +x $program }
+
+        "SPECTRA_LUAU_LSP=$program" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        Write-Host "luau-lsp $version is at $program."

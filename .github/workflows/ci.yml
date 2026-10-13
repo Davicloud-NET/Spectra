@@ -100,6 +100,11 @@ jobs:
             'What did not: every test that steps a real Box3D world.'
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
+      # Sets SPECTRA_LUAU_LSP for the steps below. The tests that check the
+      # definitions file with luau-lsp skip without it.
+      - name: Fetch luau-lsp
+        uses: ./.github/actions/luau-lsp
+
       # A skip fails the step: without the library this suite passes empty.
       # The crash cases are left out. They need the published console, and the
       # AOT job runs them.
@@ -110,6 +115,13 @@ jobs:
         timeout-minutes: 15
         shell: pwsh
         run: .github/run-unskipped.ps1 -Project Test/SpectraEngine.Scripting.Tests -Filter '-trait-', 'Suite=CrashCases'
+
+      # They ran in the step above too. Here a filter that selects none of
+      # them fails, which is what a renamed trait looks like.
+      - name: SpectraEngine.Scripting.Tests, the ones that need luau-lsp
+        timeout-minutes: 5
+        shell: pwsh
+        run: .github/run-unskipped.ps1 -Project Test/SpectraEngine.Scripting.Tests -Filter '-trait', 'Suite=LuauLsp'
 
       # The GL suite needs a real driver. Probe by running one class of the suite,
       # which creates the same GL 3.3 context the full run needs. Don't probe the
@@ -230,11 +242,21 @@ jobs:
       - name: SpectraEngine.Physics.Tests
         run: dotnet run --project Test/SpectraEngine.Physics.Tests
 
+      # As on Windows: it sets SPECTRA_LUAU_LSP for the steps below.
+      - name: Fetch luau-lsp
+        uses: ./.github/actions/luau-lsp
+
       # As on Windows: a skip fails the step, and the AOT job runs the crash cases.
       - name: SpectraEngine.Scripting.Tests
         timeout-minutes: 15
         shell: pwsh
         run: .github/run-unskipped.ps1 -Project Test/SpectraEngine.Scripting.Tests -Filter '-trait-', 'Suite=CrashCases'
+
+      # As on Windows: the tests that run luau-lsp, by their trait.
+      - name: SpectraEngine.Scripting.Tests, the ones that need luau-lsp
+        timeout-minutes: 5
+        shell: pwsh
+        run: .github/run-unskipped.ps1 -Project Test/SpectraEngine.Scripting.Tests -Filter '-trait', 'Suite=LuauLsp'
 
       # Also runs on Windows. The second host catches a text asset checking out
       # CRLF on one runner and LF on the other, which changes pack hashes.
