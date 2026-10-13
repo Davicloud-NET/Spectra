@@ -101,7 +101,9 @@ Press Play, and each script that hears an output or has sent an input gets a sma
 - The label names the line of code, such as `DoorController, line 42`. A module has no card. Its code counts for the script that asked for it, and the label names the module's file.
 - A dashed wire lights up when it carries something. The strip under the graph lists it with its line.
 
-A connection that ends takes its wire away, and Stop takes them all away. Dashed wires are made by code and last only while the level runs.
+A connection that ends takes its wire away, and Stop takes them all away. A script that was switched off, for an endless loop or for the memory it held, leaves with every wire it had. Dashed wires are made by code and last only while the level runs.
+
+Around the selection, a script costs no step. When `Main` hears a zone and opens a door, the zone is one step from the door, as if a wire ran between them.
 
 Double-click a script's card to open its file. The Scripts key in the toolbar hides everything in this section.
 
@@ -109,5 +111,5 @@ Double-click a script's card to open its file. The Scripts key in the toolbar hi
 
 - The view lays the cards out itself. You cannot move a card.
 - A level with many crossing wires is hard to read as a whole. Work around the selection there.
-- The view shows the first 4,000 entities of a level and says so when there are more.
+- The view shows the first 4,000 entities of a level and says so when there are more. The same goes for the first 2,000 wires made by scripts.
 - What a script will connect is not known before the level runs. An input a script sent before the view was opened shows once the script sends it again.
