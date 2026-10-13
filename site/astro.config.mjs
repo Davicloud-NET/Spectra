@@ -40,6 +40,7 @@ export default defineConfig({
 						{ label: "See and wire a level's logic", slug: 'guides/see-and-wire-a-levels-logic' },
 						{ label: 'Cook and run a project', slug: 'guides/cook-and-run-a-project' },
 						{ label: 'Captions and subtitles', slug: 'guides/captions' },
+						{ label: 'Write your first script', slug: 'guides/write-your-first-script' },
 					],
 				},
 				{

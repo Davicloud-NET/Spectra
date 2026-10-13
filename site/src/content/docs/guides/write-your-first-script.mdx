@@ -1,0 +1,144 @@
+---
+title: Write your first script
+description: Put a script on a part, read what it prints, make the part spin and find a mistake.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+A script is a Luau file that runs while a level plays. If you have written scripts in Roblox Studio, most of what you know works here: `script.Parent`, `game:GetService`, `workspace`, `task.wait`. The few things that differ on the first day are [at the end](#what-differs-from-roblox).
+
+Start with a project open in the editor and a level in it: File, New level. A script's file is made in the project's `Assets` folder, so a level that was opened with no project cannot get one.
+
+## Put a script on a part
+
+<Steps>
+
+1. Insert a part. Press Part on the Build tab of the ribbon, or <kbd>Ctrl</kbd> + <kbd>2</kbd>. It has to be a part and not a block: only a part can move while a level plays. [Blocks, parts and cuts](/concepts/blocks-parts-and-cuts/) says why.
+
+2. With the part selected, press Script in the Insert group of the Build tab. Insert script in the Object menu does the same, and so does a right-click on the part in the scene tree.
+
+   A node called `Script` appears under the part in the scene tree. The status bar says where its file was made:
+
+   ```text
+   Added a script to 'Part' and made its file, Assets/Scripts/Part.luau.
+   ```
+
+3. Read the file. It opens in your code editor by itself, and this is all that is in it:
+
+   ```luau
+   -- This script runs when the level starts playing.
+   -- script.Parent is the node it sits under.
+
+   print("Hello world!")
+   ```
+
+</Steps>
+
+The script in the level is a node that names a file. The file is `Assets/Scripts/Part.luau` in your project's folder, named after the part. It is an ordinary text file, so it works with git and you can write it in any editor.
+
+The File row in the Properties panel shows which file the script names. The Open button beside it opens the file again. So does a double-click on the script in the scene tree, or on the file in the Content panel.
+
+With nothing selected, Script makes a script for the whole level. Its `script.Parent` is the level's root.
+
+## Set up Visual Studio Code
+
+The editor has no code editor of its own. It opens a script in [Visual Studio Code](https://code.visualstudio.com/) when that is installed, with your project's folder as the window. Without it the file opens in the program your system has for `.luau` files, and with none of those its folder is shown.
+
+The first time a script of a project opens, the editor writes four small files into the project's folder, beside `Assets`. The Output panel says so.
+
+| File | What it is for |
+|---|---|
+| `spectra.d.luau` | Everything a script can reach in this engine, with its types. It is the engine's file: don't edit it. It is written again when the engine's script API is not the one it holds. |
+| `.luaurc` | Says that `@assets` in a `require` is the `Assets` folder. |
+| `.vscode/settings.json` | Points the Luau extension at `spectra.d.luau`, and tells it the folder is no Roblox place. |
+| `.vscode/extensions.json` | Makes Visual Studio Code offer the Luau extension. |
+
+The last three are yours once they exist. The editor never writes over them.
+
+<Steps>
+
+1. Visual Studio Code asks whether to install the extension the folder recommends, Luau Language Server. Say yes. If it does not ask, open the Extensions view and look for `JohnnyMorganz.luau-lsp`.
+
+2. Type `script.` on a new line of the file. A list comes up with what a node has: `Parent`, `Name`, `Position`, `CFrame`.
+
+</Steps>
+
+If the project had a `.vscode/settings.json` of its own, the editor left it alone, and the extension still takes the folder for a Roblox place. Add these three settings to your file:
+
+```json
+{
+  "luau-lsp.platform.type": "standard",
+  "luau-lsp.types.definitionFiles": {
+    "@spectra": "spectra.d.luau"
+  },
+  "luau-lsp.sourcemap.enabled": false
+}
+```
+
+## Play
+
+<Steps>
+
+1. Open the Output panel: View, Panels, Output.
+
+2. Press Play, or <kbd>F8</kbd>. The level starts and the script runs.
+
+3. Read the Output panel. It has the line the script printed, `Hello world!`, and at the right end of the line where it came from: `Part.luau:4`.
+
+4. Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop.
+
+</Steps>
+
+## Make the part spin
+
+Replace the text of the file with this, and save it:
+
+```luau
+-- Turns the part this script sits under.
+local RunService = game:GetService("RunService")
+local part = script.Parent
+
+RunService.Heartbeat:Connect(function(step)
+	part.CFrame = part.CFrame * CFrame.Angles(0, step, 0)
+end)
+```
+
+Press Play. The part turns, once round in a little over six seconds.
+
+`script.Parent` is the part. `Heartbeat` fires 60 times a second while the level plays, and `step` is how long one of those is, in seconds. So the part turns by one radian a second.
+
+## Find a mistake
+
+Break the script. Change the name in quotes to `RunServise` and save:
+
+```luau
+-- Turns the part this script sits under.
+local RunService = game:GetService("RunServise")
+local part = script.Parent
+
+RunService.Heartbeat:Connect(function(step)
+	part.CFrame = part.CFrame * CFrame.Angles(0, step, 0)
+end)
+```
+
+Visual Studio Code puts a red line under the name at once. Press Play all the same.
+
+The part stands still. The Output panel has a line in red, `'RunServise' is not a valid Service name`, and at its right end `Part.luau:2`.
+
+Click the line. Visual Studio Code comes up with the caret on line 2 of `Part.luau`. Put the name right, save, and press Play again.
+
+A mistake stops the script it is in. The level plays on, and so do its other scripts.
+
+## Stop puts everything back
+
+Press <kbd>F8</kbd> or <kbd>Esc</kbd>. The part is back the way you built it, however far it had turned.
+
+That holds for everything a script does to the level while it plays: where a node is, what it is called, how fast the player walks. So a script cannot spoil the level you are working on, and you never have to undo a play.
+
+Stop before you save. The editor does not save a level while it plays.
+
+## What differs from Roblox
+
+- `Heartbeat` and `Stepped` fire on the level's tick: 60 times a second, each time with the same `step`. A frame can have no tick in it, or one, or several. In Roblox they fire once a frame and the step changes from frame to frame.
+- `Position` and `CFrame` are where a node is in the world, as in Roblox. But a node here moves with the node above it. Turn the part, and whatever you put under it turns too. `LocalPosition` and `LocalCFrame` say where a node is under its parent.
+- A script's file is read when you press Play. Save a change while the level plays and nothing happens until you stop and play again.

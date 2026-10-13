@@ -71,6 +71,8 @@ A script is a `.luau` file under `Assets`, like any other asset. The editor puts
 
 A project made with an older build has a `Scripts` folder beside `Assets`. Nothing reads that folder and nothing removes it. Move its files under `Assets` to use them.
 
+The first time you open a script from the editor, four more files appear beside `Assets`: `spectra.d.luau`, `.luaurc` and two in `.vscode`. They set Visual Studio Code up for the project's scripts, and no level needs them. [Write your first script](/guides/write-your-first-script/#set-up-visual-studio-code) says what each one is for.
+
 ## Build output
 
 `cooked` holds what [the cook](/guides/cook-and-run-a-project/) produces. It is made from the files beside it, so don't edit it and don't check it in. A new project comes with a `.gitignore` that leaves it out.
