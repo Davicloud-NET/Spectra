@@ -79,6 +79,9 @@ internal static class ScriptClassEmitter
                 {
                     ScriptValueKind.Text => "WriteText",
                     ScriptValueKind.Vector3 => "WriteVector",
+                    ScriptValueKind.Boolean => "WriteBoolean",
+                    ScriptValueKind.Number => "WriteNumber",
+                    ScriptValueKind.Color3 => "WriteColor",
                     _ => "WriteFrame",
                 };
                 w.Line($"case {Atom(property.LuauName)}:");
@@ -172,13 +175,18 @@ internal static class ScriptClassEmitter
         {
             ScriptValueKind.Text => "Text",
             ScriptValueKind.Vector3 => "Vector",
+            ScriptValueKind.Boolean => "Boolean",
+            ScriptValueKind.Number => "Number",
+            ScriptValueKind.Color3 => "Color",
             _ => "Frame",
         };
 
+        // The door holds a number as a double. The property may be a float.
+        string cast = property.Type.Kind == ScriptValueKind.Number ? $"({property.Type.ClrType})" : "";
         w.Line($"{property.Access} static partial {property.Type.ClrType} {property.MemberName}({self.ClrType} {property.SelfName}) =>");
         w.Indent();
         w.Line(
-            $"{ScriptNames.Core}.ScriptWrites.Read({property.SelfName}, " +
+            $"{cast}{ScriptNames.Core}.ScriptWrites.Read({property.SelfName}, " +
             $"{ScriptNames.Core}.SettableMemberId.{property.Sets}).{held};");
         w.Outdent();
         w.Line();

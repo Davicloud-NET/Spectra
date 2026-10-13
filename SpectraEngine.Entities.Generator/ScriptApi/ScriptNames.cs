@@ -24,6 +24,7 @@ internal static class ScriptNames
     public const string ApiTable = Runtime + ".ApiTable";
     public const string MethodTable = Runtime + ".MethodTable";
     public const string FrameValue = Runtime + ".FrameValue";
+    public const string ColorValue = Runtime + ".ColorValue";
     public const string Bases = Runtime + ".ScriptBases";
 
     public const string Raise = Stack + ".Raise";

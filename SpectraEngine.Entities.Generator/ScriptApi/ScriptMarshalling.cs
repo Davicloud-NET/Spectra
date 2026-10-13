@@ -71,6 +71,7 @@ internal static class ScriptMarshalling
         {
             ScriptValueKind.Number => $"stack.Push((double){(type.IsNullable ? pushed : $"({value})")})",
             ScriptValueKind.CFrame => $"{ScriptNames.FrameValue}.Push(stack, {(type.IsNullable ? pushed : value)})",
+            ScriptValueKind.Color3 => $"{ScriptNames.ColorValue}.Push(stack, {(type.IsNullable ? pushed : value)})",
             ScriptValueKind.Object => $"context.PushObject(stack, {value})",
             _ => $"stack.Push({(type.IsNullable ? pushed : value)})",
         };
@@ -112,6 +113,7 @@ internal static class ScriptMarshalling
         ScriptValueKind.Utf8 => $"{ScriptNames.Arguments}.TryUtf8(stack, {index}, out {type.ClrType} {local})",
         ScriptValueKind.Vector3 => $"{ScriptNames.Arguments}.TryVector(stack, {index}, out {type.ClrType} {local})",
         ScriptValueKind.CFrame => $"{ScriptNames.Arguments}.TryFrame(stack, {index}, out {type.ClrType} {local})",
+        ScriptValueKind.Color3 => $"{ScriptNames.Arguments}.TryColor(stack, {index}, out {type.ClrType} {local})",
         _ => $"context.TryGetObject(stack, {index}, out {type.ClrType}? {local})",
     };
 

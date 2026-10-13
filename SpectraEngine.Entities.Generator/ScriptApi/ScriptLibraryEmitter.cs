@@ -41,6 +41,7 @@ internal static class ScriptLibraryEmitter
             string put = constant.Type.Kind switch
             {
                 ScriptValueKind.CFrame => $".Frame({ScriptNames.Utf8(constant.LuauName)}, {read})",
+                ScriptValueKind.Color3 => $".Color({ScriptNames.Utf8(constant.LuauName)}, {read})",
                 ScriptValueKind.Number => $".Value({ScriptNames.Utf8(constant.LuauName)}, (double)({read}))",
                 _ => $".Value({ScriptNames.Utf8(constant.LuauName)}, {read})",
             };

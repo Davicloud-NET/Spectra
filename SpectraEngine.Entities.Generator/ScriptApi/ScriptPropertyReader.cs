@@ -143,7 +143,7 @@ internal static class ScriptPropertyReader
         else if (isByHand)
             why = null;
         else if (state.Kind == ScriptContainerKind.Library && type.Kind == ScriptValueKind.Object)
-            why = "a constant of a library is a number, a boolean, a string, a Vector3 or a CFrame";
+            why = "a constant of a library is a number, a boolean, a string, a Vector3, a CFrame or a Color3";
         else if (state.Kind == ScriptContainerKind.Globals && type.Kind != ScriptValueKind.Object)
             why = "a global value is an object. A constant belongs in a library";
 
@@ -178,13 +178,17 @@ internal static class ScriptPropertyReader
             return "Sets names no member of SettableMemberId";
         if (state.Kind != ScriptContainerKind.Class || state.Self?.ClrType != ScriptTypeMap.SceneNode)
             return "the door only sets a member of a node, so the class must be one whose members take a SceneNode";
-        if (type.IsNullable || type.Kind is not (ScriptValueKind.Text or ScriptValueKind.Vector3 or ScriptValueKind.CFrame))
-            return "the door takes a string, a Vector3 or a CFrame";
+        if (type.IsNullable || !IsTakenByTheDoor(type.Kind))
+            return "the door takes a string, a number, a boolean, a Vector3, a CFrame or a Color3";
         if (member is not IMethodSymbol { IsPartialDefinition: true, PartialImplementationPart: null })
             return "declare it as a partial method with no body. The generator writes the body, which reads the member from the door";
 
         return null;
     }
+
+    private static bool IsTakenByTheDoor(ScriptValueKind kind) =>
+        kind is ScriptValueKind.Text or ScriptValueKind.Number or ScriptValueKind.Boolean
+            or ScriptValueKind.Vector3 or ScriptValueKind.CFrame or ScriptValueKind.Color3;
 
     // A property of an object that is no node is set by a method of the
     // object, which takes the value and says why when it refuses it.
@@ -196,7 +200,7 @@ internal static class ScriptPropertyReader
         if (state.Kind != ScriptContainerKind.Class || state.TakesObjectFirst)
             return "SetBy is for a class whose members are its own: one with [ScriptClass] that is not static. A member of a node is set through Sets";
         if (type.IsNullable || type.Kind is ScriptValueKind.Utf8 or ScriptValueKind.Object)
-            return "SetBy takes a number, a boolean, a string, a Vector3 or a CFrame";
+            return "SetBy takes a number, a boolean, a string, a Vector3, a CFrame or a Color3";
 
         foreach (ISymbol candidate in state.Type.GetMembers(setBy))
         {

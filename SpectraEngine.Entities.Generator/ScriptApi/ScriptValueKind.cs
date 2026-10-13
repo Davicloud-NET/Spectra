@@ -12,6 +12,7 @@ internal enum ScriptValueKind : byte
 
     Vector3,
     CFrame,
+    Color3,
 
     // A node, or an object of a class with [ScriptClass].
     Object,

@@ -78,6 +78,9 @@ internal static class ScriptApiHarness
                 public int WriteText(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
                 public int WriteVector(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
                 public int WriteFrame(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
+                public int WriteBoolean(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
+                public int WriteNumber(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
+                public int WriteColor(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
             }
 
             internal static class ScriptArguments
@@ -88,6 +91,7 @@ internal static class ScriptApiHarness
                 public static bool TryUtf8(LuauStack stack, int index, out ReadOnlySpan<byte> value) { value = default; return true; }
                 public static bool TryVector(LuauStack stack, int index, out Vector3 value) { value = default; return true; }
                 public static bool TryFrame(LuauStack stack, int index, out CFrame value) { value = default; return true; }
+                public static bool TryColor(LuauStack stack, int index, out Color3 value) { value = default; return true; }
                 public static int Wrong(LuauStack stack, int index, string function, string expected, bool isMethod = false) => -1;
                 public static int NoSelf(LuauStack stack, string method) => -1;
                 public static int WrongValue(LuauStack stack, string property, string expected) => -1;
@@ -96,6 +100,11 @@ internal static class ScriptApiHarness
             internal static class FrameValue
             {
                 public static bool Push(LuauStack stack, CFrame value) => true;
+            }
+
+            internal static class ColorValue
+            {
+                public static bool Push(LuauStack stack, Color3 value) => true;
             }
 
             internal readonly ref struct ApiTable
@@ -107,6 +116,7 @@ internal static class ScriptApiHarness
                 public ApiTable Value(ReadOnlySpan<byte> name, string value) => this;
                 public ApiTable Value(ReadOnlySpan<byte> name, Vector3 value) => this;
                 public ApiTable Frame(ReadOnlySpan<byte> name, CFrame value) => this;
+                public ApiTable Color(ReadOnlySpan<byte> name, Color3 value) => this;
                 public void SetAsGlobal(ReadOnlySpan<byte> name) { }
                 public MethodTable KeepAsMethods() => new();
             }

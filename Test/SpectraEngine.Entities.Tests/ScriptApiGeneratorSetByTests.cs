@@ -160,7 +160,7 @@ public sealed class ScriptApiGeneratorSetByTests
 
         run.DiagnosticIds.ShouldBe(["SPS009"]);
         run.Diagnostics.Single().GetMessage().ShouldContain(
-            "SetBy takes a number, a boolean, a string, a Vector3 or a CFrame");
+            "SetBy takes a number, a boolean, a string, a Vector3, a CFrame or a Color3");
     }
 
     [Fact]

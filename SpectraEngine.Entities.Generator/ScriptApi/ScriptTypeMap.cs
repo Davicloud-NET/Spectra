@@ -12,6 +12,7 @@ internal static class ScriptTypeMap
 
     private const string Vector3 = "global::System.Numerics.Vector3";
     private const string CFrame = "global::SpectraEngine.Core.Scene.CFrame";
+    private const string Color3 = "global::SpectraEngine.Core.Scene.Color3";
     private const string Utf8 = "global::System.ReadOnlySpan<byte>";
 
     // Null for a type no script value is made from.
@@ -37,6 +38,7 @@ internal static class ScriptTypeMap
             {
                 Vector3 => (ScriptValueKind.Vector3, "Vector3"),
                 CFrame => (ScriptValueKind.CFrame, "CFrame"),
+                Color3 => (ScriptValueKind.Color3, "Color3"),
                 Utf8 => (ScriptValueKind.Utf8, "string"),
                 SceneNode => (ScriptValueKind.Object, "Instance"),
                 _ => ClassNameOf(type) is { } name ? (ScriptValueKind.Object, name) : null,
