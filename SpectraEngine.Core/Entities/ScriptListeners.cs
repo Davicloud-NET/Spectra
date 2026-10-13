@@ -9,7 +9,9 @@ namespace SpectraEngine.Core.Entities;
 /// The functions scripts have connected to what a level's nodes fire, by node
 /// and by name. The script runtime adds and removes them. A fired output
 /// queues one event for each, and the runtime gets the listener back through
-/// <see cref="IScriptRuntime.Hear"/> when that event comes due. Render thread only.
+/// <see cref="IScriptRuntime.Hear"/> when that event comes due. A touch of a
+/// part does the same under a name of <see cref="TouchSignal"/>, and comes
+/// back through <see cref="IScriptRuntime.HearTouch"/>. Render thread only.
 /// </summary>
 public sealed class ScriptListeners
 {

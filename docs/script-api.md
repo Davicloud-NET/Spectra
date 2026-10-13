@@ -41,6 +41,17 @@ A signal, on the property that gives it. The text says what a listener is handed
 public ScriptSignal Heartbeat { get; }
 ```
 
+A property or a signal of a static class may take the `ScriptContext` in front of the object. A static class has no fields, and the context is where it finds what the level keeps, such as the one signal object a part has for a touch:
+
+```csharp
+/// <summary>Fires once when the player starts to touch the part.</summary>
+[ScriptSignal("character: Character")]
+public static ScriptSignal Touched(ScriptContext context, SceneNode node) =>
+    Touch(context, node, TouchSignal.Touched);
+```
+
+A property a script can set cannot: the generator writes its body, and that takes the node alone.
+
 A function of a library, and a constant of one:
 
 ```csharp
@@ -128,7 +139,7 @@ The door takes a string, a number, a boolean, a `Vector3`, a `CFrame` or a `Colo
 
 A member not every node has says so in its row: `Classes` names the script classes that have it, as `Range` names the four lights with a range. `Read` then gives no value for a node of another class, and the property is declared on each class the row names. The class is the one `NodeClass.KindOf` gives, so a part that carries a light has the members of a part and none of a light. A write the node cannot take is refused in the door, with words that say what to do: a switch of a world brush says to convert the brush to a part. A write of the value the member already has records nothing.
 
-What is changed in place has to be seen by whoever draws or simulates it. A light raises no signal: the renderer reads every light again on each frame. The mover, the touch tracker and a ray read a part's switches when they run. The touch tracker reads `CanTouch` only on a brush an entity senses with.
+What is changed in place has to be seen by whoever draws or simulates it. A light raises no signal: the renderer reads every light again on each frame. The mover, the touch tracker and a ray read a part's switches when they run. The touch tracker reads `CanTouch` on a brush an entity senses with, and on a part or a mesh a script listens to.
 
 A write a script can make every tick must not build anything each time. A part that is not drawn holds no GPU mesh, so a write of `Visible` first tells the scene to keep the part's mesh (`Scene.KeepMeshWhileHidden`), and the journal lets go of it at Stop. A part that blinks then builds its mesh once.
 
@@ -231,6 +242,36 @@ A listener ends with `Disconnect` and with the level. One whose script was switc
 
 The type checker cannot know a level. `workspace.Door` is an `Instance` to it, and a script says what it is with a cast, as above.
 
+## The touch of a part
+
+`Touched` and `TouchEnded` are signals of `BasePart`, declared like any other. The level's queue fires them, as it fires an output:
+
+```lua
+local lava = workspace.Lava :: Part
+
+lava.Touched:Connect(function(character)
+    character:Respawn()
+end)
+```
+
+A listener sits in `EntityWorld.Listeners` under the node and one of the two names of `TouchSignal`. The touch pass (`TouchTracker`, with `PartTouches` for what scripts listen to) looks there once a tick:
+
+- Only the player touches. The listener is handed the character, the same object `Players.LocalPlayer.Character` gives.
+- A level where no script listens for a touch pays one check a tick. Otherwise the pass asks the scene for what is near the player and measures only a node that has a listener, or a touch that has yet to end.
+- A solid part is touched from where the mover stops the player, which is two of its skins away, and the part the mover says the player stands on is touched whatever the gap. A part with `CanCollide` off is touched by overlap, as a trigger is. A mesh has no shape of its own yet and is touched by overlap with the box around it.
+- A touch starts once and ends once, when the player is clear by `TouchTracker.ExitMargin`, when `CanTouch` goes off, when the node leaves the scene or when the player leaves the level. Stop tells nobody.
+- A part first listened to with the player on it is touched on the next tick. A touch outlives its listeners: one that comes while it goes on hears no second start, so a thread that calls `Touched:Wait()` in a loop is resumed once for a touch.
+- A trigger entity is told first, as before, and fires its own outputs then. What a script hears of the same touch is queued after them. Among parts, ends go before starts, each in the order the parts were first listened to.
+- A world brush cannot tell what touches it. The fused world is hulls that name no node, in an authored level and in a baked one, so `Connect`, `Once` and `Wait` on its signal are an error that says to convert the brush to a part (`TouchSignal.WhyNone`).
+
+A touch is no entity's output, so a trace is told nothing of it yet.
+
+## What typeof says
+
+`typeof` reads its answer off a userdata's metatable, and a userdata tag has one metatable. So a signal and a connection each have a tag of their own (`ScriptTags`), with the metatable every object has but for its `__type`: `RBXScriptSignal` and `RBXScriptConnection`, as in Roblox. Every other object is an `Instance`. `ScriptContext.PushObject` picks the tag by the object's type, and a reader that takes any object tries all three (`ScriptTags.TryGet`).
+
+`StudioAnswerTests` holds what Roblox Studio answered where the engine used to answer otherwise. A test there names the answer it states.
+
 ## What is generated
 
 For a class or a value, in the other half of the declaring class:
@@ -260,6 +301,7 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `PlayerSettingTests` sets every settable property of the character from a script and compares what outlives a play session after Stop. It also tries every name on the player's objects: what takes a value must be what the description says a script can set.
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global, and that it has no `require`.
 - `ScriptSampleTests` fails when no clean sample script names a class or uses a global. See [Checked by luau-lsp](#checked-by-luau-lsp).
+- `TouchCostTests` fails when a tick with parts listened to allocates. Its table of times runs when asked for, like the one below.
 - `ScriptCostTests` fails when a crossing allocates. A new kind of crossing gets a row there. Its table of times is a measurement, which runs only when asked for: `dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.ScriptCostTests"`.
 - The generator's own tests are in `Test/SpectraEngine.Entities.Tests` (`ScriptApiGenerator*`). They compile its output against stubs of the binding in `ScriptApiHarness`. When the generator calls something new in the binding, the stub gets it too.
 - `EntityClassApiTests` holds the built-in entity classes against the script API: no input or output may be named as a member of the node that carries it, and each has to be in the definitions file.
