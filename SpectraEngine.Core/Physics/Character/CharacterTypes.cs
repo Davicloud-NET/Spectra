@@ -135,6 +135,29 @@ public readonly record struct CharacterCommand
     /// <summary>Normalised strafe axis in −1..1.</summary>
     public float StrafeAxis => MoveStrafe / 127f;
 
+    /// <summary>
+    /// The way the command asks to move, in world space: level, and of
+    /// length one, or zero with both axes at rest.
+    /// </summary>
+    // Yaw only. Looking up or down must not change walk speed.
+    public Vector3 MoveDirection
+    {
+        get
+        {
+            float cos = MathF.Cos(Yaw);
+            float sin = MathF.Sin(Yaw);
+            var forward = new Vector3(cos, 0f, sin);
+            var right = new Vector3(-sin, 0f, cos);
+
+            Vector3 wish = forward * ForwardAxis + right * StrafeAxis;
+            float length = wish.Length();
+            if (length > 1f)
+                return wish / length;
+
+            return length > 1e-4f ? Vector3.Normalize(wish) : wish;
+        }
+    }
+
     public static sbyte Axis(float value) =>
         (sbyte)Math.Clamp((int)MathF.Round(value * 127f), -127, 127);
 }
@@ -192,6 +215,9 @@ public struct CharacterState
     /// touched, wherever the rest of the tick carried the character.
     /// </summary>
     public CharacterSlideContacts SlideContacts;
+
+    /// <summary>What a replaced mover keeps between ticks. The built-in mover leaves it alone.</summary>
+    public CharacterMoverMemory Memory;
 
     public static CharacterState AtFeet(Vector3 feet) => new()
     {

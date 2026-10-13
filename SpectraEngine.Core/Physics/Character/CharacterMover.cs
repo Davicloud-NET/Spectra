@@ -47,18 +47,7 @@ public static class CharacterMover
 
         source.BeginTick(TickVolume(in state, tuning, dt), in filter);
 
-        // Yaw only. Looking up or down must not change walk speed.
-        float cos = MathF.Cos(command.Yaw);
-        float sin = MathF.Sin(command.Yaw);
-        var forward = new Vector3(cos, 0f, sin);
-        var right = new Vector3(-sin, 0f, cos);
-
-        Vector3 wish = forward * command.ForwardAxis + right * command.StrafeAxis;
-        float wishLength = wish.Length();
-        if (wishLength > 1f)
-            wish /= wishLength;
-        else if (wishLength > 1e-4f)
-            wish = Vector3.Normalize(wish);
+        Vector3 wish = command.MoveDirection;
 
         if (state.Grounded && wish != Vector3.Zero)
         {
@@ -367,8 +356,8 @@ public static class CharacterMover
             state.Velocity -= groundNormal * into;
     }
 
-    // Covers travel, step up and snap down.
-    private static Aabb TickVolume(in CharacterState state, CharacterTuning tuning, float dt)
+    /// <summary>The volume one tick can reach: travel, step up and snap down.</summary>
+    public static Aabb TickVolume(in CharacterState state, CharacterTuning tuning, float dt)
     {
         CharacterCapsule capsule = CapsuleAt(in state, tuning);
         Vector3 travel = state.Velocity * dt;

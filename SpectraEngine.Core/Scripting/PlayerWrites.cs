@@ -137,6 +137,28 @@ public sealed class PlayerWrites
         return true;
     }
 
+    /// <summary>
+    /// Puts a mover in the place of the one that moves the player, or the
+    /// built-in one for null. Stop puts back the mover the level started with.
+    /// </summary>
+    /// <param name="refusal">Why the mover was not taken, as the script's error says it.</param>
+    /// <returns>False when the mover was refused. The player moves as it did then.</returns>
+    public bool TrySetMover(ICharacterMover? mover, [NotNullWhen(false)] out string? refusal)
+    {
+        if (!TryFindPlayer(out IPlayerPresence? player, out refusal))
+            return false;
+
+        if (player is not IMovedPlayer moved)
+        {
+            refusal = "How this player moves cannot be replaced.";
+            return false;
+        }
+
+        _world.Journal.Record(moved, MoverJournalKind.Mover);
+        moved.Mover = mover ?? DefaultCharacterMover.Instance;
+        return true;
+    }
+
     // A place inside solid is taken, as a trigger that teleports takes it.
     // The mover pushes the player out through the nearest face, and a script
     // that puts the player on a point in the floor relies on that.
