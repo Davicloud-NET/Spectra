@@ -1,7 +1,8 @@
 namespace SpectraEngine.Core.Entities;
 
-// The two events a script puts on the queue beside the wake of a thread: an
-// input it sends, and a fired output on its way to one listener.
+// The events a script puts on the queue beside the wake of a thread: an
+// input it sends, a fired output on its way to one listener, and a call of
+// one listener of a signal a script set off.
 internal static class ScriptEvents
 {
     // For one entity and due at once, as door:Open() is.
@@ -49,4 +50,17 @@ internal static class ScriptEvents
             Parameter = "",
             Output = signal,
         };
+
+    // Due at once. The signal's name is only for a log line.
+    public static EntityEvent Call(long tick, long sequence, string signal, long token) => new()
+    {
+        Tick = tick,
+        Sequence = sequence,
+        Kind = EntityEventKind.ScriptCall,
+        Token = token,
+        TargetName = "",
+        Input = "",
+        Parameter = "",
+        Output = signal,
+    };
 }

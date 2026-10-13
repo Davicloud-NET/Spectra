@@ -15,10 +15,13 @@ public interface IScriptRuntime
     /// </summary>
     void StartScripts();
 
-    /// <summary>A wake queued with <see cref="EntityWorld.QueueScriptWake"/> has come due.</summary>
+    /// <summary>
+    /// A wake queued with <see cref="EntityWorld.QueueScriptWake"/> has come due, or a
+    /// listener's call queued with <see cref="EntityWorld.QueueScriptCall"/>.
+    /// </summary>
     void Wake(long token);
 
-    /// <summary>A queued wake will not come: the tick it was made in made too many of them.</summary>
+    /// <summary>A queued wake or call will not come: the tick it was made in made too many of them.</summary>
     /// <returns>
     /// True when what waited for the wake was ended. False when it still
     /// waits, because the runtime has asked for another wake.

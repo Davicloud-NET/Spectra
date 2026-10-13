@@ -16,4 +16,8 @@ internal enum EntityEventKind : byte
 
     // A touch that started or ended, on its way to one listener of a script.
     ScriptTouch = 4,
+
+    // A call of one listener of a signal a script set off. Handed back to
+    // the script runtime as a wake is. No thread waits on it.
+    ScriptCall = 5,
 }

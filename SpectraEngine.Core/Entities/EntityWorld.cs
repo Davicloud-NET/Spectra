@@ -466,6 +466,23 @@ public sealed class EntityWorld
     }
 
     /// <summary>
+    /// Queues a call of one listener of a signal a script set off, for
+    /// <see cref="Scripts"/>. It is due at once, in the one order of wires
+    /// and thinks, and the runtime gets the token back as it gets a wake's.
+    /// </summary>
+    /// <param name="token">What the runtime wants handed back.</param>
+    /// <param name="signal">What the listener is to hear of. Only a log line reads it.</param>
+    /// <returns>False when the call was not queued and will not come: the queue is full.</returns>
+    /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    public bool QueueScriptCall(long token, string signal)
+    {
+        ArgumentNullException.ThrowIfNull(signal);
+        ThrowIfStopped(nameof(QueueScriptCall));
+
+        return _dispatcher.QueueScriptCall(token, signal);
+    }
+
+    /// <summary>
     /// Queues an input a script sent to one entity, with no caller and no
     /// activator. It is delivered by the next drain, in the one order of
     /// wires and thinks, and counts against what scripts may queue.

@@ -145,6 +145,11 @@ internal sealed class EntityDispatcher
             Output = "",
         });
 
+    // A listener's call for a signal a script set off. False when it was not
+    // queued and will not come.
+    public bool QueueScriptCall(long token, string signal) =>
+        TryPush(_scripts, ScriptEvents.Call(_world.TickNumber, _sequence++, signal, token));
+
     // An input a script sent to one entity. It waits with what scripts made
     // and takes no room from the wires. False when it will not come.
     public bool QueueScriptInput(Entity target, string input, string parameter, string script, int line)
@@ -305,8 +310,10 @@ internal sealed class EntityDispatcher
             lane.TryPop(out EntityEvent dropped);
 
             // A thread waits on a wake and would wait for good. A runtime
-            // that has asked for another wake has lost nothing.
-            if (dropped.Kind == EntityEventKind.ScriptWake && _world.Scripts?.Drop(dropped.Token) == false)
+            // that has asked for another wake has lost nothing. It is told
+            // of a listener's call too, and lets go of what it kept for it.
+            bool isTheRuntimes = dropped.Kind is EntityEventKind.ScriptWake or EntityEventKind.ScriptCall;
+            if (isTheRuntimes && _world.Scripts?.Drop(dropped.Token) == false)
                 late++;
             else
                 discarded++;

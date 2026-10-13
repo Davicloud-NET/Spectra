@@ -34,7 +34,7 @@ internal sealed class EntityEventDelivery
             return;
         }
 
-        if (due.Kind == EntityEventKind.ScriptWake)
+        if (due.Kind is EntityEventKind.ScriptWake or EntityEventKind.ScriptCall)
         {
             _world.Scripts?.Wake(due.Token);
             return;

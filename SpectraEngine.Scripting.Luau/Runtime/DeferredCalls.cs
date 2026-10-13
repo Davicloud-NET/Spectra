@@ -4,8 +4,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // The calls of listeners that wait for their turn in the level's queue. A
 // signal fired here calls nobody where it stands: each listener it has then
-// gets a wake of its own, in the one order of wires, thinks and threads.
-// Wakes come back in the order they were made, so the calls stand in a line.
+// gets a call of its own, in the one order of wires, thinks and threads.
+// Calls come back in the order they were made, so they stand in a line.
 internal sealed class DeferredCalls
 {
     // The low half of a waiting thread's token is its slot, which is never
@@ -71,7 +71,7 @@ internal sealed class DeferredCalls
 
             // With no room in the queue the listener does not hear this fire.
             long token = ((long)++_lastSerial << 32) | Mark;
-            if (_world.QueueScriptWake(token, 0))
+            if (_world.QueueScriptCall(token, signal.Name))
                 _calls.Enqueue(new Call(token, listener, hasValue, value));
         }
     }

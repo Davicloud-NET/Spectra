@@ -104,6 +104,7 @@ internal sealed class EntityDispatchLog
         EntityEventKind.ScriptWake => "the wake of a waiting thread",
         EntityEventKind.ScriptSignal => $"a listener's call for output '{made.Output}'",
         EntityEventKind.ScriptTouch => $"a listener's call for '{made.Output}'",
+        EntityEventKind.ScriptCall => $"a listener's call for '{made.Output}'",
         _ when made.Output.Length > 0 => $"output '{made.Output}' sending '{made.Input}'",
         _ => $"input '{made.Input}'",
     };
@@ -111,7 +112,7 @@ internal sealed class EntityDispatchLog
     private static string NameOf(in EntityEvent made) => made.Kind switch
     {
         EntityEventKind.Think or EntityEventKind.ScriptSignal => made.Entity?.TargetName ?? "",
-        EntityEventKind.ScriptWake => "a script",
+        EntityEventKind.ScriptWake or EntityEventKind.ScriptCall => "a script",
         _ => made.Target?.TargetName ?? made.TargetName,
     };
 }
