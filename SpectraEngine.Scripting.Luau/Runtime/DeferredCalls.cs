@@ -19,9 +19,6 @@ internal sealed class DeferredCalls
 
     public DeferredCalls(EntityWorld world) => _world = world;
 
-    // How many calls wait for their turn.
-    public int Count => _calls.Count;
-
     // Queues a call of every listener with no value.
     public void Fire(ScriptSignal signal) => Fire(signal, hasValue: false, default);
 
