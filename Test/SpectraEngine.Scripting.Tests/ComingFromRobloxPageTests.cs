@@ -168,17 +168,26 @@ public sealed class ComingFromRobloxPageTests
             local part = Instance.new("Part")
             part:AddTag("b") part:AddTag("a") part:AddTag("c")
             print(table.concat(part:GetTags(), " "))
-            print((pcall(function() part:SetAttribute("a.b", 1) part:SetAttribute("a-b", 1) part:SetAttribute("a/b", 1) end)))
+
+            local function takes(name) return (pcall(function() part:SetAttribute(name, 1) end)) end
+            print(takes("a.b"), takes("a-b"), takes("a/b"))
+
+            part:SetAttribute("N", 1)
             part:Destroy()
-            print(part:HasTag("a"), (pcall(function() part:AddTag("d") end)))
+            local tagged = pcall(function() part:AddTag("d") end)
+            print(part:HasTag("a"), part:GetAttribute("N"), tagged, takes("M"))
             """);
 
-        Listed("| `GetTags` | Sorted by name. | In the order the node got its tags. |", printed[0] != "a b c");
-        Listed("| An attribute's name | May have `.`, `-` and `/` in it. | Letters, digits and `_` only. |", printed[1] != "true");
-        Listed(
+        Row(
+            "| `GetTags` | Sorted by name. | In the order the node got its tags. |",
+            engine: printed[0], studio: "a b c", theRowSays: "b a c");
+        Row(
+            "| An attribute's name | May have `.`, `-` and `/` in it. | Letters, digits and `_` only. |",
+            engine: printed[1], studio: "true true true", theRowSays: "false false false");
+        Row(
             "| The tags and attributes of a destroyed node | Kept, and `AddTag` and `SetAttribute` still work. | Gone. " +
             "`HasTag` is false, `GetAttribute` is `nil`, and `AddTag` and `SetAttribute` are errors. |",
-            printed[2] != "true true");
+            engine: printed[2], studio: "true 1 true true", theRowSays: "false nil false false");
     }
 
     // The members the page names where it speaks of entities.
@@ -241,12 +250,17 @@ public sealed class ComingFromRobloxPageTests
         Page.ShouldContain("`CFrame.lookAt(light.Position, target) * CFrame.Angles(0, math.pi, 0)`");
     }
 
-    private static void Listed(string row, bool differs)
+    // A row of the page's table of differences, held both ways.
+    private static void Row(string row, string engine, string studio, string theRowSays)
     {
-        if (differs)
-            Page.ShouldContain(row, customMessage: "The engine differs from Studio here, and the page has no row that says so.");
-        else
+        if (engine == studio)
+        {
             Page.ShouldNotContain(row, customMessage: "The engine answers as Studio does now. Take this row out of the page.");
+            return;
+        }
+
+        engine.ShouldBe(theRowSays, "The engine differs from Studio in another way than the page's row says.");
+        Page.ShouldContain(row, customMessage: "The engine differs from Studio here, and the page has no row that says so.");
     }
 
     private static string Summary(ScriptClassDescription described, string property) =>
