@@ -7,8 +7,7 @@ namespace Spectra.Kitchen.Tests;
 
 // Tags and attributes the level is built with, on a part, a world brush, a
 // light, a folder, an entity and a script, and the script that reads them
-// back. A script reads a node's tags sorted, whatever order it was built
-// with, and one attribute's name has a slash, a period and a hyphen. It asks in its first tick, before any script tags or renames a node,
+// back. It asks in its first tick, before any script tags or renames a node,
 // and prints later. No other script of the level asks after its names.
 internal static class BuiltTagsScript
 {
@@ -90,6 +89,7 @@ internal static class BuiltTagsScript
         1 + Text.Split('\n').TakeWhile(line => !line.Contains("print(line)")).Count();
 
     // What a level with the script prints, each line with the file and line it came from.
+    // GetTags is sorted, whatever order a node was built with.
     public static readonly string[] Lines =
     [
         Said("the lava in the order of the tree | 4: Wall Crate Shelf Built"),

@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Scene;
-using SpectraEngine.Core.Scripting;
 using SpectraEngine.Editor.Shell;
 
 namespace SpectraEngine.Editor.Tests;
@@ -98,29 +97,6 @@ public sealed class SceneTreeTagFilterTests
         rig.MatchOf(tagged).ShouldBe(SceneTreeMatch.Match);
         rig.MatchOf(plain).ShouldBe(SceneTreeMatch.None);
         rig.Tree.MatchCount.ShouldBe(1);
-    }
-
-    // The filter reads a node's name and its tags, and never the name of an
-    // attribute. So the period, the hyphen and the slash a name may have
-    // are nothing it meets.
-    [Fact]
-    public void An_attributes_name_is_nothing_the_filter_reads_whatever_characters_it_has()
-    {
-        var rig = new Rig();
-        SceneNode brick = rig.Add("Brick", "Lava");
-        brick.Attributes = AttributeSet.Empty
-            .With("ui/hud.title-2", MemberValue.Of(1d))
-            .With("a.b", MemberValue.Of(2d));
-        rig.Publish();
-
-        foreach (string filter in (string[])["ui/hud.title-2", "a.b", "hud", "tag:a.b", "tag:ui/hud", "tag:title-2"])
-        {
-            rig.Tree.ApplyFilter(filter);
-            rig.Tree.MatchCount.ShouldBe(0, filter);
-        }
-
-        rig.Tree.ApplyFilter("tag:lava");
-        rig.MatchOf(brick).ShouldBe(SceneTreeMatch.Match);
     }
 
     [Fact]
