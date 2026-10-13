@@ -11,7 +11,10 @@ namespace SpectraEngine.Core.Entities;
 /// </summary>
 public sealed class WireActivityTrace : IEntityTrace
 {
-    /// <summary>How many events <see cref="LogicPlayInfo.Recent"/> holds.</summary>
+    /// <summary>
+    /// How many events of the wires <see cref="LogicPlayInfo.Recent"/> holds.
+    /// It holds as many of what scripts heard and sent beside them.
+    /// </summary>
     public const int RecentCapacity = 32;
 
     // A queued input this many ticks past due arrived while this trace was
@@ -24,7 +27,7 @@ public sealed class WireActivityTrace : IEntityTrace
     private readonly List<Counts> _wires = [];
     private readonly Dictionary<long, Wait> _waiting = [];
     private readonly List<long> _overdue = [];
-    private readonly LogicEventRing _recent = new(RecentCapacity);
+    private readonly LogicRecentEvents _recent = new(RecentCapacity);
     private readonly ScriptWireActivity _scripts = new();
 
     private long _tick;
@@ -216,11 +219,15 @@ public sealed class WireActivityTrace : IEntityTrace
 
         if (traced.Kind == EntityTraceKind.InputQueued)
         {
-            _scripts.Sent(traced, target.Node.Id);
+            // A script that was switched off may send once more, from the
+            // thread that was running then. That makes no wire.
+            if (!target.World.StoppedScripts.Contains(traced.SenderNode))
+                _scripts.Sent(traced, target.Node.Id);
+
             return;
         }
 
-        _recent.AddOrRenew(new LogicEventInfo
+        _recent.AddOfScript(new LogicEventInfo
         {
             Tick = traced.Tick,
             Kind = traced.Kind,
@@ -257,7 +264,7 @@ public sealed class WireActivityTrace : IEntityTrace
                 continue;
 
             _scripts.Heard(source.Node.Id, traced.Output, by, traced.Tick);
-            _recent.AddOrRenew(new LogicEventInfo
+            _recent.AddOfScript(new LogicEventInfo
             {
                 Tick = traced.Tick,
                 Kind = EntityTraceKind.OutputFired,

@@ -259,10 +259,14 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             _runService.FireAfterSimulation(_world.FixedDeltaTime);
             _childWaits.EndTick();
 
-            // A view of the level shows who listens, and a listener nothing
-            // can call any more is not one. Only a watched level is looked over.
+            // A view of the level shows who listens and who has sent. A
+            // listener nothing can call any more is not one, and neither is a
+            // script that was switched off. Only a watched level is looked over.
             if (_world.Trace is not null)
-                _signals.LetTheDeadGo();
+            {
+                _signals.HideTheDead();
+                _starter.NoteStopped(_world.StoppedScripts);
+            }
 
             // What scripts let go of since the last tick.
             _host.Objects.ReleaseCollected();

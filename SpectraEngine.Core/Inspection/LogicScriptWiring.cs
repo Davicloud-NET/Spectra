@@ -16,9 +16,10 @@ public sealed class LogicScriptWiring
     public static LogicScriptWiring None { get; } = new();
 
     /// <summary>
-    /// The outputs scripts hear right now, and the inputs they have sent
-    /// since a view began to watch. One for each script, entity, port and
-    /// line of code, in an order that does not change while they are the same.
+    /// The outputs scripts hear right now, and the inputs that scripts which
+    /// still run have sent since a view began to watch. One for each script,
+    /// entity, port and line of code, in an order that does not change while
+    /// they are the same.
     /// </summary>
     public IReadOnlyList<LogicScriptWire> Wires { get; init; } = [];
 

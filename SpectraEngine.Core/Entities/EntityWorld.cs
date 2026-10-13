@@ -164,6 +164,12 @@ public sealed class EntityWorld
     public ScriptListeners Listeners { get; }
 
     /// <summary>
+    /// The scripts that were switched off while the level ran. <see cref="Scripts"/>
+    /// adds them. <see cref="Deactivate"/> empties it.
+    /// </summary>
+    public StoppedScripts StoppedScripts { get; } = new();
+
+    /// <summary>
     /// The most events one <see cref="Tick"/> sends of those that were
     /// waiting, and the most it sends of those it makes itself. Waiting
     /// events past it stay queued and go first on the next tick. What a tick
@@ -245,6 +251,7 @@ public sealed class EntityWorld
         Touches.Clear();
         Sounds.Clear();
         Listeners.Clear();
+        StoppedScripts.Clear();
         _dispatcher.Clear();
         _entities.Clear();
         _pendingSpawn.Clear();
@@ -304,6 +311,7 @@ public sealed class EntityWorld
         // and no script hears what a removal fires.
         Touches.Clear();
         Listeners.Clear();
+        StoppedScripts.Clear();
 
         try
         {

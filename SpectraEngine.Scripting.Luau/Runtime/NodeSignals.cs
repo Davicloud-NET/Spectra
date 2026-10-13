@@ -65,6 +65,10 @@ internal sealed class NodeSignals
         connection.Listener = 0;
     }
 
+    // No view lists it as its script's any more. The level's queue still calls it.
+    public void Hide(SceneNode node, string name, ScriptConnection connection) =>
+        _world.Listeners.Hide(node, name, connection.Listener);
+
     // Whether the output fired while the level spawned. True once.
     public bool TakeMissedFire(SceneNode node, string name) => _world.Listeners.TakeMissedFire(node, name);
 
@@ -131,6 +135,18 @@ internal sealed class NodeSignals
             connection.Run([]);
         else
             connection.Run([LuauValue.Object(ScriptTags.Object, toucher)]);
+    }
+
+    // For a view of who listens: a listener nothing can call any more is
+    // not listed. It is let go as in any level, when its output fires next
+    // or all are looked over, so a watched level queues what any other does.
+    public void HideTheDead()
+    {
+        foreach (ScriptConnection connection in _listeners.Values)
+        {
+            if (!connection.CanRun)
+                connection.Source?.Hide(connection);
+        }
     }
 
     private readonly record struct Port(Guid Node, string Name);

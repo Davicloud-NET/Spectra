@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 using SpectraEngine.Core.Scripting.Api;
@@ -9,6 +10,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 [ScriptGlobals]
 internal sealed partial class ScriptStarter(LuauHost host, IScriptSource source, NodeNamingSink sink)
 {
+    private readonly List<(Guid Node, LuauScript Script)> _started = [];
+
     public void StartAll(Scene scene)
     {
         foreach (SceneNode node in scene.Root.Traverse())
@@ -21,6 +24,18 @@ internal sealed partial class ScriptStarter(LuauHost host, IScriptSource source,
             // A module runs when a script asks for it.
             if (node.Script is { IsEnabled: true, IsModule: false } script)
                 Start(node, script);
+        }
+    }
+
+    // Tells the level which of its scripts were switched off, for a view of
+    // what scripts have sent. A module is not among them: its code counts
+    // for the script that asked for it.
+    public void NoteStopped(StoppedScripts stopped)
+    {
+        foreach ((Guid node, LuauScript script) in _started)
+        {
+            if (script.IsSwitchedOff)
+                stopped.Add(node);
         }
     }
 
@@ -53,6 +68,7 @@ internal sealed partial class ScriptStarter(LuauHost host, IScriptSource source,
 
         // What the script hears and sends is drawn from this node.
         loaded.Owner = node;
+        _started.Add((node.Id, loaded));
 
         if (loaded.SetGlobal("script"u8, ScriptOf(node)))
             loaded.Start();

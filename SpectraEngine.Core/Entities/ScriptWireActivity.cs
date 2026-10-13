@@ -7,12 +7,17 @@ namespace SpectraEngine.Core.Entities;
 // What a level's scripts hear and send while a view watches, as wires the
 // view can draw: one for each script, entity, port and line of code. What a
 // script hears is read from the level's listeners, so a connection that ended
-// is gone. What it sent is remembered from the first send on.
+// is gone. What it sent is remembered from the first send on, for as long as
+// the script runs.
 internal sealed class ScriptWireActivity
 {
     // A level that makes wires without end would otherwise grow the table
     // for as long as it runs. Past this many a new one is not counted.
     private const int MaxCounted = 2 * LogicScriptWiring.MaxWires;
+
+    // With more counted than this, the counts of connections that ended are
+    // dropped at the next capture, so they never use up the room.
+    private const int LookOverCounted = MaxCounted / 2;
 
     private static readonly Comparison<LogicScriptWire> ByWhatItJoins = Compare;
 
@@ -27,6 +32,7 @@ internal sealed class ScriptWireActivity
     private long _version;
     private long _capturedVersion = -1;
     private long _capturedListeners = -1;
+    private int _stoppedSeen;
 
     public void Clear()
     {
@@ -65,6 +71,9 @@ internal sealed class ScriptWireActivity
         out LogicScriptWiring wiring,
         out IReadOnlyList<LogicScriptActivity> activity)
     {
+        if (world.StoppedScripts.Count != _stoppedSeen)
+            ForgetWhatTheStoppedSent(world.StoppedScripts);
+
         long listeners = world.Listeners.Version;
         if (previous is not null && _capturedVersion == _version && _capturedListeners == listeners)
         {
@@ -108,11 +117,45 @@ internal sealed class ScriptWireActivity
         _wires.AddRange(_sent);
         _wires.Sort(ByWhatItJoins);
 
+        if (_counts.Count > LookOverCounted)
+            ForgetTheCountsOfTheEnded();
+
         if (_wires.Count <= LogicScriptWiring.MaxWires)
             return false;
 
         _wires.RemoveRange(LogicScriptWiring.MaxWires, _wires.Count - LogicScriptWiring.MaxWires);
         return true;
+    }
+
+    // A script that was switched off sends nothing more, and the wires of
+    // what it sent go with what it heard.
+    private void ForgetWhatTheStoppedSent(StoppedScripts stopped)
+    {
+        _stoppedSeen = stopped.Count;
+
+        for (int i = _sent.Count - 1; i >= 0; i--)
+        {
+            if (!stopped.Contains(_sent[i].Script))
+                continue;
+
+            _counts.Remove(_sent[i]);
+            _sent.RemoveAt(i);
+            _version++;
+        }
+    }
+
+    // Called with every wire there is in _wires.
+    private void ForgetTheCountsOfTheEnded()
+    {
+        _listed.Clear();
+        for (int i = 0; i < _wires.Count; i++)
+            _listed.Add(_wires[i]);
+
+        foreach (LogicScriptWire counted in _counts.Keys)
+        {
+            if (!_listed.Contains(counted))
+                _counts.Remove(counted);
+        }
     }
 
     private bool Holds(LogicScriptWiring previous, bool isTruncated)

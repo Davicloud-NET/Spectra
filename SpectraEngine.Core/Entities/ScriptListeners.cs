@@ -110,6 +110,29 @@ public sealed class ScriptListeners
         return true;
     }
 
+    /// <summary>
+    /// Forgets whose listener it is, for one that nothing can call any more,
+    /// so a view draws no wire for it. It stays a listener: a fire still
+    /// queues an event for it, and a level somebody watches queues what any
+    /// other does. False when it was not there, or was hidden already.
+    /// </summary>
+    public bool Hide(SceneNode node, string name, long listener)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentNullException.ThrowIfNull(name);
+
+        if (!_byPort.TryGetValue(new Port(node.Id, name), out Heard? heard))
+            return false;
+
+        int at = heard.Listeners.IndexOf(listener);
+        if (at < 0 || !heard.By[at].HasNode)
+            return false;
+
+        heard.By[at] = default;
+        Version++;
+        return true;
+    }
+
     /// <summary>How many listeners what <paramref name="node"/> fires under <paramref name="name"/> has.</summary>
     public int CountOf(SceneNode node, string name)
     {
