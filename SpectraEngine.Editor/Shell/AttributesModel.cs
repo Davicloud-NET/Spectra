@@ -98,6 +98,9 @@ public sealed class AttributesModel : ObservableObject
         if (_info is not { } info)
             return "Nothing is selected.";
 
+        if (isNew && info.HoldsRoot)
+            return PropertyLimits.RootKeepsNone;
+
         foreach (AttributePanelRow row in info.Rows)
         {
             if (string.Equals(row.Name, name, StringComparison.Ordinal))

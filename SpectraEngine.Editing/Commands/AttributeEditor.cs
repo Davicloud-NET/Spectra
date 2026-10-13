@@ -116,9 +116,10 @@ public static class AttributeEditor
         }
     }
 
-    // Whether the node can get an attribute of a name it does not have.
+    // Whether the node can get an attribute of a name it does not have. The
+    // root cannot: it is not saved with the level.
     private static bool HasRoomFor(SceneNode node, string name, EntitySchemaCatalog? schemas) =>
-        !node.Attributes.IsFull && !EntityKeyvalueNames.Contains(node, schemas, name);
+        node.Parent is not null && !node.Attributes.IsFull && !EntityKeyvalueNames.Contains(node, schemas, name);
 
     private static string NameOf(AttributeEditKind kind) => kind switch
     {

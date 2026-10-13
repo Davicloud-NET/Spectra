@@ -355,7 +355,7 @@ Both sets never change once made. An edit makes a new one, `tags.With("Lava")`, 
 
 Setting other tags on a node of a scene raises `Scene.NodeTagsChanged`. The change log sends it to a UI as `SceneChangeKind.TagsChanged`, and every `SceneChange` carries the node's tags, so the scene tree's `tag:lava` filter finds a node by one. Setting attributes raises nothing. Neither touches the BVH, a brush count or the static world.
 
-A `.smap` saves them as `tags` and `attributes`, each left out for a node that has none. A baked map keeps them in two sections of their own, `NTAG` and `NATR` (`docs/formats-and-pipeline.md` §2.6 and §2.7).
+A `.smap` saves them as `tags` and `attributes`, each left out for a node that has none. A baked map keeps them in two sections of their own, `NTAG` and `NATR` (`docs/formats-and-pipeline.md` §2.6 and §2.7). The level's root keeps neither, since a map saves nothing of the root: the editors skip it, and the panel says why. A script can still tag `workspace` while the level plays.
 
 The editor writes them with `SetTagsCommand` and `SetAttributesCommand`. `TagEditor` and `AttributeEditor` apply one edit to a whole selection as one undo entry: a tag put on or taken off every selected node, an attribute set on all of them, renamed or removed. The Properties panel shows the selection merged (`Inspection/TagPanelInfo.cs`, `Inspection/AttributePanelInfo.cs`): a tag or an attribute only some of the nodes have is marked as such, and a value that differs is shown as mixed.
 

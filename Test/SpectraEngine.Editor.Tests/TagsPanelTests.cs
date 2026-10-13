@@ -175,6 +175,27 @@ public sealed class TagsPanelTests
     }
 
     [Fact]
+    public void The_levels_root_takes_no_tag_and_no_attribute_and_the_panel_says_why()
+    {
+        var rig = new TagPanelRig(null, Node("Brick"));
+        rig.Selected.Clear();
+        rig.Selected.Add(rig.Scene.Root);
+        rig.Publish();
+
+        rig.Type(rig.Tags.AddField, "Level");
+        rig.Type(rig.Attributes.NewNameField, "Score");
+
+        const string Why =
+            "Not added: The level's root is not saved with the level, so it keeps no tags and no attributes. " +
+            "Mark the nodes under it.";
+        rig.Tags.AddField.Rejection.ShouldBe(Why);
+        rig.Attributes.NewNameField.Rejection.ShouldBe(Why);
+        rig.Scene.Root.Tags.Count.ShouldBe(0);
+        rig.Scene.Root.Attributes.Count.ShouldBe(0);
+        rig.Undo.UndoCount.ShouldBe(0);
+    }
+
+    [Fact]
     public void An_empty_field_adds_nothing_and_says_nothing()
     {
         var rig = new TagPanelRig(null, Node("Brick"));

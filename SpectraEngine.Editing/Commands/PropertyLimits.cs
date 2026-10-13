@@ -55,6 +55,14 @@ public static class PropertyLimits
     public static string TakenByEntity(string name) =>
         $"'{name}' is a setting of the entity already, and scripts read it as an attribute. Pick another name.";
 
+    /// <summary>
+    /// What to say when the level's root is selected. A map saves nothing of
+    /// the root, so a tag or an attribute on it would be gone after a save.
+    /// </summary>
+    public static string RootKeepsNone =>
+        "The level's root is not saved with the level, so it keeps no tags and no attributes. " +
+        "Mark the nodes under it.";
+
     /// <summary>What this cell accepts, for the message shown when input was rejected.</summary>
     public static string Expected(PropertyId id, PropertyKind kind)
     {

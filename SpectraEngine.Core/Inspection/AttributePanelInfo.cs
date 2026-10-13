@@ -19,11 +19,13 @@ public sealed class AttributePanelInfo
     private readonly AttributeSet[] _sources;
 
     private AttributePanelInfo(
-        AttributeSet[] sources, AttributePanelRow[] rows, bool hasFullNode, IReadOnlySet<string> entityNames)
+        AttributeSet[] sources, AttributePanelRow[] rows, bool hasFullNode, bool holdsRoot,
+        IReadOnlySet<string> entityNames)
     {
         _sources = sources;
         Rows = rows;
         HasFullNode = hasFullNode;
+        HoldsRoot = holdsRoot;
         EntityNames = entityNames;
     }
 
@@ -35,6 +37,12 @@ public sealed class AttributePanelInfo
 
     /// <summary>Whether a selected node holds as many attributes as a node can.</summary>
     public bool HasFullNode { get; }
+
+    /// <summary>
+    /// Whether the level's root is among the selected nodes. A map saves
+    /// nothing of the root, so it keeps no attribute.
+    /// </summary>
+    public bool HoldsRoot { get; }
 
     /// <summary>
     /// The names an entity on a selected node answers to: its keyvalues. A
@@ -67,12 +75,14 @@ public sealed class AttributePanelInfo
         var indexOf = new Dictionary<string, int>(StringComparer.Ordinal);
         HashSet<string>? entityNames = null;
         bool hasFullNode = false;
+        bool holdsRoot = false;
 
         for (int i = 0; i < nodes.Count; i++)
         {
             SceneNode node = nodes[i];
             AttributeSet set = sources[i] = node.Attributes;
             hasFullNode |= set.IsFull;
+            holdsRoot |= node.Parent is null;
             if (node.Entity is not null)
                 EntityKeyvalueNames.AddTo(node, schemas, entityNames ??= new HashSet<string>(StringComparer.Ordinal));
 
@@ -90,7 +100,7 @@ public sealed class AttributePanelInfo
             }
         }
 
-        return new AttributePanelInfo(sources, [.. rows], hasFullNode, entityNames ?? NoNames);
+        return new AttributePanelInfo(sources, [.. rows], hasFullNode, holdsRoot, entityNames ?? NoNames);
     }
 
     private static AttributePanelRow Merged(AttributePanelRow row, in MemberValue value, bool isTaken)
@@ -128,18 +138,22 @@ public sealed class AttributePanelInfo
 
     // A set never changes, so the same references are the same attributes.
     // What an entity answers to can change under one, so a selection with
-    // an entity in it is described anew.
+    // an entity in it is described anew. Two nodes can share one set, so
+    // whether the root is there is asked too.
     private static bool IsMadeFrom(AttributePanelInfo info, IReadOnlyList<SceneNode> nodes)
     {
         if (info._sources.Length != nodes.Count || info.EntityNames.Count > 0)
             return false;
 
+        bool holdsRoot = false;
         for (int i = 0; i < nodes.Count; i++)
         {
             if (!ReferenceEquals(info._sources[i], nodes[i].Attributes) || nodes[i].Entity is not null)
                 return false;
+
+            holdsRoot |= nodes[i].Parent is null;
         }
 
-        return true;
+        return holdsRoot == info.HoldsRoot;
     }
 }

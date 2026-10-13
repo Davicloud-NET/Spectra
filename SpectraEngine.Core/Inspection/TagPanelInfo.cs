@@ -14,11 +14,12 @@ public sealed class TagPanelInfo
     // The sets this was made from, node for node. The same sets make the same info.
     private readonly TagSet[] _sources;
 
-    private TagPanelInfo(TagSet[] sources, TagPanelRow[] tags, bool hasFullNode)
+    private TagPanelInfo(TagSet[] sources, TagPanelRow[] tags, bool hasFullNode, bool holdsRoot)
     {
         _sources = sources;
         Tags = tags;
         HasFullNode = hasFullNode;
+        HoldsRoot = holdsRoot;
     }
 
     /// <summary>How many nodes are selected.</summary>
@@ -29,6 +30,12 @@ public sealed class TagPanelInfo
 
     /// <summary>Whether a selected node has as many tags as a node can have.</summary>
     public bool HasFullNode { get; }
+
+    /// <summary>
+    /// Whether the level's root is among the selected nodes. A map saves
+    /// nothing of the root, so it keeps no tag.
+    /// </summary>
+    public bool HoldsRoot { get; }
 
     /// <summary>
     /// Describes the tags of <paramref name="nodes"/>, or null for none.
@@ -52,11 +59,13 @@ public sealed class TagPanelInfo
         var rows = new List<TagPanelRow>();
         var indexOf = new Dictionary<string, int>(StringComparer.Ordinal);
         bool hasFullNode = false;
+        bool holdsRoot = false;
 
         for (int i = 0; i < nodes.Count; i++)
         {
             TagSet tags = sources[i] = nodes[i].Tags;
             hasFullNode |= tags.IsFull;
+            holdsRoot |= nodes[i].Parent is null;
 
             foreach (string tag in tags)
             {
@@ -71,21 +80,25 @@ public sealed class TagPanelInfo
             }
         }
 
-        return new TagPanelInfo(sources, [.. rows], hasFullNode);
+        return new TagPanelInfo(sources, [.. rows], hasFullNode, holdsRoot);
     }
 
-    // A set never changes, so the same references are the same tags.
+    // A set never changes, so the same references are the same tags. Two
+    // nodes can share one set, so whether the root is there is asked too.
     private static bool IsMadeFrom(TagPanelInfo info, IReadOnlyList<SceneNode> nodes)
     {
         if (info._sources.Length != nodes.Count)
             return false;
 
+        bool holdsRoot = false;
         for (int i = 0; i < nodes.Count; i++)
         {
             if (!ReferenceEquals(info._sources[i], nodes[i].Tags))
                 return false;
+
+            holdsRoot |= nodes[i].Parent is null;
         }
 
-        return true;
+        return holdsRoot == info.HoldsRoot;
     }
 }

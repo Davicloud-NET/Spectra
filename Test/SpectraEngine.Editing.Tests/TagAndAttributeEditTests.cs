@@ -327,6 +327,24 @@ public sealed class TagAndAttributeEditTests
     }
 
     [Fact]
+    public void The_levels_root_takes_neither_since_a_save_would_drop_them()
+    {
+        var brick = new SceneNode("Brick");
+        var rig = new Rig(null, brick);
+        IReadOnlyList<SceneNode> both = [rig.Scene.Root, brick];
+
+        TagEditor.Apply(rig.Undo, both, new TagEdit("Lava", IsOn: true)).ShouldBe(1);
+        AttributeEditor.Apply(rig.Undo, both, AttributeEdit.Set("Damage", MemberValue.Of(1d))).ShouldBe(1);
+        AttributeEditor.Apply(
+            rig.Undo, both, AttributeEdit.SetPart("Push", MemberValue.Of(Vector3.Zero), 0, 1f)).ShouldBe(1);
+
+        rig.Scene.Root.Tags.Count.ShouldBe(0);
+        rig.Scene.Root.Attributes.Count.ShouldBe(0);
+        brick.Tags.ShouldBe(["Lava"]);
+        brick.Attributes.Count.ShouldBe(2);
+    }
+
+    [Fact]
     public void Edits_inside_one_gesture_are_one_entry_and_a_cancel_puts_everything_back()
     {
         var a = new SceneNode("A") { Attributes = AttributeSet.Empty.With("Glow", MemberValue.Of(new Color3(1f, 1f, 1f))) };

@@ -32,7 +32,9 @@ public static class TagEditor
         var commands = new List<IEditorCommand>();
         foreach (SceneNode node in targets)
         {
-            if (node is null) continue;
+            // The root is not saved with the level, so it takes no tag. One
+            // it has already can still come off.
+            if (node is null || (edit.IsOn && node.Parent is null)) continue;
 
             TagSet next = Next(node.Tags, edit);
             if (!ReferenceEquals(next, node.Tags))

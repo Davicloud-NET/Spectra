@@ -71,6 +71,9 @@ public sealed class TagsModel : ObservableObject
         if (_info is not { } info)
             return "Nothing is selected.";
 
+        if (info.HoldsRoot)
+            return PropertyLimits.RootKeepsNone;
+
         foreach (TagPanelRow row in info.Tags)
         {
             if (string.Equals(row.Tag, tag, StringComparison.Ordinal) && row.Count == info.SelectionCount)
