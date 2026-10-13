@@ -535,6 +535,7 @@ static void RunOpenWorldBench()
         "at 1k / 10k / 50k parts");
 
     RunOpenWorldQuery(world10k!, open10k!);
+    OpenWorldSpawn.Run(sizes, size => MakeOpenWorld(size).Placements, TimedReps);
 }
 
 static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld World, OpenWorld Open) RunOpenWorldSize(int parts)
