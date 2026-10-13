@@ -126,6 +126,20 @@ public sealed class CrashCaseTests
         result.Output.ShouldContain("asked for 200 modules in a level, 80 errors reported");
     }
 
+    // The door, the journal, a Color3 and an attribute as native code, with
+    // every refusal raised as a script's error.
+    [Fact]
+    public async Task A_script_of_a_level_sets_and_reads_lights_parts_and_attributes_in_a_native_build()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("members-in-a-level");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+        result.Output.ShouldContain("NativeAOT: True");
+        result.Output.ShouldContain("set and read 340 members in a level, 120 refused");
+    }
+
     [Fact]
     public async Task A_state_used_on_one_thread_is_closed_from_another()
     {
