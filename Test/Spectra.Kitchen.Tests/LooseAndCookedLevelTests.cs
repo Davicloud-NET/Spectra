@@ -367,6 +367,83 @@ public class LooseAndCookedLevelTests
         played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
     }
 
+    // A part keeps its brush in a baked level, and a touch is found from
+    // that. So the player lands on the same pad on the same tick in both.
+    [Fact]
+    public void A_script_hears_the_same_touches_in_the_same_order_from_loose_files_and_from_the_pack()
+    {
+        Played played = Play();
+
+        string[] loose = [.. played.Loose.Where(line => line.Contains(TouchingScript.Mark)).Select(TouchingScript.Said)];
+        string[] cooked = [.. played.Cooked.Where(line => line.Contains(TouchingScript.Mark)).Select(TouchingScript.Said)];
+
+        cooked.ShouldBe(loose);
+        loose.Length.ShouldBe(TouchingScript.Lines.Length, string.Join(Environment.NewLine, loose));
+        for (int i = 0; i < loose.Length; i++)
+        {
+            (string what, string answer) = TouchingScript.Lines[i];
+            loose[i].ShouldStartWith(what + " | ");
+            loose[i].ShouldEndWith(answer);
+        }
+    }
+
+    [Theory]
+    [InlineData("Crate")]
+    [InlineData("Leaf")]
+    [InlineData("Bulb")]
+    [InlineData("Door")]
+    [InlineData("Prop")]
+    public void A_part_a_mesh_and_a_brush_entity_take_a_listener_for_a_touch_in_both_levels(string node)
+    {
+        Played played = Play();
+
+        foreach (string[] lines in new[] { played.Loose, played.Cooked })
+        {
+            lines.ShouldContain(line => line.EndsWith($"{node} | listen for a touch | done", StringComparison.Ordinal));
+            lines.ShouldContain(line => line.EndsWith(
+                $"{node} | the signal of a touch | Signal Touched true RBXScriptSignal", StringComparison.Ordinal));
+
+            // Each was moved away and has its CanTouch off by then.
+            lines.ShouldNotContain(line => line.Contains($"{node} | touched | "));
+        }
+    }
+
+    // Baked, a world brush has no brush on its node, and a touch of it can
+    // be told in neither level.
+    [Theory]
+    [InlineData("Floor")]
+    [InlineData("Doorway")]
+    [InlineData("Plank")]
+    public void A_world_brush_refuses_a_listener_for_a_touch_in_the_same_words_in_both_levels(string node)
+    {
+        Played played = Play();
+
+        string loose = played.Loose.Single(line => line.Contains($"{node} | listen for a touch | "));
+        string cooked = played.Cooked.Single(line => line.Contains($"{node} | listen for a touch | "));
+
+        cooked.ShouldBe(loose);
+        loose.ShouldEndWith(
+            $"{node} renamed cannot tell what touches it: it is a world brush, fused into the level, and only " +
+            "parts notice a touch while a level plays. Convert the brush to a part.");
+    }
+
+    [Theory]
+    [InlineData("Sun", "DirectionalLight")]
+    [InlineData("Shelf", "Folder")]
+    [InlineData("Relay", "logic_relay")]
+    [InlineData("Later", "Script")]
+    public void A_node_with_no_shape_has_no_touch_to_listen_for_in_the_same_words_in_both_levels(
+        string node, string className)
+    {
+        Played played = Play();
+
+        string loose = played.Loose.Single(line => line.Contains($"{node} | listen for a touch | "));
+        string cooked = played.Cooked.Single(line => line.Contains($"{node} | listen for a touch | "));
+
+        cooked.ShouldBe(loose);
+        loose.ShouldEndWith($"Touched is not a valid member of {className} \"{node} renamed\"");
+    }
+
     // Skips where Luau is not built. The level is cooked and played once for
     // the whole class.
     private static Played Play()

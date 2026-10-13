@@ -179,6 +179,16 @@ internal static class AskingScript
         	say("attribute " .. name, typeof(value) .. " " .. tostring(value))
         end
 
+        -- What touches the node. A part and a mesh take a listener, a world
+        -- brush refuses one, and any other node has no such signal.
+        attempt("listen for a touch", function()
+        	target.Touched:Connect(function() print(who .. " | touched | by the player") end)
+        	target.TouchEnded:Connect(function() print(who .. " | left | by the player") end)
+        end)
+        ask("the signal of a touch", function()
+        	return `{target.Touched} {target.Touched == target.Touched} {typeof(target.TouchEnded)}`
+        end)
+
         say("asked", "everything")
         """;
 }

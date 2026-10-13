@@ -45,6 +45,8 @@ internal static class AskedLevel
         foreach ((string path, string text) in RequiringScript.Modules)
             project.WriteAsset(path, text);
 
+        project.WriteAsset(TouchingScript.Path, TouchingScript.Text);
+
         // The prop's model, with what it wears.
         foreach (string path in new[]
                  {
@@ -112,7 +114,28 @@ internal static class AskedLevel
         // One on the root, and one under another: a script's parent is a script.
         Ask(root);
         Ask(Named(scene, "Crate").Children.Single(child => child.Script is not null));
+        AddWhatThePlayerTouches(root, Named(scene, "Start").LocalPosition);
         return scene;
+    }
+
+    // A pad under the player's start and a zone around it, with the script
+    // that listens to both. No asking script sits under either, so nothing
+    // moves them or switches them off.
+    private static void AddWhatThePlayerTouches(SceneNode root, Vector3 start)
+    {
+        SceneNode pad = root.CreateChild(TouchingScript.Pad);
+        pad.LocalPosition = new Vector3(start.X, 0.05f, start.Z);
+        pad.BrushKind = BrushKind.Part;
+        pad.Brush = Brush.CreateBox(new Vector3(-0.5f, -0.05f, -0.5f), new Vector3(0.5f, 0.05f, 0.5f));
+        pad.CreateChild("Touches").Script = new Script(TouchingScript.Path);
+
+        SceneNode zone = root.CreateChild(TouchingScript.Zone);
+        zone.LocalPosition = start;
+        zone.BrushKind = BrushKind.Part;
+        zone.Brush = Brush.CreateBox(new Vector3(-0.75f, -1f, -0.75f), new Vector3(0.75f, 1f, 0.75f));
+        zone.CanCollide = false;
+        zone.CanQuery = false;
+        zone.IsRendered = false;
     }
 
     private static void Ask(SceneNode under) =>
