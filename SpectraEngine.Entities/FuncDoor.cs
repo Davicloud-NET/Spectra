@@ -133,6 +133,9 @@ public sealed partial class FuncDoor : Entity
     }
 
     /// <inheritdoc/>
+    protected override void OnOwnedBrushesChanged() => _mover.SetBrushes(CollectOwnedBrushes());
+
+    /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
         if (IsFullyOpen)

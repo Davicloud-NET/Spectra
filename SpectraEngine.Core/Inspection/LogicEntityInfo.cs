@@ -13,4 +13,12 @@ public readonly record struct LogicEntityInfo(
     Guid NodeId,
     string Name,
     string ClassName,
-    IReadOnlyList<EntityConnection> Wires);
+    IReadOnlyList<EntityConnection> Wires)
+{
+    /// <summary>
+    /// Which clone brought the entity into a level that plays, or 0 for none.
+    /// A wire of an entity of a clone that names entities of the same clone
+    /// reaches those alone.
+    /// </summary>
+    public int CopyGroup { get; init; }
+}

@@ -27,7 +27,10 @@ public sealed class TreeWrites
         _journal = world.Journal.Tree;
     }
 
-    /// <summary>How many nodes the level's scripts have made that are still there.</summary>
+    /// <summary>
+    /// How many nodes the level's scripts have made that are still there, or
+    /// that were destroyed and that <see cref="CountAgain"/> was told of.
+    /// </summary>
     public int MadeCount => _journal.MadeCount;
 
     /// <summary>
@@ -88,7 +91,7 @@ public sealed class TreeWrites
         }
 
         made.IsMadeByLevel = true;
-        _journal.MadeCount++;
+        _journal.Count(made);
         refusal = null;
         return true;
     }
@@ -121,14 +124,21 @@ public sealed class TreeWrites
             return false;
         }
 
+        // One number for all of them: a wire of the copy that names an
+        // entity of the copy is sent to that one, and not to its source.
+        int group = _journal.NextCopyGroup();
         for (int i = 0; i < copies.Count; i++)
-            copies[i].Copy.IsMadeByLevel = true;
+        {
+            SceneNode made = copies[i].Copy;
+            made.IsMadeByLevel = true;
+            made.CopyGroup = group;
+            _journal.Count(made);
+        }
 
         // A node in no tree is in the world where its own transform says.
         copy = copies[0].Copy;
         copy.LocalTransform = WorldFrame.LocalUnder(null, source.LocalTransform, source.CFrame);
         NodeCopies.PointIntoTheCopy(copies);
-        _journal.MadeCount += copies.Count;
         return true;
     }
 
@@ -181,17 +191,20 @@ public sealed class TreeWrites
                 _journal.RecordChildren(destroyed[i]);
         }
 
-        // From the leaves up, so each list is taken apart from its end.
+        // From the leaves up, so each list is taken apart from its end. A
+        // node below the top reads where it stood from here on, as the top does.
         for (int i = destroyed.Count - 1; i >= 0; i--)
         {
             SceneNode gone = destroyed[i];
             if (i > 0)
+            {
+                KeepPlaceUnder(gone, null);
                 gone.Parent?.RemoveChild(gone);
+            }
 
             gone.IsDestroyed = true;
             _journal.NoteDestroyed(gone);
-            if (gone.IsMadeByLevel)
-                _journal.MadeCount--;
+            _journal.Uncount(gone);
         }
 
         return true;
@@ -199,7 +212,7 @@ public sealed class TreeWrites
 
     /// <summary>
     /// Stops counting the nodes of a tree no script can reach any more: one a
-    /// script made, never put into the level and let go of. Hand it the top.
+    /// script made and let go of, in no level or destroyed. Hand it the top.
     /// </summary>
     public void Forget(SceneNode top)
     {
@@ -209,12 +222,25 @@ public sealed class TreeWrites
 
         Collect(top, _walk);
         for (int i = 0; i < _walk.Count; i++)
-        {
-            if (_walk[i] is { IsMadeByLevel: true, IsDestroyed: false })
-                _journal.MadeCount--;
-        }
+            _journal.Uncount(_walk[i]);
 
         _walk.Clear();
+    }
+
+    /// <summary>
+    /// Counts a made node against <see cref="TreeLimits.MaxMadeNodes"/> again
+    /// that had stopped counting, for whoever finds that a script holds it
+    /// after all. <see cref="Forget"/> ends that. False when it counts
+    /// already, or when no script made it.
+    /// </summary>
+    public bool CountAgain(SceneNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        if (!node.IsMadeByLevel || node.CountsAsMade)
+            return false;
+
+        _journal.Count(node);
+        return true;
     }
 
     private void Move(SceneNode node, SceneNode? parent)
@@ -225,19 +251,14 @@ public sealed class TreeWrites
         if (wasInLevel && !willBeInLevel)
             StopEntities(node);
 
-        // Before the move, while the node still says where it is in the world.
-        Transform local = WorldFrame.LocalUnder(parent, node.LocalTransform, node.CFrame);
+        Entity? lost = OwnerAbove(node);
         if (node.Parent is { } old)
             _journal.RecordChildren(old);
         if (parent is not null)
             _journal.RecordChildren(parent);
 
-        if (new CFrame(local.Position, local.Rotation) != node.LocalCFrame)
-        {
-            _world.Journal.Record(node, JournalKind.LocalTransform);
-            node.LocalTransform = local;
-        }
-
+        // Before the move, while the node still says where it is in the world.
+        KeepPlaceUnder(node, parent);
         if (parent is null)
             node.Parent?.RemoveChild(node);
         else
@@ -245,7 +266,36 @@ public sealed class TreeWrites
 
         if (willBeInLevel && !wasInLevel)
             StartEntities(node);
+
+        // An entity read its brushes when it spawned. One that lost some
+        // with the node, or got some, reads them again.
+        Entity? gained = OwnerAbove(node);
+        if (!ReferenceEquals(lost, gained))
+        {
+            lost?.OnOwnedBrushesChanged();
+            gained?.OnOwnedBrushesChanged();
+        }
     }
+
+    // The local transform that keeps the node where it is in the world
+    // under another parent, or under none.
+    private void KeepPlaceUnder(SceneNode node, SceneNode? parent)
+    {
+        Transform local = WorldFrame.LocalUnder(parent, node.LocalTransform, node.CFrame);
+        if (new CFrame(local.Position, local.Rotation) == node.LocalCFrame)
+            return;
+
+        _world.Journal.Record(node, JournalKind.LocalTransform);
+        node.LocalTransform = local;
+    }
+
+    // The running entity that owns the brushes at and below the node. None
+    // for a node that carries an entity, which owns its brushes itself.
+    private Entity? OwnerAbove(SceneNode node) =>
+        node.Entity is null && node.SubtreeBrushCount > 0 && node.Parent is { } parent
+            && _world.TryFindOwner(parent, out Entity? owner)
+            ? owner
+            : null;
 
     // The entity of each node is built at the end of the tick, with the
     // others that came with it.

@@ -67,6 +67,9 @@ public sealed partial class TriggerMultiple : Entity, ITouchListener
     protected override void OnSpawn() => _state.Spawn(this, CollectOwnedBrushes(), StartDisabled);
 
     /// <inheritdoc/>
+    protected override void OnOwnedBrushesChanged() => World.Touches.Register(this, CollectOwnedBrushes());
+
+    /// <inheritdoc/>
     // Ticks only while touched with a wait above zero.
     protected override void OnTick()
     {

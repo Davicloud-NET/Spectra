@@ -57,7 +57,10 @@ public sealed class LogicGraphInfo
                 node.Id,
                 node.Name,
                 entity?.ClassName ?? "",
-                entity is { Connections.Count: > 0 } ? entity.Connections.ToArray() : []);
+                entity is { Connections.Count: > 0 } ? entity.Connections.ToArray() : [])
+            {
+                CopyGroup = node.CopyGroup,
+            };
         }
 
         return new LogicGraphInfo

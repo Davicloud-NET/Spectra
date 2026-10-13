@@ -32,6 +32,12 @@ public sealed class LinearMover
     // Null until the owner says which brushes travel with the node.
     private BrushPenetration? _solid;
 
+    // What the two poses were worked out from, and the parent they are
+    // under. A script can give the node another parent.
+    private Vector3 _direction;
+    private float _distance;
+    private SceneNode? _parent;
+
     /// <summary>
     /// A mover for <paramref name="owner"/>'s node. It goes nowhere until
     /// <see cref="SetTravel"/>.
@@ -140,15 +146,12 @@ public sealed class LinearMover
         if (!(speed >= MinimumSpeed))
             speed = MinimumSpeed;
 
-        Transform closed = _owner.Node.LocalTransform;
-        Transform open = closed;
-        open.Position += Vector3.Transform(direction, closed.Rotation) * distance;
-
-        Closed = closed;
-        Open = open;
+        _direction = direction;
+        _distance = distance;
         TravelTicks = TicksOrOne(_owner.World, distance / (double)speed);
         TicksTravelled = 0;
         TargetTicks = 0;
+        TakePoses();
     }
 
     /// <summary>
@@ -188,6 +191,7 @@ public sealed class LinearMover
     /// <returns>False when the world refused the move.</returns>
     public bool PlaceAt(int ticks)
     {
+        FollowParent();
         ticks = Math.Clamp(ticks, 0, TravelTicks);
         if (ticks != TicksTravelled && !Write(ticks))
             return false;
@@ -206,6 +210,7 @@ public sealed class LinearMover
         if (TargetTicks == TicksTravelled)
             return LinearMoverStep.Stopped;
 
+        FollowParent();
         int next = TicksTravelled + (TargetTicks > TicksTravelled ? 1 : -1);
 
         // Before the move: how deep the player's own tick left it.
@@ -240,6 +245,33 @@ public sealed class LinearMover
     // happens on.
     internal static int TicksOrOne(EntityWorld world, double seconds) =>
         (int)Math.Clamp(world.TicksIn(seconds), 1L, int.MaxValue);
+
+    // Both poses from where the node is now and how far along the trip it
+    // is. At rest the node's own transform is one of them as it is.
+    private void TakePoses()
+    {
+        Transform here = _owner.Node.LocalTransform;
+        Vector3 trip = Vector3.Transform(_direction, here.Rotation) * _distance;
+
+        Transform closed = here;
+        if (TicksTravelled > 0)
+            closed.Position -= trip * (float)((double)TicksTravelled / TravelTicks);
+
+        Transform open = closed;
+        open.Position += trip;
+
+        Closed = closed;
+        Open = IsFullyOpen ? here : open;
+        _parent = _owner.Node.Parent;
+    }
+
+    // A node a script put under another parent keeps its place in the
+    // world. Its poses were in the old parent's frame, so they are taken again.
+    private void FollowParent()
+    {
+        if (!ReferenceEquals(_owner.Node.Parent, _parent))
+            TakePoses();
+    }
 
     private float PlayerDepth() =>
         _solid is { } solid && _owner.World.Player is { IsPresent: true } player

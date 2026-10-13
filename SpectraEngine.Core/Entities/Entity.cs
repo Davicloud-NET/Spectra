@@ -111,6 +111,15 @@ public abstract class Entity
     }
 
     /// <summary>
+    /// Called when a script put a brush under this entity or took one from
+    /// it while the level plays. A class that keeps what
+    /// <see cref="CollectOwnedBrushes"/> gave it collects again here.
+    /// </summary>
+    protected internal virtual void OnOwnedBrushesChanged()
+    {
+    }
+
+    /// <summary>
     /// Reads one authored keyvalue. Returns whether this class recognises
     /// <paramref name="key"/>. A recognised key with an unreadable value should
     /// call <see cref="RefuseKeyvalue"/>, keep the default and return true.

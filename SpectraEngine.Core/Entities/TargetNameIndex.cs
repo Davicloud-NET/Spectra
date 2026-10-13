@@ -78,6 +78,8 @@ public sealed class TargetNameIndex : IDisposable
     /// Appends every entity <paramref name="target"/> names to
     /// <paramref name="results"/>, in scene traversal order. Names and tokens
     /// match ordinally. <paramref name="results"/> is not cleared first.
+    /// When <paramref name="self"/> came with a clone and the name is held
+    /// by entities of that clone, only those are meant.
     /// </summary>
     public void Resolve(
         string? target,
@@ -122,7 +124,26 @@ public sealed class TargetNameIndex : IDisposable
             results.AddRange(exact);
         }
 
+        int group = self?.Node.CopyGroup ?? 0;
+        if (group != 0)
+            KeepOwnCopy(results, start, group);
+
         SortByTraversalOrder(results, start);
+    }
+
+    // A clone has the names of its source. What an entity of a clone names
+    // is the entity that was copied with it, when there is one of the name.
+    private static void KeepOwnCopy(List<Entity> results, int start, int group)
+    {
+        int kept = start;
+        for (int i = start; i < results.Count; i++)
+        {
+            if (results[i].Node.CopyGroup == group)
+                results[kept++] = results[i];
+        }
+
+        if (kept > start)
+            results.RemoveRange(kept, results.Count - kept);
     }
 
     internal void Register(Entity entity)

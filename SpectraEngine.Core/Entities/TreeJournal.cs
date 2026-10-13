@@ -5,11 +5,10 @@ using System.Runtime.ExceptionServices;
 
 namespace SpectraEngine.Core.Entities;
 
-// How a level's tree was before the level changed it: the children of each
-// parent, as they were when the level first added to them, took from them
-// or moved among them. Stop puts every such list back, so a node the level
-// made is gone and one it destroyed or moved is where it was. It also
-// counts the nodes the level made that are still there.
+// The children of each parent as they were before the level first changed
+// them. Stop puts every such list back, so a node the level made is gone
+// and one it destroyed or moved is where it was. It also counts the nodes
+// the level made.
 internal sealed class TreeJournal
 {
     private readonly Dictionary<SceneNode, SceneNode[]> _childrenOf = new(ReferenceEqualityComparer.Instance);
@@ -19,8 +18,11 @@ internal sealed class TreeJournal
     private readonly List<SceneNode> _parents = [];
     private readonly List<SceneNode> _destroyed = [];
 
-    // Nodes the level made and has not destroyed, in its tree or out of it.
-    public int MadeCount { get; set; }
+    private int _copyGroups;
+
+    // Nodes the level made that are still there, in its tree or out of it,
+    // and those it destroyed that a script still holds.
+    public int MadeCount { get; private set; }
 
     public int TouchedParentCount => _parents.Count;
 
@@ -41,6 +43,28 @@ internal sealed class TreeJournal
         _childrenOf.Add(parent, first);
         _parents.Add(parent);
     }
+
+    // A made node counts once, however often it is said to.
+    public void Count(SceneNode made)
+    {
+        if (made.CountsAsMade)
+            return;
+
+        made.CountsAsMade = true;
+        MadeCount++;
+    }
+
+    public void Uncount(SceneNode made)
+    {
+        if (!made.CountsAsMade)
+            return;
+
+        made.CountsAsMade = false;
+        MadeCount--;
+    }
+
+    // A number for the nodes of one clone, which no other clone has.
+    public int NextCopyGroup() => ++_copyGroups;
 
     // A node of the level as it was built was destroyed. Stop lets it take
     // a parent again.
@@ -76,6 +100,7 @@ internal sealed class TreeJournal
         _parents.Clear();
         _destroyed.Clear();
         MadeCount = 0;
+        _copyGroups = 0;
     }
 
     private void Try(Action<SceneNode, SceneNode[]> step, SceneNode parent, ref ExceptionDispatchInfo? first)

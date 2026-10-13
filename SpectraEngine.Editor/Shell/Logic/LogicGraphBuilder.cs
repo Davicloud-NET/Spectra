@@ -122,14 +122,32 @@ internal sealed class LogicGraphBuilder
                     matched.Add(i);
             }
 
-            return matched;
+            return InOwnCopy(sender, matched);
         }
 
         // A name that starts with ! matches nothing, even when an entity has it.
         if (target.Length > 0 && target[0] != '!' && _byName.TryGetValue(target, out List<int>? named))
-            return named;
+            return InOwnCopy(sender, named);
 
         return [];
+    }
+
+    // A clone has the names of its source. The level sends a wire of a
+    // clone to the entities that were copied with it, when one has the name.
+    private List<int> InOwnCopy(int sender, List<int> receivers)
+    {
+        int group = _entities[sender].CopyGroup;
+        if (group == 0)
+            return receivers;
+
+        List<int>? own = null;
+        foreach (int receiver in receivers)
+        {
+            if (_entities[receiver].CopyGroup == group)
+                (own ??= []).Add(receiver);
+        }
+
+        return own ?? receivers;
     }
 
     private int StubFor(string target)

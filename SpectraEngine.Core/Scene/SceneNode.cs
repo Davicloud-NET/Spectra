@@ -294,6 +294,14 @@ public class SceneNode
     // Stop puts the level back.
     internal bool IsDestroyed { get; set; }
 
+    // The node counts against the bound on what a level made: it is still
+    // there, or it was destroyed and a script still holds it.
+    internal bool CountsAsMade { get; set; }
+
+    // Which clone made the node, with every other node of the same copy.
+    // Zero for a node no clone made.
+    internal int CopyGroup { get; set; }
+
     /// <summary>
     /// Whether this node's own mesh or part brush is drawn and casts a shadow.
     /// Default <c>true</c>. Not inherited by children. Picking, queries and

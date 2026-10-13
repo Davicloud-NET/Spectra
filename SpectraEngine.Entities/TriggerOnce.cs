@@ -42,6 +42,9 @@ public sealed partial class TriggerOnce : Entity, ITouchListener
     protected override void OnSpawn() => _state.Spawn(this, CollectOwnedBrushes(), StartDisabled);
 
     /// <inheritdoc/>
+    protected override void OnOwnedBrushesChanged() => World.Touches.Register(this, CollectOwnedBrushes());
+
+    /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
         state.Headline("triggered", HeadlineText.YesNo(TriggerCount > 0));
