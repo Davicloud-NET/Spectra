@@ -177,6 +177,20 @@ The October plan built these in 22 steps under its own numbers: Luau in the tree
 
 Not built: keys and mouse for scripts, script events once a frame and the camera, entity classes in Luau (D15), Luau in the console (C7), a debugger, native code generation, bytecode in packs, scripts that run while editing (D21), parallel Luau, and a part's colour and transparency from a script.
 
+## Documentation
+
+The user docs as a place to learn the engine, after the model of Roblox's Creator Hub and learn.microsoft.com. No design doc yet. The pages that exist were written beside the features and are the starting stock.
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| L1 | Structure: a front page by what you came to do, and the sections tutorials, how-to guides, concepts, reference and samples | not started; the site has Start here, Concepts, Guides and Reference | none yet |
+| L2 | Page kinds: every page is one kind, with a template, what you need before it and where to go next | not started; `writing-docs.mdx` has rules for a guide only | none yet |
+| L3 | A tutorial course that builds one small game from an empty project to a cooked build | not started | none yet |
+| L4 | The script guides and the Roblox page moved into the structure, one task a page | not started; six guides and Coming from Roblox exist | none yet |
+| L5 | Reference with an example for every member: script API, entities, console, file formats | partly; the script and C# references are generated, with no examples | script-api.md |
+| L6 | Screenshots and short videos, captured by a script so they can be taken again | not started; no page has an image of scripting | none yet |
+| L7 | Sample projects a tutorial ends in, a link check and the site build in CI, and the deploy | not started | none yet |
+
 ## Console
 
 | Id | Name | Status | Design |

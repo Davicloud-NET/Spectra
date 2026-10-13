@@ -10,7 +10,7 @@ The old roadmap is [docs/archive/roadmap-2026-10.md](docs/archive/roadmap-2026-1
 
 ## Now
 
-The no-code loop just landed, and Luau scripting right after it: build a level, wire it, script it, play it, hear it. Before asset import starts I want it to hold up when a person actually uses it.
+The no-code loop just landed, and Luau scripting right after it: build a level, wire it, script it, play it, hear it. Before the docs and asset import start I want it to hold up when a person actually uses it.
 
 - Entity icons, in the 3D view and in the panels. You should be able to tell what an entity is by looking at it.
 - Trying it all by hand. The tests cover what the door, the lift, the triggers and the console do. They can't tell me how riding a lift or standing in a closing door feels, where focus goes when the console opens mid-play, or whether the Make entity menus make sense.
@@ -21,47 +21,55 @@ The no-code loop just landed, and Luau scripting right after it: build a level, 
 
 In this order.
 
-### 1. Asset import
+### 1. Documentation
+
+The docs grew a page at a time, next to whatever I was building. They need to become a real place to learn the engine, built the way Roblox's Creator Hub and learn.microsoft.com are: a front page that sends you the right way, tutorials that build one small game from start to finish, how-to guides for a single task, concept pages, and a reference where every member has an example. Every page is one of those kinds and says what you need before it and where to go after it.
+
+The script guides that exist move into that structure. Screenshots and sample projects come with it.
+
+`L1` to `L7`, large.
+
+### 2. Asset import
 
 There's a cook, but nothing in the editor imports anything. A file gets into a project by copying it into the folder by hand. This needs a UI and a pipeline behind it. It should be easy as cake to use and still offer every feature.
 
 No design yet, and no milestone ids.
 
-### 2. Prefabs
+### 3. Prefabs
 
 A subtree you save once and place many times. Everything it depends on is done. The risky part is how names inside a prefab resolve: that rule gets saved into every map, and it isn't decided.
 
 `P10`, large.
 
-### 3. Bodies that move
+### 4. Bodies that move
 
 Dynamic bodies, parts that push each other, and touch events between bodies. Right now the player is the only thing a moving part carries and the only thing that sets off a trigger.
 
 `Y6` and what's left of `Y7` and `Y8`, large.
 
-### 4. The rest of the console
+### 5. The rest of the console
 
 The command line is there, with ways into it from the editor and the terminal, and the entity commands. What's missing is the part that makes Source's console so good: typed variables, key binds and config files.
 
 `C0` to `C6`, large together.
 
-### 5. The look
+### 6. The look
 
 Normal maps, bloom, height fog, image-based ambient light, temporal anti-aliasing and transparent materials, in that order. The bar is how a good late-UE4 game looks, something like Stray. Normal maps are the risky one, because they change the vertex layout that every mesh and every CSG test baseline uses.
 
 `R9`, `R14`, `R19a`, `R15`, `R16`, `R10`.
 
-### 6. Material parameters
+### 7. Material parameters
 
 A shader declares its parameters and the Properties panel edits them. Cooked materials (`D19`) and preview thumbnails (`S7`) wait on this.
 
 `F4`, `S2` and `S3`, large together.
 
-### 7. Game UI and animated characters
+### 8. Game UI and animated characters
 
 The first template game needs a label on screen and a model that animates. Neither has a design doc yet.
 
-### 8. The editor on Linux
+### 9. The editor on Linux
 
 The shell needs an OpenGL context embedded in it. It's the largest piece left in the shell.
 
