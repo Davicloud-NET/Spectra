@@ -50,6 +50,12 @@ public sealed class WireActivityTrace : IEntityTrace
     /// <inheritdoc/>
     public void Record(in EntityTraceEvent traced)
     {
+        // What a script sent is on no wire, and the view has no place for
+        // its sender. A script may send every tick, and listed here that
+        // would push what the wires did out of the recent events.
+        if (traced.SenderScript.Length > 0)
+            return;
+
         switch (traced.Kind)
         {
             case EntityTraceKind.InputQueued:

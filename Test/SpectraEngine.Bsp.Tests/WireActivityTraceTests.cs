@@ -238,6 +238,23 @@ public sealed class WireActivityTraceTests
         EntityTracePair.Join(null, null).ShouldBeNull();
     }
 
+    [Fact]
+    public void What_a_script_sent_is_on_no_wire_and_is_not_among_the_recent_events()
+    {
+        SceneNode door = EntityRuntime.Place(_scene.Root, "door", "recorder");
+        EntityWorld world = Started();
+        LogicPlayInfo before = Captured();
+
+        world.QueueScriptInput(EntityRuntime.Live(world, door), "Open", "", "Scripts/opener.luau", 3).ShouldBeTrue();
+        world.Tick(Tick);
+
+        // Nothing a view draws has changed, so it gets the lists it had.
+        LogicPlayInfo after = _trace.Capture(before, []);
+        after.Recent.ShouldBeEmpty();
+        after.Recent.ShouldBeSameAs(before.Recent);
+        after.Wires.ShouldBeSameAs(before.Wires);
+    }
+
     private EntityWorld Started()
     {
         var world = new EntityWorld(_scene, new CapturingLogger(), EntityRuntime.Catalog([])) { Trace = _trace };
