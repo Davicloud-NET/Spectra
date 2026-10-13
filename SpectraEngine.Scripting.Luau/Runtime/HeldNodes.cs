@@ -103,7 +103,7 @@ internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, A
         if (_isCollecting && host.StepCollector(0))
             EndCycle();
 
-        if (!_isCollecting && bytes < _goal)
+        if (!_isCollecting && Bytes < _goal)
             return;
 
         _isCollecting = true;
