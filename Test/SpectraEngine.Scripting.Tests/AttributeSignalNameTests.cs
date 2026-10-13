@@ -49,7 +49,7 @@ public sealed class AttributeSignalNameTests
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(
         [
-            "Signal AttributeChanged Instance true",
+            "Signal AttributeChanged RBXScriptSignal true",
             "Signal AttributeChanged Signal AttributeChanged",
             "true true true",
             "false",

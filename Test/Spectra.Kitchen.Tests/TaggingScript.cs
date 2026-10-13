@@ -99,9 +99,9 @@ internal static class TaggingScript
     // What a level with the script prints, each line with the file and line it came from.
     public static readonly string[] Lines =
     [
-        Said("every node in the order of the tree | 22: Root Floor Wall BackWall Doorway Crate Door DoorTrigger " +
-            $"Relay Start Sun Lamp Spot Panel Disc Bulb Shelf Plank Props Prop {AskedLevel.DoorInGerman} Leaf"),
-        Said("the parts | 11: Floor Wall BackWall Doorway Crate Door DoorTrigger Bulb Plank Prop Leaf"),
+        Said("every node in the order of the tree | 24: Root Floor Wall BackWall Doorway Crate Door DoorTrigger " +
+            $"Relay Start Sun Lamp Spot Panel Disc Bulb Shelf Plank Props Prop {AskedLevel.DoorInGerman} Leaf Pad Gate"),
+        Said("the parts | 13: Floor Wall BackWall Doorway Crate Door DoorTrigger Bulb Plank Prop Leaf Pad Gate"),
         Said("the lights | 5: Sun Lamp Spot Panel Disc"),
         Said("a tag no node has | 0: "),
         Said("the door's tags | Level Solid, Solid true"),
@@ -110,9 +110,9 @@ internal static class TaggingScript
             "startopen=boolean false, wait=number 4"),
         Said("a world brush's attributes | Deadly=boolean true, Flow=Vector3 0, 0, 1, Glow=Color3 1, 0.501961, 0, " +
             "Label=string hot, Rest=CFrame 1, 2, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1"),
-        Said("heard of the parts | 11: Leaf Prop Plank Bulb DoorTrigger Door Crate Doorway BackWall Wall Floor"),
+        Said("heard of the parts | 13: Gate Pad Leaf Prop Plank Bulb DoorTrigger Door Crate Doorway BackWall Wall Floor"),
         Said("heard of the changes | Heat the heat Label"),
-        Said("the parts without the door | 10: Floor Wall BackWall Doorway Crate DoorTrigger Bulb Plank Prop Leaf"),
+        Said("the parts without the door | 12: Floor Wall BackWall Doorway Crate DoorTrigger Bulb Plank Prop Leaf Pad Gate"),
     ];
 
     private static string Said(string line) => $"Print {Path}:4: {Mark}{line}";

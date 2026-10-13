@@ -74,7 +74,7 @@ public sealed class TagSignalTests
             print(#CollectionService:GetTagged("Lava"), #CollectionService:GetTagged("lava"))
             """);
 
-        printed.ShouldBe(["Signal InstanceAdded Signal InstanceRemoved Instance", "true true", "false false", "0 0"]);
+        printed.ShouldBe(["Signal InstanceAdded Signal InstanceRemoved RBXScriptSignal", "true true", "false false", "0 0"]);
     }
 
     [Fact]

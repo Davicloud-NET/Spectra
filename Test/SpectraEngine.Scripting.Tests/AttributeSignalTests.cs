@@ -120,7 +120,7 @@ public sealed class AttributeSignalTests
 
         printed[..5].ShouldBe(
         [
-            "Signal AttributeChanged Instance Signal AttributeChanged",
+            "Signal AttributeChanged RBXScriptSignal Signal AttributeChanged",
             "true true",
             "true false",
             "false false",
