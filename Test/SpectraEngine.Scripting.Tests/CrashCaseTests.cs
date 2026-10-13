@@ -135,4 +135,18 @@ public sealed class CrashCaseTests
 
         result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
     }
+
+    // An input called right and wrong and an output heard, in a level that
+    // plays: every refusal is raised out of a host function.
+    [Fact]
+    public async Task A_script_of_a_level_calls_inputs_and_hears_outputs_in_a_native_build()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("inputs-and-outputs-in-a-level");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+        result.Output.ShouldContain("NativeAOT: True");
+        result.Output.ShouldContain("sent 600 inputs in a level, 800 refused");
+    }
 }
