@@ -12,6 +12,12 @@
   -->
 
   <UserControl.Styles>
+    <!-- Switched off as a whole while a level plays. Cells, chips and the
+         checkbox have no disabled look of their own, so both sections dim. -->
+    <Style Selector="shell|TagsAndAttributesView:disabled">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
     <!-- A tag: a raised chip, as wide as its word. -->
     <Style Selector="Border.tagchip">
       <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
