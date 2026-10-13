@@ -64,7 +64,7 @@ Save and press Play. The part turns once round in the time it takes to slide up 
 
 <Steps>
 
-1. Insert a second part and move it a unit above the first.
+1. Insert a second part and move it on top of the first. A new part is 2 units on every side, so its middle is then 2 units above the first one's.
 
 2. In the scene tree, drag the second part onto the first. It stays where it is, and from now on it moves when the first one moves.
 
@@ -84,12 +84,14 @@ Save and press Play. The part turns once round in the time it takes to slide up 
 
 </Steps>
 
-Both parts slide and turn as one. With the first part built 2 units up, Output begins like this:
+Both parts slide and turn as one. With the first part on the ground plate, where a new part lands, Output begins like this:
 
 ```text
-in the world 3.00, under its parent 1.00
-in the world 3.84, under its parent 1.00
+in the world 3.00, under its parent 2.00
+in the world 3.84, under its parent 2.00
 ```
+
+A first part somewhere else gives other numbers in the world, and the same 2.00 under its parent.
 
 The second part never moved under its parent. Its parent moved, and took it along.
 
@@ -147,15 +149,15 @@ A script that is switched off does not run again until you stop and play again. 
 
 Put the sliding script on a block and it fails. Output has this line once for every tick, since `Heartbeat` calls the function again each time:
 
-`Block cannot be moved: a world brush sits at or below it, and only parts can move while a level plays. Convert the brush to a part.`
+`Brush cannot be moved: a world brush sits at or below it, and only parts can move while a level plays. Convert the brush to a part.`
 
-A world brush is a block: it is merged into the level's geometry and cannot move while the level plays. To make it a part, select it while the level is stopped and press Convert in the Arrange group of the Build tab, or <kbd>Ctrl</kbd> + <kbd>T</kbd>. [Blocks, parts and cuts](/concepts/blocks-parts-and-cuts/) says what changes.
+The line starts with the block's name, and a new block is called `Brush`. A world brush is a block: it is merged into the level's geometry and cannot move while the level plays. To make it a part, select it while the level is stopped and press Convert in the Arrange group of the Build tab, or <kbd>Ctrl</kbd> + <kbd>T</kbd>. [Blocks, parts and cuts](/concepts/blocks-parts-and-cuts/) says what changes.
 
 ## What Stop puts back
 
 Press <kbd>F8</kbd> or <kbd>Esc</kbd>. Both parts are where you built them, and turned the way you built them.
 
-Stop ends every script and every wait, and puts back everything a script changed: where a node is, what it is called, what is under what. The level you edit is the level you built.
+Stop ends every script and every wait, and puts back everything a script changed: where a node is, what it is called, what is under what.
 
 Nothing a script holds lives on to the next Play either. Every Play reads the files again and starts each script from its first line.
 

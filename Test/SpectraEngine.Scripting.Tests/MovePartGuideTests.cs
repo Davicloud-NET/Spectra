@@ -21,6 +21,9 @@ public sealed class MovePartGuideTests
 
     private static readonly Vector3 Home = new(0f, 2f, 0f);
 
+    // Where the middle of a new part is: it is 2 units a side and lands on the ground plate.
+    private static readonly Vector3 OnThePlate = new(0f, 1f, 0f);
+
     private static string Code(string name) => ScriptSamples.At(Folder + name).Code;
 
     [Fact]
@@ -69,9 +72,11 @@ public sealed class MovePartGuideTests
     public void A_part_under_the_slide_moves_in_the_world_and_stays_where_it_is_under_its_parent()
     {
         using var level = new ScriptLevel();
-        SceneNode part = level.Part("Part", Home);
+        SceneNode part = level.Part("Part", OnThePlate);
         level.ScriptAt(PartScript, Code("slide_and_turn.luau"), under: part);
-        SceneNode rider = level.Part("Rider", new Vector3(0f, 1f, 0f), parent: part);
+
+        // On top of the first, as the page has the reader put it.
+        SceneNode rider = level.Part("Rider", new Vector3(0f, 2f, 0f), parent: part);
         level.ScriptAt("Scripts/Rider.luau", Code("where.luau"), under: rider);
 
         level.Play().Tick(61);
@@ -79,11 +84,13 @@ public sealed class MovePartGuideTests
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(
         [
-            "in the world 3.00, under its parent 1.00",
-            "in the world 3.84, under its parent 1.00",
+            "in the world 3.00, under its parent 2.00",
+            "in the world 3.84, under its parent 2.00",
         ]);
         foreach (string line in level.Printed)
             Page.Text.ShouldContain(line);
+
+        Page.Text.ShouldContain("A new part is 2 units on every side");
     }
 
     [Fact]
@@ -167,7 +174,10 @@ public sealed class MovePartGuideTests
             "level plays. Convert the brush to a part.";
         level.Sink.Messages.Count.ShouldBe(3);
         level.Errors.ShouldAllBe(text => text == $"Baseplate {why}");
-        Page.Text.ShouldContain($"`Block {why}`");
+
+        // The page's block is one the reader inserted, which the editor names Brush.
+        Page.Text.ShouldContain($"`Brush {why}`");
+        Page.Text.ShouldContain("The line starts with the block's name");
         Page.Text.ShouldContain("once for every tick");
     }
 }
