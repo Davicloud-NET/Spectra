@@ -576,6 +576,9 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
+      <!-- Tags and Attributes: what scripts find the selected nodes by. -->
+      <shell:TagsAndAttributesView x:Name="TagsAndAttributes" DataContext="{Binding Properties}" />
+
       <!-- Sends: the wires leaving this entity. Single-entity selection only. -->
       <StackPanel Margin="12,12,12,14" Spacing="4"
                   IsVisible="{Binding Properties.Wiring.HasEntity}">

@@ -169,6 +169,19 @@ public sealed class FrameSnapshot
     public EntityPanelInfo? SelectionEntity { get; init; }
 
     /// <summary>
+    /// The tags the selected nodes were built with, merged, or null when
+    /// nothing is selected. The same instance rides every snapshot until a
+    /// tag or the selection changes.
+    /// </summary>
+    public TagPanelInfo? SelectionTags { get; init; }
+
+    /// <summary>
+    /// The attributes the selected nodes were built with, merged, or null
+    /// when nothing is selected.
+    /// </summary>
+    public AttributePanelInfo? SelectionAttributes { get; init; }
+
+    /// <summary>
     /// Every entity's wires, while a host asked for them with
     /// <see cref="EngineHost.RequestLogicView"/>, otherwise null. The same
     /// instance rides every snapshot until the wiring changes.

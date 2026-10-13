@@ -393,6 +393,14 @@ public sealed class EditorSession : IDisposable
     public void ApplyProperty(PropertyEdit edit) =>
         Host.EnqueueCommand(_ => Editor?.ApplyProperty(edit));
 
+    /// <summary>Puts a tag on the current selection, or takes it off.</summary>
+    public void ApplyTag(TagEdit edit) =>
+        Host.EnqueueCommand(_ => Editor?.ApplyTag(edit));
+
+    /// <summary>Applies one change to an attribute of the current selection.</summary>
+    public void ApplyAttribute(AttributeEdit edit) =>
+        Host.EnqueueCommand(_ => Editor?.ApplyAttribute(edit));
+
     /// <summary>
     /// Opens one history entry to hold a continuous property gesture, such as
     /// a drag across a numeric field.

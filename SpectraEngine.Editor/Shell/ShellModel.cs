@@ -865,7 +865,9 @@ public sealed class ShellModel : ObservableObject
     public string NoMatchLabel =>
         _tree is { FilterIsUnknown: true }
             ? $"“{_filterText}” is not a kind. Try t:block, t:part, t:cut, t:light, t:mesh, t:group or t:script."
-            : $"Nothing here is called “{_filterText}”.";
+            : SceneTreeTagFilter.TryRead(_filterText.Trim(), out string tag)
+                ? (tag.Length == 0 ? "Nothing here has a tag." : $"Nothing here has a tag with “{tag}” in it.")
+                : $"Nothing here is called “{_filterText}”.";
 
     /// <summary>The viewport's pixel size, which is not the window's.</summary>
     public string ViewportLabel => $"{_viewportWidth}x{_viewportHeight}";
@@ -1433,7 +1435,8 @@ public sealed class ShellModel : ObservableObject
             SetDebugFlags(_debugOpt.Value);
 
             _properties?.Apply(
-                snapshot.SelectionProperties, snapshot.SelectedIds.Count, snapshot.SelectionEntity);
+                snapshot.SelectionProperties, snapshot.SelectedIds.Count, snapshot.SelectionEntity,
+                snapshot.SelectionTags, snapshot.SelectionAttributes);
 
             SoundPreview.Apply(snapshot.PreviewingSound);
 

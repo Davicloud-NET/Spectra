@@ -227,6 +227,8 @@ public sealed class Engine
                 PipelineNames = _renderer.PipelineNames,
                 SelectionProperties = CaptureProperties(),
                 SelectionEntity = CaptureSelectionEntity(),
+                SelectionTags = CaptureSelectionTags(),
+                SelectionAttributes = CaptureSelectionAttributes(),
                 LogicGraph = CaptureLogicGraph(),
                 LogicPlay = CaptureLogicPlay(),
                 Captions = _captions.Captions,
@@ -328,6 +330,20 @@ public sealed class Engine
         return EntityPanelInfo.Capture(
             items[0], scene.EntitySchemas, scene, _snapshotTargetNames, _sceneManager.EntityWorld);
     }
+
+    private TagPanelInfo? _publishedTags;
+    private AttributePanelInfo? _publishedAttributes;
+
+    // The same instance while no tag and no selection changed.
+    private TagPanelInfo? CaptureSelectionTags() =>
+        _publishedTags = _sceneManager.ActiveScene is { } scene
+            ? TagPanelInfo.Capture(scene.Selection.Items, _publishedTags)
+            : null;
+
+    private AttributePanelInfo? CaptureSelectionAttributes() =>
+        _publishedAttributes = _sceneManager.ActiveScene is { } scene
+            ? AttributePanelInfo.Capture(scene.Selection.Items, scene.EntitySchemas, _publishedAttributes)
+            : null;
 
     // A state line is text, and text is garbage on this thread. Six times a
     // second reads as live.

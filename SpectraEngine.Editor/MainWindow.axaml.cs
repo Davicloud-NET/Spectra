@@ -294,7 +294,9 @@ public partial class MainWindow : Window
             OnPropertyEdit,
             name => _session?.BeginPropertyGesture(name),
             commit => _session?.EndPropertyGesture(commit),
-            OnEntityConnectionsEdit);
+            OnEntityConnectionsEdit,
+            edit => _session?.ApplyTag(edit),
+            edit => _session?.ApplyAttribute(edit));
 
         _shell.PipelineRequested += name => _session?.Host.RequestPipeline(name);
 

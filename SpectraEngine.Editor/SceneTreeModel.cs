@@ -86,6 +86,9 @@ public sealed class SceneTreeNode(Guid id, string name) : ObservableObject
 
     private bool _hasScript;
 
+    /// <summary>The tags the node was built with, for the filter.</summary>
+    public TagSet Tags { get; internal set; } = TagSet.Empty;
+
     /// <summary>The row's icon and its tint.</summary>
     public IconLook Look
     {
@@ -489,7 +492,8 @@ public sealed class SceneTreeModel
 
     /// <summary>
     /// Filters the tree to nodes whose name contains <paramref name="text"/>,
-    /// or to a kind with a <c>t:</c> prefix (<c>t:light</c>, <c>t:part</c>).
+    /// to a kind with a <c>t:</c> prefix (<c>t:light</c>, <c>t:part</c>), or
+    /// to the nodes with a tag with a <c>tag:</c> prefix (<c>tag:lava</c>).
     /// Non-matching rows are dimmed, not removed. Empty text clears the filter.
     /// </summary>
     public void ApplyFilter(string? text)
@@ -514,8 +518,11 @@ public sealed class SceneTreeModel
             return;
         }
 
+        // Before "t:", which "tag:" also starts with.
+        bool tagFilter = SceneTreeTagFilter.TryRead(query, out string tagQuery);
+
         SceneNodeKind? kindQuery = null;
-        bool kindFilter = query.StartsWith("t:", StringComparison.OrdinalIgnoreCase);
+        bool kindFilter = !tagFilter && query.StartsWith("t:", StringComparison.OrdinalIgnoreCase);
         if (kindFilter)
         {
             kindQuery = ParseKind(query[2..]);
@@ -530,7 +537,8 @@ public sealed class SceneTreeModel
         foreach (SceneTreeNode node in _index.Values)
         {
             bool hit = !FilterIsUnknown
-                && (kindQuery is { } wanted
+                && (tagFilter ? SceneTreeTagFilter.Matches(node.Tags, tagQuery)
+                    : kindQuery is { } wanted
                     ? IsOfKind(node, wanted)
                     : node.Name.Contains(query, StringComparison.OrdinalIgnoreCase));
 
@@ -672,6 +680,7 @@ public sealed class SceneTreeModel
 
             case SceneChangeKind.Renamed:
             case SceneChangeKind.KindChanged:
+            case SceneChangeKind.TagsChanged:
                 if (_index.TryGetValue(change.NodeId, out SceneTreeNode? renamed))
                 {
                     renamed.Name = change.Name;
@@ -706,6 +715,7 @@ public sealed class SceneTreeModel
         node.EntityClass = change.EntityClass;
         node.LightKind = change.LightKind;
         node.HasScript = change.HasScript;
+        node.Tags = change.Tags;
         node.Look =EditorIcons.ForNode(change.NodeKind, change.EntityClass, change.LightKind, _schemas);
     }
 

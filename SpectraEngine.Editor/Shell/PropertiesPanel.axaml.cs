@@ -26,6 +26,8 @@ public partial class PropertiesPanel : UserControl
 
         TargetPicker.Picked += OnTargetPicked;
         TargetPicker.Cancelled += OnTargetPickerCancelled;
+
+        TagsAndAttributes.EscapePressed += () => EscapePressed?.Invoke();
     }
 
     /// <summary>Raised when Escape ends an edit, so the host can take focus back.</summary>

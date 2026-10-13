@@ -721,16 +721,28 @@ public sealed class PropertyPanelModel : ObservableObject
     /// Posts a whole replacement wiring list for one node, addressed by node
     /// id rather than by selection. Null in a host that offers no wiring.
     /// </param>
+    /// <param name="applyTag">
+    /// Posts a tag to put on the selection or take off it. Null in a host
+    /// that edits no tags.
+    /// </param>
+    /// <param name="applyAttribute">
+    /// Posts a change to an attribute of the selection. Null in a host that
+    /// edits no attributes.
+    /// </param>
     public PropertyPanelModel(
         Action<PropertyEdit> apply,
         Action<string> beginGesture,
         Action<bool> endGesture,
-        Action<Guid, IReadOnlyList<EntityConnection>>? applyConnections = null)
+        Action<Guid, IReadOnlyList<EntityConnection>>? applyConnections = null,
+        Action<TagEdit>? applyTag = null,
+        Action<AttributeEdit>? applyAttribute = null)
     {
         _apply = apply;
         _beginGesture = beginGesture;
         _endGesture = endGesture;
         Wiring = new EntityWiringModel(applyConnections ?? ((_, _) => { }));
+        Tags = new TagsModel(applyTag ?? (_ => { }));
+        Attributes = new AttributesModel(applyAttribute ?? (_ => { }));
 
         NameField = new PropertyFieldModel(
             PropertyId.NodeName, PropertyAxes.All, string.Empty,
@@ -753,6 +765,12 @@ public sealed class PropertyPanelModel : ObservableObject
 
     /// <summary>The Now section: the selected entity's state while the level runs.</summary>
     public EntityLiveStateModel LiveState { get; } = new();
+
+    /// <summary>The Tags section: the tags the selected nodes were built with.</summary>
+    public TagsModel Tags { get; }
+
+    /// <summary>The Attributes section: the attributes the selected nodes were built with.</summary>
+    public AttributesModel Attributes { get; }
 
     /// <summary>Whether anything is selected at all.</summary>
     public bool HasSelection => _selectionCount > 0;
@@ -834,14 +852,19 @@ public sealed class PropertyPanelModel : ObservableObject
     /// The selected entity's class and wiring, or null when the selection is
     /// not exactly one node carrying an entity.
     /// </param>
+    /// <param name="tags">The selection's tags, or null when nothing is selected.</param>
+    /// <param name="attributes">The selection's attributes, or null when nothing is selected.</param>
     public void Apply(
-        IReadOnlyList<PropertyRow> rows, int selectionCount, EntityPanelInfo? entity = null)
+        IReadOnlyList<PropertyRow> rows, int selectionCount, EntityPanelInfo? entity = null,
+        TagPanelInfo? tags = null, AttributePanelInfo? attributes = null)
     {
         ArgumentNullException.ThrowIfNull(rows);
 
         Wiring.Apply(entity);
         Arrivals.Apply(entity);
         LiveState.Apply(entity);
+        Tags.Apply(tags);
+        Attributes.Apply(attributes);
 
         if (_selectionCount != selectionCount)
         {

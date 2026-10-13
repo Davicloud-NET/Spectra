@@ -236,7 +236,7 @@
       <TextBox Grid.Column="0" x:Name="FilterBox" Classes="field"
                Classes.nomatch="{Binding HasNoMatches}"
                Text="{Binding FilterText, Mode=TwoWay}"
-               PlaceholderText="Filter by name, or t:light"
+               PlaceholderText="Filter by name, t:light or tag:lava"
                KeyDown="OnFilterKeyDown" />
       <Button Grid.Column="1" Classes="ghost" Margin="6,0,0,0"
               Click="OnClearFilterClicked" IsVisible="{Binding HasFilter}"

@@ -1,0 +1,308 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="using:SpectraEngine.Editor.Shell"
+             x:Class="SpectraEngine.Editor.Shell.TagsAndAttributesView"
+             x:DataType="shell:PropertyPanelModel">
+
+  <!--
+    Two sections of the property panel: the tags and the attributes the
+    selected nodes were built with. It sits inside PropertiesPanel and takes
+    that panel's cell, band and row styles. What is edited here goes on every
+    selected node.
+  -->
+
+  <UserControl.Styles>
+    <!-- A tag: a raised chip, as wide as its word. -->
+    <Style Selector="Border.tagchip">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
+      <Setter Property="Padding" Value="7,0,1,0" />
+      <Setter Property="Margin" Value="0,0,4,4" />
+    </Style>
+    <Style Selector="Border.tagchip TextBlock.tagname">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="MaxWidth" Value="200" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <!-- On some of the selection only: no fill, a soft edge and a quiet word. -->
+    <Style Selector="Border.tagchip.partial">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+    </Style>
+    <Style Selector="Border.tagchip.partial TextBlock.tagname">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
+    </Style>
+
+    <Style Selector="Button.ghost.small">
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="Margin" Value="3,0,0,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Focusable" Value="False" />
+    </Style>
+
+    <!-- A value typed into a text cell reads from the left, as a name does. -->
+    <Style Selector="TextBox.cellfield.words">
+      <Setter Property="TextAlignment" Value="Left" />
+      <Setter Property="Padding" Value="6,0" />
+    </Style>
+
+    <!-- Under a row: what it means that only some nodes have it. -->
+    <Style Selector="TextBlock.rownote">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+      <Setter Property="Margin" Value="0,2,0,0" />
+    </Style>
+    <Style Selector="TextBlock.rownote.warn">
+      <Setter Property="Foreground" Value="{StaticResource SpectraWarning}" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel>
+
+    <Popup x:Name="ColorPopup" Placement="BottomEdgeAlignedLeft"
+           IsLightDismissEnabled="True" Closed="OnColorPopupClosed">
+      <shell:ColorPickerView x:Name="ColorPicker" />
+    </Popup>
+
+    <!-- Tags. -->
+    <Border Classes="sectionband">
+      <TextBlock Classes="sectionhead" Text="Tags" />
+    </Border>
+    <Border Classes="proprow">
+      <StackPanel>
+        <ItemsControl ItemsSource="{Binding Tags.Chips}" Margin="0,2,0,0"
+                      IsVisible="{Binding !Tags.IsEmpty}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="shell:TagChipModel">
+              <Border Classes="tagchip" Classes.partial="{Binding IsPartial}"
+                      ToolTip.Tip="{Binding Help}">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Classes="tagname" Text="{Binding Tag}" />
+                  <TextBlock Classes="micro" Text="{Binding PartialLabel}" Margin="6,0,0,0"
+                             IsVisible="{Binding IsPartial}" />
+                  <Button Classes="ghost small" Click="OnRemoveTag"
+                          ToolTip.Tip="{Binding RemoveHelp}">
+                    <Path Classes="icon" Data="{StaticResource IconClear}" />
+                  </Button>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Border Classes="cell" Classes.invalid="{Binding Tags.AddField.HasRejection}" Margin="0,1">
+          <TextBox DataContext="{Binding Tags.AddField}"
+                   Classes="cellfield words"
+                   Text="{Binding Text, Mode=TwoWay}"
+                   PlaceholderText="Add a tag"
+                   GotFocus="OnFieldFocused"
+                   LostFocus="OnFieldBlurred"
+                   KeyDown="OnFieldKeyDown"
+                   ToolTip.Tip="A word a script finds this by, such as Lava. Enter puts it on everything selected." />
+        </Border>
+        <TextBlock Classes="rejection" TextWrapping="Wrap"
+                   Text="{Binding Tags.AddField.Rejection}"
+                   IsVisible="{Binding Tags.AddField.HasRejection}" />
+      </StackPanel>
+    </Border>
+
+    <!-- Attributes. -->
+    <Border Classes="sectionband">
+      <TextBlock Classes="sectionhead" Text="Attributes" />
+    </Border>
+
+    <ItemsControl ItemsSource="{Binding Attributes.Rows}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="shell:AttributeRowModel">
+          <Border Classes="proprow">
+            <StackPanel Spacing="3">
+
+              <!-- Name, kind, remove. -->
+              <!-- The kind's column is as wide as its longest word needs. -->
+              <Grid ColumnDefinitions="*,168,Auto">
+                <Border Grid.Column="0" Classes="cell" Classes.invalid="{Binding NameField.HasRejection}">
+                  <TextBox DataContext="{Binding NameField}"
+                           Classes="cellfield words"
+                           Text="{Binding Text, Mode=TwoWay}"
+                           GotFocus="OnFieldFocused"
+                           LostFocus="OnFieldBlurred"
+                           KeyDown="OnFieldKeyDown"
+                           ToolTip.Tip="The name a script reads this by. Type another to rename it." />
+                </Border>
+                <ComboBox Grid.Column="1" Margin="4,0,0,0" HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding KindLabels}"
+                          SelectedItem="{Binding KindLabel, Mode=TwoWay}"
+                          PlaceholderText="mixed"
+                          ToolTip.Tip="{x:Static shell:AttributeKindWords.Help}" />
+                <Button Grid.Column="2" Classes="ghost" Margin="4,0,0,0" Focusable="False"
+                        Click="OnRemoveAttribute"
+                        ToolTip.Tip="Take this attribute off everything selected.">
+                  <Path Classes="icon" Data="{StaticResource IconClear}" />
+                </Button>
+              </Grid>
+
+              <!-- Text or a number: one cell. -->
+              <ItemsControl ItemsSource="{Binding Cells}" IsVisible="{Binding IsOneCell}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="shell:PropertyFieldModel">
+                    <Border Classes="cell" Classes.invalid="{Binding HasRejection}">
+                      <TextBox Classes="cellfield words"
+                               Text="{Binding Text, Mode=TwoWay}"
+                               PlaceholderText="{Binding Placeholder}"
+                               GotFocus="OnFieldFocused"
+                               LostFocus="OnFieldBlurred"
+                               KeyDown="OnFieldKeyDown" />
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <CheckBox IsChecked="{Binding Flag, Mode=TwoWay}" IsVisible="{Binding IsBoolean}"
+                        VerticalAlignment="Center" />
+
+              <!-- Colour: swatch plus hex, as a light's colour is. -->
+              <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsColor}">
+                <Border Grid.Column="0" Classes="swatch" Cursor="Hand"
+                        PointerPressed="OnSwatchPressed"
+                        Background="{Binding Swatch}" Margin="0,0,5,0" />
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding Cells}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="shell:PropertyFieldModel">
+                      <Border Classes="cell" Classes.invalid="{Binding HasRejection}">
+                        <TextBox Classes="cellfield words"
+                                 Text="{Binding Text, Mode=TwoWay}"
+                                 PlaceholderText="mixed"
+                                 GotFocus="OnFieldFocused"
+                                 LostFocus="OnFieldBlurred"
+                                 KeyDown="OnFieldKeyDown"
+                                 ToolTip.Tip="The color as #RRGGBB." />
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Grid>
+
+              <!-- Three numbers, or a frame's position. -->
+              <ItemsControl ItemsSource="{Binding Cells}" Margin="0,0,-4,0"
+                            IsVisible="{Binding HasParts}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <UniformGrid Rows="1" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="shell:PropertyFieldModel">
+                    <Border Classes="cell" Classes.invalid="{Binding HasRejection}" Margin="0,0,4,0">
+                      <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Grid.Column="0" Classes="axis" Cursor="Arrow"
+                                   Classes.x="{Binding IsX}"
+                                   Classes.y="{Binding IsY}"
+                                   Classes.z="{Binding IsZ}"
+                                   Text="{Binding Label}" />
+                        <TextBox Grid.Column="1" Classes="cellfield"
+                                 Text="{Binding Text, Mode=TwoWay}"
+                                 PlaceholderText="{Binding Placeholder}"
+                                 GotFocus="OnFieldFocused"
+                                 LostFocus="OnFieldBlurred"
+                                 KeyDown="OnFieldKeyDown" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <!-- A frame's rotation, in degrees. -->
+              <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsFrame}">
+                <TextBlock Grid.Column="0" Classes="micro" Text="Rotation" />
+                <TextBlock Grid.Column="1" Classes="rowunit" Text="deg" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding TurnCells}" Margin="0,0,-4,0"
+                            IsVisible="{Binding IsFrame}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <UniformGrid Rows="1" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="shell:PropertyFieldModel">
+                    <Border Classes="cell" Classes.invalid="{Binding HasRejection}" Margin="0,0,4,0">
+                      <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Grid.Column="0" Classes="axis" Cursor="Arrow"
+                                   Classes.x="{Binding IsX}"
+                                   Classes.y="{Binding IsY}"
+                                   Classes.z="{Binding IsZ}"
+                                   Text="{Binding Label}" />
+                        <TextBox Grid.Column="1" Classes="cellfield"
+                                 Text="{Binding Text, Mode=TwoWay}"
+                                 PlaceholderText="{Binding Placeholder}"
+                                 GotFocus="OnFieldFocused"
+                                 LostFocus="OnFieldBlurred"
+                                 KeyDown="OnFieldKeyDown" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <TextBlock Classes="rownote" TextWrapping="Wrap" IsVisible="{Binding IsMixedKind}"
+                         Text="The selected nodes hold values of different kinds here. Pick a kind to give them all one." />
+
+              <!-- Why the last commit was refused. -->
+              <TextBlock Classes="rejection" Text="{Binding Rejection}"
+                         IsVisible="{Binding HasRejection}" TextWrapping="Wrap" />
+
+              <TextBlock Classes="rownote" TextWrapping="Wrap"
+                         Text="{Binding PartialNote}" IsVisible="{Binding IsPartial}" />
+
+              <!-- A warning: the map keeps the attribute, and scripts never see it. -->
+              <TextBlock Classes="rownote warn" TextWrapping="Wrap"
+                         Text="{Binding TakenNote}" IsVisible="{Binding IsTakenByEntity}" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- A new attribute: its name, then its kind beside the button that adds
+         it. Two lines, so the name has the whole width. -->
+    <Border Classes="proprow">
+      <StackPanel Spacing="3">
+        <Border Classes="cell" Margin="0,1,0,0"
+                Classes.invalid="{Binding Attributes.NewNameField.HasRejection}">
+          <TextBox DataContext="{Binding Attributes.NewNameField}"
+                   Classes="cellfield words"
+                   Text="{Binding Text, Mode=TwoWay}"
+                   PlaceholderText="Add an attribute"
+                   GotFocus="OnFieldFocused"
+                   LostFocus="OnFieldBlurred"
+                   KeyDown="OnFieldKeyDown"
+                   ToolTip.Tip="A name a script reads a value by, such as Damage. Enter adds it to everything selected." />
+        </Border>
+        <Grid ColumnDefinitions="*,Auto">
+          <ComboBox Grid.Column="0" HorizontalAlignment="Stretch"
+                    ItemsSource="{Binding Attributes.KindLabels}"
+                    SelectedItem="{Binding Attributes.NewKindLabel, Mode=TwoWay}"
+                    ToolTip.Tip="{x:Static shell:AttributeKindWords.Help}" />
+          <Button Grid.Column="1" Classes="seg" Content="Add" Margin="4,0,0,0"
+                  Click="OnAddAttribute"
+                  ToolTip.Tip="Add an attribute of this name and kind to everything selected." />
+        </Grid>
+        <TextBlock Classes="rejection" TextWrapping="Wrap"
+                   Text="{Binding Attributes.NewNameField.Rejection}"
+                   IsVisible="{Binding Attributes.NewNameField.HasRejection}" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>
