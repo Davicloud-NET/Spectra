@@ -30,7 +30,7 @@ public class CookedMeshTouchTests
                 UseCache = false,
                 Targets = [GraphicsBackend.OpenGL],
                 ScriptCheck = new LuauSyntaxCheck(),
-            }).Run();
+            }).Run(TestContext.Current.CancellationToken);
         cook.Succeeded.ShouldBeTrue(string.Join(Environment.NewLine, cook.Diagnostics));
 
         using (PlayedLevel loose = PlayedLevel.Loose(project, AskedLevel.Bundle))
