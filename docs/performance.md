@@ -111,14 +111,14 @@ It writes `held-bytes.txt` beside the test binary. Each load makes parts in a le
 |---|---|---|---|---|---|---|
 | 10 parts a tick, 64 KiB string | 3390 | 420 MiB | 11 | 0.1 MiB | 0.34 to 0.37 ms a tick | 0.88 to 1.0 ms a tick |
 | 1 part a tick, 64 KiB string | 181 | 21 MiB | 11 | 1.1 MiB | 17 to 22 us a tick | 17 to 21 us a tick |
-| 10 parts a tick, 16 byte string | 1931 | 2.2 MiB | 240 | 0.3 MiB | 21 to 29 us a tick | 22 to 23 us a tick |
+| 10 parts a tick, 16 byte string | 1931 | 2.2 MiB | 155 | 0.2 MiB | 21 to 29 us a tick | 22 to 25 us a tick |
 | nothing destroyed | 0 | 0 | 0 | 0 | 0.8 to 1.1 us a tick | 0.9 us a tick |
 | 20000 parts in one call, 64 KiB string | 16384 | 2060 MiB | 11 | 1.4 MiB | 68 to 75 us a part | 98 us a part |
-| 20000 parts in one call, 16 byte string | 15362 | 15 to 17 MiB | 239 | 0.9 MiB | 3.9 to 4.3 us a part | 2.6 to 2.7 us a part |
+| 20000 parts in one call, 16 byte string | 15362 | 15 to 17 MiB | 154 | 0.7 MiB | 3.9 to 4.3 us a part | 2.6 to 3.8 us a part |
 
 Luau's own count stayed between 400 and 1100 KiB in every row, before and after.
 
-How many parts wait follows from the first goal, 256 KiB by the estimate: 240 small parts, or two parts with a 64 KiB string and what is destroyed while the cycle runs. With a large Luau heap a cycle takes longer and more parts wait for it. The first load beside 35 MiB of Luau in 400000 small tables had 178 parts and 21 MiB waiting.
+How many parts wait follows from the first goal, 256 KiB by the estimate: 155 small parts with a tag and an attribute each, or two parts with a 64 KiB string and what is destroyed while the cycle runs. With a large Luau heap a cycle takes longer and more parts wait for it. The first load beside 35 MiB of Luau in 400000 small tables had 178 parts and 21 MiB waiting.
 
 What the collector costs:
 
