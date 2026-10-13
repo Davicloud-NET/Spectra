@@ -662,6 +662,10 @@ Each of these takes the mover out. The built-in mover moves the player on that s
 
 After a failure no mover is taken until the level is played again: `SetMover` with a function is an error that says so. A mover that fails on its first tick and is installed on every tick would otherwise fill the log.
 
+A mover can call `SetMover` from inside its own call and fail after that. It is no longer the level's mover by then. Its line ends in "The built-in mover moved the player on this tick.", the mover it installed stays and moves the player from the next tick, and a later `SetMover` is taken.
+
+A level closed while the mover's call runs, as the editor does from another thread when its engine thread has died, says nothing. What the mover made of its copy is dropped, and the built-in mover moves the player on that tick.
+
 #### What it costs
 
 The function runs on one Luau thread kept for it (`MoverCall`), resumed on every tick. A thread made for each call, which is how a signal's listener runs, leaves the collector 1.3 KB a tick.
