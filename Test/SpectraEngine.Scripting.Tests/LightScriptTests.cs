@@ -89,9 +89,9 @@ public sealed class LightScriptTests
     }
 
     [Theory]
-    [InlineData("lamp.Brightness = -1", "Brightness cannot be -1: it takes a number of 0 or more that is not infinite.")]
-    [InlineData("lamp.Brightness = 0/0", "Brightness cannot be NaN: it takes a number of 0 or more that is not infinite.")]
-    [InlineData("lamp.Brightness = math.huge", "Brightness cannot be Infinity: it takes a number of 0 or more that is not infinite.")]
+    [InlineData("lamp.Brightness = -math.huge", "Brightness cannot be -Infinity: it takes a number that is not infinite.")]
+    [InlineData("lamp.Brightness = 0/0", "Brightness cannot be NaN: it takes a number that is not infinite.")]
+    [InlineData("lamp.Brightness = math.huge", "Brightness cannot be Infinity: it takes a number that is not infinite.")]
     [InlineData("lamp.Range = 0", "Range cannot be 0: it takes a number above 0 that is not infinite.")]
     [InlineData("lamp.Range = -math.huge", "Range cannot be -Infinity: it takes a number above 0 that is not infinite.")]
     [InlineData(

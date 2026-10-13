@@ -14,7 +14,7 @@ internal static partial class LightApi
     [ScriptProperty(Sets = SettableMemberId.Enabled)]
     public static partial bool Enabled(SceneNode node);
 
-    /// <summary>How bright the light is: 0 or more, and the light's colour is multiplied by it. It is the Intensity the editor shows. Roblox's Brightness is on a scale of its own, so a number from a Roblox place is a first guess here.</summary>
+    /// <summary>How bright the light is: 0 or more, and the light's colour is multiplied by it. A number below 0 is taken as 0, as Roblox takes it. It is the Intensity the editor shows. Roblox's Brightness is on a scale of its own, so a number from a Roblox place is a first guess here.</summary>
     [ScriptProperty(Sets = SettableMemberId.Brightness)]
     public static partial float Brightness(SceneNode node);
 

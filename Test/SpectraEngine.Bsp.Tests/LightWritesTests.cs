@@ -102,12 +102,41 @@ public sealed class LightWritesTests
         world.Journal.Count.ShouldBe(0);
     }
 
+    // What Roblox Studio answered: light.Brightness = -3 reads back 0, with
+    // no error.
     [Theory]
-    [InlineData(-1.0, "Brightness cannot be -1: it takes a number of 0 or more that is not infinite.")]
-    [InlineData(double.NaN, "Brightness cannot be NaN: it takes a number of 0 or more that is not infinite.")]
-    [InlineData(double.PositiveInfinity, "Brightness cannot be Infinity: it takes a number of 0 or more that is not infinite.")]
-    [InlineData(1e300, "Brightness cannot be Infinity: it takes a number of 0 or more that is not infinite.")]
-    public void A_brightness_that_is_negative_or_no_number_is_refused(double value, string words)
+    [InlineData(-3.0)]
+    [InlineData(-0.001)]
+    [InlineData(-0.0)]
+    [InlineData(-1e30)]
+    public void A_brightness_below_zero_is_taken_as_zero_as_Studio_takes_it(double value)
+    {
+        SceneNode lamp = Lamp(LightKind.Point);
+        Light light = lamp.Light.ShouldNotBeNull();
+        EntityWorld world = Started();
+        var writes = new ScriptWrites(world);
+
+        Write(writes, lamp, SettableMemberId.Brightness, MemberValue.Of(value));
+
+        light.Intensity.ShouldBe(0f);
+        BitConverter.SingleToInt32Bits(light.Intensity).ShouldBe(0, "minus zero is zero too");
+        ScriptWrites.Read(lamp, SettableMemberId.Brightness).ShouldBe(MemberValue.Of(0.0));
+        world.Journal.Count.ShouldBe(1);
+
+        // A light that is dark already records nothing for another such write.
+        Write(writes, lamp, SettableMemberId.Brightness, MemberValue.Of(-7.0));
+        world.Journal.Count.ShouldBe(1);
+
+        world.Deactivate();
+        light.Intensity.ShouldBe(1f);
+    }
+
+    [Theory]
+    [InlineData(double.NaN, "Brightness cannot be NaN: it takes a number that is not infinite.")]
+    [InlineData(double.PositiveInfinity, "Brightness cannot be Infinity: it takes a number that is not infinite.")]
+    [InlineData(double.NegativeInfinity, "Brightness cannot be -Infinity: it takes a number that is not infinite.")]
+    [InlineData(1e300, "Brightness cannot be Infinity: it takes a number that is not infinite.")]
+    public void A_brightness_that_is_no_number_or_infinite_is_refused(double value, string words)
     {
         SceneNode lamp = Lamp(LightKind.Point);
         EntityWorld world = Started();

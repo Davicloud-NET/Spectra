@@ -24,6 +24,10 @@ internal static partial class Color3Library
     public static Color3 FromHsv(float hue = 0f, float saturation = 0f, float value = 0f) =>
         Color3.FromHsv(hue, saturation, value);
 
+    /// <summary>The hue, the saturation and the value of a colour, each 0 to 1. The same as the colour's own ToHSV.</summary>
+    [ScriptFunction(Name = "toHSV")]
+    public static (float H, float S, float V) ToHsv(Color3 color) => color.ToHsv();
+
     /// <summary>Makes a colour from six hex digits, or from three that are each doubled, with or without a # in front.</summary>
     // Written by hand: text that is no colour is the script's error.
     [ScriptFunction(Name = "fromHex", Parameters = "hex: string", Returns = "Color3")]

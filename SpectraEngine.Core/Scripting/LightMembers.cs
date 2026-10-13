@@ -61,9 +61,14 @@ internal static class LightMembers
         if (value == light.Intensity)
             return null;
 
-        // False for what is no number, too.
-        if (!(value >= 0f) || float.IsInfinity(value))
-            return Refused("Brightness", value, "of 0 or more");
+        if (!float.IsFinite(value))
+            return Refused("Brightness", value, "a number that is not infinite");
+
+        // Below 0 is 0 and no error, as Roblox takes it. So is -0.
+        if (value <= 0f)
+            value = 0f;
+        if (value == light.Intensity)
+            return null;
         if (!Shines(light.Color, value))
         {
             return TooMuch(
@@ -80,8 +85,10 @@ internal static class LightMembers
         if (value == light.Range)
             return null;
 
+        // False for what is no number, too. The renderer divides by the
+        // range, so a light cannot have none, where Roblox takes 0.
         if (!(value > 0f) || float.IsInfinity(value))
-            return Refused("Range", value, "above 0");
+            return Refused("Range", value, "a number above 0 that is not infinite");
 
         journal.Record(light, LightJournalKind.Range);
         light.Range = value;
@@ -132,5 +139,5 @@ internal static class LightMembers
         string.Create(CultureInfo.InvariantCulture, $"{value.R}, {value.G}, {value.B}");
 
     private static string Refused(string member, float value, string takes) => string.Create(
-        CultureInfo.InvariantCulture, $"{member} cannot be {value}: it takes a number {takes} that is not infinite.");
+        CultureInfo.InvariantCulture, $"{member} cannot be {value}: it takes {takes}.");
 }

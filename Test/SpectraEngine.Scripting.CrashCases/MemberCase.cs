@@ -27,7 +27,7 @@ internal static class MemberCase
         ("lamp.Range += 1 return lamp.Range", true, "11"),
         ("return lamp.Color:Lerp(Color3.new(), 0.5)", true, "0.5, 0.25098, 0"),
         ("return lamp.Name .. lamp.ClassName", true, "LampPointLight"),
-        ("lamp.Brightness = -1", false, "Brightness cannot be -1"),
+        ("lamp.Brightness = 0/0", false, "Brightness cannot be NaN"),
         ("lamp.Color = Color3.new(0/0, 0, 0)", false, "Color cannot be NaN, 0, 0"),
         ("lamp.Enabled = 1", false, "boolean expected, got number"),
         ("crate.CanCollide = false return crate.CanCollide", true, "false"),
