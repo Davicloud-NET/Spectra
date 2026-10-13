@@ -16,6 +16,7 @@ internal sealed class LooseNodes(LuauHost host, TreeWrites tree, Action<SceneNod
     private readonly List<SceneNode> _unreached = [];
     private readonly List<SceneNode> _walk = [];
     private int _lookOverAt = FirstLookOver;
+    private bool _isSweeping;
 
     public int Count => _tops.Count;
 
@@ -48,22 +49,31 @@ internal sealed class LooseNodes(LuauHost host, TreeWrites tree, Action<SceneNod
     // one was forgotten.
     public bool Sweep()
     {
-        if (_tops.Count == 0)
+        // Forgetting a node can end a thread, and ending one can run a
+        // script that makes a node and so comes back here.
+        if (_tops.Count == 0 || _isSweeping)
             return false;
 
-        host.Collect();
-        foreach (SceneNode top in _tops)
+        _isSweeping = true;
+        try
         {
-            if (!IsHeld(top))
-                _unreached.Add(top);
+            host.Collect();
+            foreach (SceneNode top in _tops)
+            {
+                if (!IsHeld(top))
+                    _unreached.Add(top);
+            }
+
+            for (int i = 0; i < _unreached.Count; i++)
+                Drop(_unreached[i]);
+
+            return _unreached.Count > 0;
         }
-
-        bool found = _unreached.Count > 0;
-        for (int i = 0; i < _unreached.Count; i++)
-            Drop(_unreached[i]);
-
-        _unreached.Clear();
-        return found;
+        finally
+        {
+            _unreached.Clear();
+            _isSweeping = false;
+        }
     }
 
     private void Drop(SceneNode top)

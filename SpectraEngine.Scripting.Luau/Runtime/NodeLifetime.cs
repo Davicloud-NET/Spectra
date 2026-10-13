@@ -108,7 +108,10 @@ internal sealed class NodeLifetime
 
         if (isInLevel != wasInLevel)
             Tell(node, isInLevel);
-        else if (!isInLevel && node.Parent is not null)
+
+        // The scene tells of a child that arrives in the level. One that
+        // arrives under a node in no level is told of here.
+        if (!isInLevel && node.Parent is not null)
             _waits.Arrived(node);
     }
 

@@ -124,6 +124,11 @@ public sealed class SpawnCostTests
     [Fact(Explicit = true)]
     public void The_cost_of_every_spawn_is_written_down()
     {
+        // Once for nothing: the first runs are of code the runtime has yet to
+        // compile for good, and would make the first rows the dearest.
+        foreach ((_, string spawn) in Spawns)
+            Run(spawn);
+
         var table = new StringBuilder();
         foreach ((string name, string spawn) in Spawns)
         {
