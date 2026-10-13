@@ -1,5 +1,6 @@
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Inspection;
+using SpectraEngine.Core.Scripting;
 using System;
 
 namespace SpectraEngine.Editing.Commands;
@@ -29,6 +30,30 @@ public static class PropertyLimits
 
         _ => null,
     };
+
+    /// <summary>Why a node cannot be built with this tag, as a sentence, or null when it can.</summary>
+    public static string? TagRefusal(string tag) => TagName.IsValid(tag) ? null : TagName.Refusal(tag) + ".";
+
+    /// <summary>Why an attribute cannot have this name, as a sentence, or null when it can.</summary>
+    public static string? AttributeNameRefusal(string name) =>
+        AttributeName.IsValid(name) ? null : AttributeName.Refusal(name) + ".";
+
+    /// <summary>Why an attribute cannot hold this value, as a sentence, or null when it can.</summary>
+    public static string? AttributeValueRefusal(in MemberValue value) => AttributeValueRule.Refusal(in value);
+
+    /// <summary>What to say when a node has no room for one more tag.</summary>
+    public static string FullOfTags => $"A node has at most {TagLimits.MaxPerNode} tags.";
+
+    /// <summary>What to say when a node has no room for one more attribute.</summary>
+    public static string FullOfAttributes => $"A node holds at most {AttributeLimits.MaxPerNode} attributes.";
+
+    /// <summary>
+    /// What to say of a name the entity on a node answers to already. A
+    /// script reads that setting as an attribute, so a second value under
+    /// the name would be one the entity never sees.
+    /// </summary>
+    public static string TakenByEntity(string name) =>
+        $"'{name}' is a setting of the entity already, and scripts read it as an attribute. Pick another name.";
 
     /// <summary>What this cell accepts, for the message shown when input was rejected.</summary>
     public static string Expected(PropertyId id, PropertyKind kind)

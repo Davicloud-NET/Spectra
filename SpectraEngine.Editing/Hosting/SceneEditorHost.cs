@@ -666,6 +666,32 @@ public sealed class SceneEditorHost : ISceneEditor
     }
 
     /// <summary>
+    /// Puts a tag on every selected node or takes it off every one, as one
+    /// undoable entry. The selection is the one at the time the edit runs.
+    /// </summary>
+    /// <returns>How many nodes changed.</returns>
+    public int ApplyTag(TagEdit edit)
+    {
+        if (RefuseEdit("Tag edit", allowPropertyGesture: true))
+            return 0;
+
+        return TagEditor.Apply(_undo, _scene.Selection.Items, edit, _propertyGestureOpen);
+    }
+
+    /// <summary>
+    /// Sets, renames or takes away an attribute on the selected nodes, as one
+    /// undoable entry. The selection is the one at the time the edit runs.
+    /// </summary>
+    /// <returns>How many nodes changed.</returns>
+    public int ApplyAttribute(AttributeEdit edit)
+    {
+        if (RefuseEdit("Attribute edit", allowPropertyGesture: true))
+            return 0;
+
+        return AttributeEditor.Apply(_undo, _scene.Selection.Items, edit, _propertyGestureOpen);
+    }
+
+    /// <summary>
     /// Replaces the wiring on one entity node, as one undoable entry. A list
     /// equal to the stored one records nothing.
     /// </summary>
