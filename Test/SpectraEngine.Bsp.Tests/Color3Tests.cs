@@ -118,8 +118,8 @@ public sealed class Color3Tests
         color.ShouldBe(default);
     }
 
-    // Roblox's documentation shows upper case in its sample and Studio is
-    // remembered to answer in lower case. Chosen: lower case, no sign.
+    // Roblox's documentation says six digits and no sign, and not which
+    // case the letters are. Chosen: lower case.
     [Fact]
     public void A_colour_is_written_as_six_hex_digits_in_lower_case_with_no_sign()
     {
