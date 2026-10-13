@@ -7,6 +7,10 @@ import starlight from '@astrojs/starlight';
 const apiSidebar = new URL('./src/api-sidebar.json', import.meta.url);
 const apiGroups = existsSync(apiSidebar) ? JSON.parse(readFileSync(apiSidebar, 'utf8')) : [];
 
+// The script reference, written by the same command.
+const scriptSidebar = new URL('./src/script-api-sidebar.json', import.meta.url);
+const scriptGroups = existsSync(scriptSidebar) ? JSON.parse(readFileSync(scriptSidebar, 'utf8')) : [];
+
 export default defineConfig({
 	// DocFX rewrites .api while the dev server runs, and the watcher trips on it.
 	vite: { server: { watch: { ignored: ['**/.api/**'] } } },
@@ -64,6 +68,7 @@ export default defineConfig({
 						{ label: 'Material files', slug: 'reference/material-files' },
 						{ label: 'Level files', slug: 'reference/level-files' },
 						{ label: 'scook', slug: 'reference/scook' },
+						{ label: 'Script API (Luau)', collapsed: true, items: scriptGroups },
 						{ label: 'Engine API (C#)', collapsed: true, items: apiGroups },
 					],
 				},

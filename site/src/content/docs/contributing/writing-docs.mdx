@@ -16,7 +16,7 @@ npm run api
 npm run dev
 ```
 
-`npm run api` builds the C# API reference and needs the .NET SDK. Skip it if you are only writing guides.
+`npm run api` builds the C# API reference and the script reference, and needs the .NET SDK. Skip it if you are only writing guides.
 
 ## Add a page
 
@@ -90,6 +90,26 @@ A caution, for something that loses work.
 
 The numbered list under "Add a page" is the steps component.
 
+## Scripts on a page
+
+A block of Luau on a page is the whole text of a sample file under `Test/SpectraEngine.Scripting.Tests/Samples/Assets`, copied in. The scripting test suite fails for a block that is no sample, so nothing a reader copies goes unchecked: luau-lsp reads every sample under both of its type solvers, and the engine's own Luau compiles it.
+
+<Steps>
+
+1. Write the script as a `.luau` file under `Samples/Assets/Guides`, in a folder for the page. A script that asks for a module by a path goes under `Samples/Assets/Scripts`, where the path is the one a reader's project has.
+
+2. A script with a mistake the page wants to show goes under `Samples/Assets/Mistakes`. End the wrong line with `-->` and the words luau-lsp has to say of it. The page shows the file without the arrow.
+
+3. Copy the file's text into a `luau` block on the page.
+
+4. Give the page a test class that plays the script in a level and holds what the page says it prints, and name the two in `SitePageScriptTests`.
+
+</Steps>
+
+`docs/script-api.md` in the repository says how the samples are checked.
+
 ## The API reference
 
 The pages under Reference, Engine API are generated from the `///` comments in the code. Don't edit them here. Change the comment and run `npm run api` again.
+
+The pages under Reference, Script API are generated too, from the engine's description of what a script can reach. A summary there is the `///` comment of the member that declares it. `npm run script-api` writes these pages alone.

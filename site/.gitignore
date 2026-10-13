@@ -24,3 +24,5 @@ pnpm-debug.log*
 .api/
 src/content/docs/reference/api/
 src/api-sidebar.json
+src/content/docs/reference/script/
+src/script-api-sidebar.json
