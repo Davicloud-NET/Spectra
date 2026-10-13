@@ -4,23 +4,19 @@ using System.Collections.Generic;
 
 namespace SpectraEngine.Core.Entities;
 
-// What an entity world is waiting to send, and the sending of it once it is
-// due. Thinks, inputs and what scripts wait for share one order: the tick,
-// then the order made in.
+// What an entity world is waiting to send, and what of it goes out in a
+// drain. Thinks, inputs and what scripts queue share one order: the tick,
+// then the order made in. EntityEventDelivery sends what is due.
 internal sealed class EntityDispatcher
 {
     private readonly EntityWorld _world;
-    private readonly ILogger _logger;
     private readonly EntityDispatchLog _log;
+    private readonly EntityEventDelivery _delivery;
 
     // Each has the tick's budget and the queue's room to itself. A level
     // with too many threads then runs its scripts late and its wires on time.
     private readonly EntityEventLane _entities = new();
     private readonly EntityEventLane _scripts = new();
-
-    // Reused across dispatches. Safe: FireOutput queues, so no input handler
-    // can resolve a target mid-dispatch.
-    private readonly List<Entity> _resolved = [];
 
     private long _sequence;
     private int _maxDispatchesPerTick = 4096;
@@ -29,8 +25,8 @@ internal sealed class EntityDispatcher
     public EntityDispatcher(EntityWorld world, ILogger logger)
     {
         _world = world;
-        _logger = logger;
         _log = new EntityDispatchLog(logger);
+        _delivery = new EntityEventDelivery(world, logger);
     }
 
     public int MaxDispatchesPerTick
@@ -63,7 +59,7 @@ internal sealed class EntityDispatcher
     {
         _entities.Clear();
         _scripts.Clear();
-        _resolved.Clear();
+        _delivery.Clear();
         _sequence = 0;
     }
 
@@ -193,7 +189,7 @@ internal sealed class EntityDispatcher
             }
 
             lane.TryPop(out EntityEvent due);
-            Dispatch(due);
+            _delivery.Send(due);
             sent++;
         }
 
@@ -266,79 +262,6 @@ internal sealed class EntityDispatcher
 
         lane.Push(made);
         return true;
-    }
-
-    private void Dispatch(in EntityEvent due)
-    {
-        if (due.Kind == EntityEventKind.Think)
-        {
-            // A think whose serial has moved on was superseded or cancelled.
-            if (due.Entity is { } thinker && thinker.ThinkSerial == due.ThinkSerial)
-                thinker.Think();
-
-            return;
-        }
-
-        if (due.Kind == EntityEventKind.ScriptWake)
-        {
-            _world.Scripts?.Wake(due.Token);
-            return;
-        }
-
-        if (due.Kind == EntityEventKind.ScriptSignal)
-        {
-            _world.Scripts?.Hear(due.Token, due.Parameter);
-            return;
-        }
-
-        var context = new EntityInputContext(due.Activator, due.Entity, due.Parameter);
-
-        if (due.Target is { } instance)
-        {
-            // Unlisted: despawned, or its node left the scene. A name would
-            // not find it either.
-            if (instance.IndexedName is null)
-            {
-                _logger.LogDebug(
-                    "'{Input}' was queued for an entity that is gone by now; it was not sent.", due.Input);
-                _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.TargetMissing, _world, due, instance));
-                return;
-            }
-
-            Deliver(instance, due, ref context);
-            return;
-        }
-
-        _resolved.Clear();
-        // Self and caller are the same entity for a connection.
-        _world.Index?.Resolve(due.TargetName, due.Entity, due.Activator, due.Entity, _resolved);
-
-        if (_resolved.Count == 0)
-        {
-            _logger.LogDebug(
-                "Output '{Output}' names '{TargetName}', which matches nothing right now; '{Input}' was not sent.",
-                due.Output, due.TargetName, due.Input);
-            _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.TargetMissing, _world, due, null));
-            return;
-        }
-
-        for (int i = 0; i < _resolved.Count; i++)
-            Deliver(_resolved[i], due, ref context);
-    }
-
-    private void Deliver(Entity target, in EntityEvent due, ref EntityInputContext context)
-    {
-        // Before the entity handles it, so what it fires in answer comes after.
-        _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputDelivered, _world, due, target));
-
-        if (target.AcceptInput(due.Input, ref context))
-            return;
-
-        _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputRefused, _world, due, target));
-
-        _logger.LogDebug(
-            "Entity '{TargetName}' ({ClassName}) has no input '{Input}'.",
-            target.TargetName, target.ClassName, due.Input);
     }
 
     // More was waiting than one tick may send. The rest stays queued and
