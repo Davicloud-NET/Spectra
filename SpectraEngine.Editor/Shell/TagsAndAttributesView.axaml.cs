@@ -143,7 +143,13 @@ public partial class TagsAndAttributesView : UserControl
         _colorRow = null;
         _colorChanged = false;
 
-        if (_colorCancelled) EscapePressed?.Invoke();
+        if (_colorCancelled)
+        {
+            // The swatch and its cell showed the drag. Back to what the level holds.
+            Panel?.Attributes.ShowAgain();
+            EscapePressed?.Invoke();
+        }
+
         _colorCancelled = false;
     }
 

@@ -115,6 +115,16 @@ public sealed class AttributesModel : ObservableObject
 
     internal void Post(AttributeEdit edit) => _apply(edit);
 
+    // Shows the last published attributes again. A colour dragged in the
+    // picker is shown before the engine says it. A cancel can put the level
+    // back to the very sets this saw last, and Apply takes those for no news.
+    internal void ShowAgain()
+    {
+        AttributePanelInfo? info = _info;
+        _info = null;
+        Apply(info);
+    }
+
     // What was typed stays in the box with the reason under it, so it can
     // be put right. Reject alone would empty the box.
     private void Add(PropertyFieldModel field, string typed)
