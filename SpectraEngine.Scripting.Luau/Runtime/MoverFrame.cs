@@ -39,10 +39,7 @@ internal sealed class MoverFrame
 
     public CharacterTuning? Tuning { get; private set; }
 
-    public float DeltaTime { get; private set; }
-
-    public void Open(
-        in CharacterState state, in CharacterCommand command, ICharacterCollisionSource source, CharacterTuning tuning, float deltaTime)
+    public void Open(in CharacterState state, in CharacterCommand command, ICharacterCollisionSource source, CharacterTuning tuning)
     {
         _state = state;
         _start = state;
@@ -57,7 +54,6 @@ internal sealed class MoverFrame
         MoveDirection = command.MoveDirection;
         Source = source;
         Tuning = tuning;
-        DeltaTime = deltaTime;
         IsOpen = true;
     }
 

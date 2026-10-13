@@ -66,7 +66,7 @@ internal sealed class LuauCharacterMover : ICharacterMover
         ScriptMessage? failure;
         try
         {
-            _frame.Open(in state, in command, source, tuning, deltaTime);
+            _frame.Open(in state, in command, source, tuning);
             _collision.Begin(in state, tuning, deltaTime);
             if (_call.TryRun(_handed, deltaTime, out failure))
             {

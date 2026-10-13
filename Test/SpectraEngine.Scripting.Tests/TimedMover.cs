@@ -9,8 +9,6 @@ internal sealed class TimedMover(ICharacterMover inner) : ICharacterMover
 {
     private readonly List<long> _ticks = new(4096);
 
-    public int Calls => _ticks.Count;
-
     // The tick in the middle. A walk has a few ticks that build the
     // collision of a new stretch of the level, and those are no mover's own.
     public double MedianNanoseconds => Nanoseconds(Sorted()[_ticks.Count / 2]);

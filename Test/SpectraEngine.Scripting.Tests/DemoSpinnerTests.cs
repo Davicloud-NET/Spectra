@@ -4,8 +4,8 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Scripting.Tests;
 
 /// <summary>
-/// The demo level's one script, read from the engine's own content the way
-/// the demo reads it.
+/// The spinner of the demo level and its script, read from the engine's own
+/// content the way the demo reads it.
 /// </summary>
 public sealed class DemoSpinnerTests
 {
