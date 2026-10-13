@@ -16,7 +16,7 @@ That's the Logic view while a level plays. Each card is an entity and each line 
 
 ## Where it's at
 
-It's early. You can build a level, wire it up, walk around in it and cook it into packs the game runs from. You can't script it yet, and until Luau is in you can't make a real game with it. There are no downloads either, so the way in is building from source.
+It's early. You can build a level, wire it up, script it in Luau, walk around in it and cook it into packs the game runs from. Scripting is new and still thin, so it's too soon to make a real game with it. There are no downloads either, so the way in is building from source.
 
 | | Works today | Not yet |
 |---|---|---|
@@ -29,8 +29,9 @@ It's early. You can build a level, wire it up, walk around in it and cook it int
 | Sound | Positional sound through OpenAL with distance falloff, Doppler, and walls that muffle a sound by what they're made of and how thick they are. Captions and subtitles come from plain text files. | Sound around corners, reverb, music, compressed audio. Nothing draws the captions on screen yet. |
 | Content | Everything loads from loose files or from `.spack` packs. `scook` cooks a project into packs: compressed textures, glTF models, audio, compiled shaders and baked levels. The same input gives the same bytes, on Windows and on Linux. | Cooked materials, skinned models, collision shapes on models |
 | Console | One command line per engine. You reach it from the editor, from the terminal or from the demo's command line. `ent_fire`, `ent_list`, `ent_show` and `ent_watch` poke at a running level. | Variables, key binds, config files, completion |
+| Scripting | Luau scripts on nodes, each one a `.luau` file in the project. They run while the level plays, on its fixed tick, and stopping puts back everything a script changed. A script finds nodes the way a Roblox script does, moves them, waits, reaches the player and requires modules. An error shows in Output with its file and line, and a click opens the file there. The editor sets the project up for VS Code and `luau-lsp`, so you get completion and type checking from the first script on. | Touch events, making and removing parts, tags and attributes, a debugger. A change to a script waits for the next Play. |
 
-Not started at all: scripting, multiplayer, game UI, terrain and save games. Animation has skeletons, clips and pose blending on the CPU, but nothing imports or draws them.
+Not started at all: multiplayer, game UI, terrain and save games. Animation has skeletons, clips and pose blending on the CPU, but nothing imports or draws them.
 
 ## Build and run
 

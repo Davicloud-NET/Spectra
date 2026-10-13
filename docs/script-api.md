@@ -259,6 +259,7 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop.
 - `PlayerSettingTests` sets every settable property of the character from a script and compares what outlives a play session after Stop. It also tries every name on the player's objects: what takes a value must be what the description says a script can set.
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global, and that it has no `require`.
+- `ScriptSampleTests` fails when no clean sample script names a class or uses a global. See [Checked by luau-lsp](#checked-by-luau-lsp).
 - `ScriptCostTests` fails when a crossing allocates. A new kind of crossing gets a row there. Its table of times is a measurement, which runs only when asked for: `dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.ScriptCostTests"`.
 - The generator's own tests are in `Test/SpectraEngine.Entities.Tests` (`ScriptApiGenerator*`). They compile its output against stubs of the binding in `ScriptApiHarness`. When the generator calls something new in the binding, the stub gets it too.
 - `EntityClassApiTests` holds the built-in entity classes against the script API: no input or output may be named as a member of the node that carries it, and each has to be in the definitions file.
@@ -277,3 +278,45 @@ dotnet run --project SpectraEngine.Executable -- --export-script-api=script-api.
 `LuauDefinitions.Write` and `ScriptApiJson.Write` are in Core and need no Luau. `LuauScriptApi.Description` is the data, and reading it loads no native library.
 
 The syntax of a definitions file has no specification. `luau-lsp` 1.70.1 loads this one under both of its type solvers, entity classes and all, and its `analyze` command reports a wrong call on a node that a script cast to its class. Every construct is written in one place in `LuauDefinitions`, so a correction is one line there and one in `LuauDefinitionsTests`.
+
+## In a project
+
+The editor makes the same text as `--export-script-types` (`ScriptDefinitions`, and a test compares the two calls). When a script of a project opens, `ScriptLauncher` first has `ScriptProjectSetup` write four files beside the project's `Assets`:
+
+| File | Written |
+|---|---|
+| `spectra.d.luau` | when it is missing, and again whenever its text is not this build's. A text that differs only in its line ends is left alone |
+| `.luaurc` | when it is missing. It holds the alias `assets` for `./Assets` and nothing else |
+| `.vscode/settings.json` | when it is missing. The platform is `standard`, the definitions file is named as `@spectra`, and the Rojo sourcemap is off |
+| `.vscode/extensions.json` | when it is missing. It recommends `JohnnyMorganz.luau-lsp` |
+
+The last three belong to the person once they exist. They are never written over and never merged into, also when one is not valid JSON. Their text is in `ScriptProjectFiles`.
+
+Opening a project brings an old `spectra.d.luau` up to the build and writes nothing else. A project that never opened a script gets no file. A folder that does not take a file is one warning in Output, and the script opens all the same.
+
+## Checked by luau-lsp
+
+`Test/SpectraEngine.Scripting.Tests/Samples/Assets` is the `Assets` folder of a small project. `LuauLspTests` sets a project up in a temporary folder with the code above, copies the samples in, and runs `luau-lsp analyze` on them under the old type solver and under the new one. Its arguments are read from the `.vscode/settings.json` that was written.
+
+- A script under `Scripts` is clean: luau-lsp has to say nothing of it. The file Insert Script writes and the demo's `Assets/Scripts/spinner.luau` are checked with them.
+- A script under `Mistakes` has one mistake a line. Each such line ends in an arrow and the words luau-lsp has to say of it, and no other line may be reported:
+
+```lua
+door.Position = 5 --> 'Vector3', but got 'number'
+frame.Position = Vector3.zero --> new: Position of type 'CFrame' is read-only
+print(frame + frame) --> old: 'Vector3', but got 'CFrame' --> new: Operator '+' could not be applied
+```
+
+Words after `old:` or `new:` are for that solver alone, and the other one then has to say nothing of the line. A sample says `--!strict` on its first line, or it is checked the way a new project is, which finds far fewer mistakes.
+
+A new class or global needs a line in a clean sample, or `ScriptSampleTests` fails and names it. A global that is marked as old cannot be called in a clean sample, so it needs a line in a mistake that ends in the checker's words for it. A new member is worth a line of each kind: one that uses it, and one that hands it the wrong type.
+
+The tests that start luau-lsp carry the trait `Suite=LuauLsp`. They run only where `SPECTRA_LUAU_LSP` holds the path of the program, and skip everywhere else. CI fetches release 1.70.1 by its hash (`.github/actions/luau-lsp`) and fails when one skipped.
+
+```bash
+SPECTRA_LUAU_LSP=/path/to/luau-lsp dotnet run --project Test/SpectraEngine.Scripting.Tests -- -trait "Suite=LuauLsp"
+```
+
+What luau-lsp cannot check is in `AGENTS.md`: a write to a `read` property passes under the old solver, and a name it does not know is a child of the node.
+
+The scripts on the site's page [Write your first script](../site/src/content/docs/guides/write-your-first-script.mdx) are samples too. `FirstScriptGuideTests` compares each block of the page with its sample and plays the samples in a level.
