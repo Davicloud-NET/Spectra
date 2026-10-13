@@ -61,6 +61,33 @@ public sealed class ObjectTests
     }
 
     [Fact]
+    public void Whoever_asked_is_told_of_an_object_once_Luau_collected_it_or_it_was_released()
+    {
+        Door kept = new("kept");
+        Door dropped = new("dropped");
+        Door removed = new("removed");
+        using LuauHost host = OpenWithDoors(out _);
+        List<object> released = [];
+        host.Objects.Released = released.Add;
+        LuauScript script = host.LoadText(
+            "local kept, dropped, removed = coroutine.yield()\ncoroutine.yield()\ndropped = nil\ncoroutine.yield()");
+        script.Start().ShouldBe(LuauResume.Yielded);
+        script.Thread.Resume(
+            [LuauValue.Object(DoorTag, kept), LuauValue.Object(DoorTag, dropped), LuauValue.Object(DoorTag, removed)])
+            .ShouldBe(LuauResume.Yielded);
+        host.Collect();
+        released.ShouldBeEmpty();
+
+        script.Thread.Resume().ShouldBe(LuauResume.Yielded);
+        host.Collect();
+        released.ShouldBe([dropped]);
+
+        host.Objects.Release(removed).ShouldBeTrue();
+        released.ShouldBe([dropped, removed]);
+        host.Objects.Holds(kept).ShouldBeTrue();
+    }
+
+    [Fact]
     public void A_handle_to_a_released_object_is_an_error_in_the_script()
     {
         Door door = new("front");
@@ -104,6 +131,8 @@ public sealed class ObjectTests
     {
         Door door = new("front");
         using LuauHost host = OpenWithDoors(out _);
+        List<object> released = [];
+        host.Objects.Released = released.Add;
         LuauScript script = host.LoadText(
             "local door = coroutine.yield()\ndoor = nil\nlocal again = coroutine.yield()\ncoroutine.yield()\nreturn name_of(again)");
         script.Start().ShouldBe(LuauResume.Yielded);
@@ -116,6 +145,7 @@ public sealed class ObjectTests
 
         script.Thread.Values.GetText(1).ShouldBe("front");
         host.Objects.Count.ShouldBe(1);
+        released.ShouldBeEmpty();
     }
 
     [Fact]
