@@ -13,6 +13,7 @@ public interface ICharacterMover
     // Touch reads what a mover leaves in the state: GroundNodeId while it is
     // Grounded, and SlideContacts. One that leaves them empty touches a part
     // only by where the tick ends, and misses a corner it glances off.
+    // What it keeps for a later tick goes into the state's Memory.
     void Tick(
         ref CharacterState state,
         in CharacterCommand command,

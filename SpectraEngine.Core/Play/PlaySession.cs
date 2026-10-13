@@ -89,7 +89,8 @@ public sealed class PlaySession
     }
 
     /// <summary>
-    /// Stops the entities, which puts back every node they moved. Does nothing
+    /// Stops the entities, which puts back every node they moved and the
+    /// character's mover, when a script of the level replaced it. Does nothing
     /// unless a level is being played.
     /// </summary>
     // A host with an editor resumes it after: OnRemove must run before the

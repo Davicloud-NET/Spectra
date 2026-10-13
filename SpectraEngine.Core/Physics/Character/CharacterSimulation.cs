@@ -48,6 +48,8 @@ public sealed class CharacterSimulation : IPlayerPresence, ITunedPlayer, IMovedP
     /// The movement algorithm. Defaults to the engine's own; assign to replace
     /// it, at any time.
     /// </summary>
+    // A level's script replaces it through PlayerWrites, which records this
+    // one. Stopping the level puts it back.
     public ICharacterMover Mover { get; set; } = DefaultCharacterMover.Instance;
 
     /// <summary>Movement constants. An edit takes effect next tick.</summary>
