@@ -249,9 +249,9 @@ public sealed class LogicViewModelScriptTests
     {
         LogicViewModel model = Model();
         LogicPlayInfo play = Listing(
-            Heard(1, 1198, "KeyButton", "OnPressed", Beep, "Beep", BeepFile, 3),
-            Heard(2, 1204, "Zone7", "OnTrigger", Main, "Main", Doors, 42),
-            Sent(3, 1204, Main, "Main", "Door7", "Open", Doors, 57));
+            Heard(1, 1198, "KeyButton.OnPressed", Beep, (BeepFile, 3)),
+            Heard(2, 1204, "Zone7.OnTrigger", Main, (Doors, 42)),
+            Sent(3, 1204, Main, "Door7.Open", (Doors, 57)));
 
         model.Apply(Snapshot(_level, play));
 
@@ -270,9 +270,9 @@ public sealed class LogicViewModelScriptTests
         LogicViewModel model = Model();
         LogicPlayInfo play = Listing(
             LogicPlayFixture.Event(1, EntityTraceKind.InputDelivered, "KeyButton", "OnPressed", "Keypad", "Trigger"),
-            Heard(2, 1198, "KeyButton", "OnPressed", Beep, "Beep", BeepFile, 3),
-            Heard(3, 1204, "Zone7", "OnTrigger", Main, "Main", Doors, 42),
-            Sent(4, 1204, Main, "Main", "Door7", "Open", Doors, 57));
+            Heard(2, 1198, "KeyButton.OnPressed", Beep, (BeepFile, 3)),
+            Heard(3, 1204, "Zone7.OnTrigger", Main, (Doors, 42)),
+            Sent(4, 1204, Main, "Door7.Open", (Doors, 57)));
         model.Apply(Snapshot(_level, play));
         model.Events.Count.ShouldBe(3);
         model.Events.ShouldAllBe(line => line.HasPlace);
@@ -290,7 +290,7 @@ public sealed class LogicViewModelScriptTests
     public void A_script_that_sent_to_an_entity_that_left_is_a_line_that_says_so()
     {
         LogicEventLine line = LogicEventLine.From(
-            Sent(1, 40, Main, "Main", "Door7", "Open", Doors, 57) with { Kind = EntityTraceKind.TargetMissing });
+            Sent(1, 40, Main, "Door7.Open", (Doors, 57)) with { Kind = EntityTraceKind.TargetMissing });
 
         line.IsFailure.ShouldBeTrue();
         line.Reason.ShouldBe("Door7 is gone");
@@ -309,36 +309,4 @@ public sealed class LogicViewModelScriptTests
             Recent = recent,
         };
     }
-
-    private static LogicEventInfo Heard(
-        long number, long tick, string source, string output, Guid script, string name, string file, int line) => new()
-    {
-        Number = number,
-        Tick = tick,
-        Kind = EntityTraceKind.OutputFired,
-        SourceName = source,
-        Output = output,
-        TargetName = "",
-        Input = "",
-        ScriptId = script,
-        ScriptName = name,
-        ScriptFile = file,
-        ScriptLine = line,
-    };
-
-    private static LogicEventInfo Sent(
-        long number, long tick, Guid script, string name, string target, string input, string file, int line) => new()
-    {
-        Number = number,
-        Tick = tick,
-        Kind = EntityTraceKind.InputDelivered,
-        SourceName = "",
-        Output = "",
-        TargetName = target,
-        Input = input,
-        ScriptId = script,
-        ScriptName = name,
-        ScriptFile = file,
-        ScriptLine = line,
-    };
 }

@@ -79,40 +79,11 @@ internal static class LogicScriptSheets
         ],
         Recent =
         [
-            Heard(1, 1198, "KeyButton", "OnPressed", Beep, "Beep", BeepFile, 3),
-            Heard(2, Tick, "Zone7", "OnTrigger", Main, "Main", Doors, 42),
-            new LogicEventInfo
-            {
-                Number = 3,
-                Tick = Tick,
-                Kind = EntityTraceKind.InputDelivered,
-                SourceName = "",
-                Output = "",
-                TargetName = "Door7",
-                Input = "Open",
-                ScriptId = Main,
-                ScriptName = "Main",
-                ScriptFile = Doors,
-                ScriptLine = 57,
-            },
+            Heard(1, 1198, "KeyButton.OnPressed", Beep, (BeepFile, 3)),
+            Heard(2, Tick, "Zone7.OnTrigger", Main, (Doors, 42)),
+            Sent(3, Tick, Main, "Door7.Open", (Doors, 57)),
         ],
         Scripts = wiring,
         ScriptActivity = carried,
-    };
-
-    private static LogicEventInfo Heard(
-        long number, long tick, string source, string output, Guid script, string name, string file, int line) => new()
-    {
-        Number = number,
-        Tick = tick,
-        Kind = EntityTraceKind.OutputFired,
-        SourceName = source,
-        Output = output,
-        TargetName = "",
-        Input = "",
-        ScriptId = script,
-        ScriptName = name,
-        ScriptFile = file,
-        ScriptLine = line,
     };
 }

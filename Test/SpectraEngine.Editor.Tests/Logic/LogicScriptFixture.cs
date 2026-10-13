@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Editor.Shell.Logic;
@@ -64,6 +65,45 @@ internal static class LogicScriptFixture
         Time = tick / 60f,
         Scripts = scripts,
         ScriptActivity = carried.Length == scripts.Wires.Count ? carried : new LogicScriptActivity[scripts.Wires.Count],
+    };
+
+    // An event a view lists: a script heard an output, written "Entity.Output",
+    // at a line of a file.
+    public static LogicEventInfo Heard(long number, long tick, string output, Guid script, (string File, int Line) at)
+    {
+        string[] route = output.Split('.');
+        return OfScript(number, tick, script, at) with
+        {
+            Kind = EntityTraceKind.OutputFired,
+            SourceName = route[0],
+            Output = route[1],
+        };
+    }
+
+    // The same for an input a script sent and that arrived, written "Entity.Input".
+    public static LogicEventInfo Sent(long number, long tick, Guid script, string input, (string File, int Line) at)
+    {
+        string[] route = input.Split('.');
+        return OfScript(number, tick, script, at) with
+        {
+            Kind = EntityTraceKind.InputDelivered,
+            TargetName = route[0],
+            Input = route[1],
+        };
+    }
+
+    private static LogicEventInfo OfScript(long number, long tick, Guid script, (string File, int Line) at) => new()
+    {
+        Number = number,
+        Tick = tick,
+        SourceName = "",
+        Output = "",
+        TargetName = "",
+        Input = "",
+        ScriptId = script,
+        ScriptName = script == Main ? "Main" : "Beep",
+        ScriptFile = at.File,
+        ScriptLine = at.Line,
     };
 
     public static FrameSnapshot Snapshot(LogicGraphInfo level, LogicPlayInfo? play = null, params Guid[] selected) =>

@@ -34,20 +34,7 @@ internal static unsafe class ScriptReport
     // on L, where Luau keeps its name: it lives as long as that call. Empty
     // when no script function did, as on a thread that began with the host
     // function. That thread's script is whoever started it, which says nothing.
-    internal static ReadOnlySpan<byte> CallerFile(nint L)
-    {
-        for (int level = 0; ; level++)
-        {
-            byte* source;
-            byte* name;
-            int line;
-            int kind = Shim.sl_frame(L, level, &source, &name, &line);
-            if (kind == 0)
-                return default;
-            if (kind == ScriptFrameKind)
-                return WithoutMark(LuaText.FromNative(source));
-        }
-    }
+    internal static ReadOnlySpan<byte> CallerFile(nint L) => CallerFile(L, out _);
 
     // The same with the line that called. The line is 0 when no script
     // function did.
