@@ -344,15 +344,19 @@ Luau
 - What scripts hear is read from the listeners at each capture. What they sent is counted from when a view asks.
 - While a level is watched, `LuauScriptRuntime.AfterSimulation` hides every listener nothing can call (`ScriptListeners.Hide`). It removes none: a watched level must queue what an unwatched one does.
 - A signal a script sets off (`AttributeChanged`, a tag's two) is fired through `DeferredCalls`. Each listener's call is queued with `EntityWorld.QueueScriptCall` and comes back through `IScriptRuntime.Wake` and `Drop`, in the order they were made.
-- Tags and the attributes scripts set are outside `MemoryBudget`. `AttributeLimits` and `TagLimits` bound them, and `AttributeMethods` and `TagMethods` do the refusing. What is put into the tables directly goes past the checks.
-- A tag's list keeps a node that lost the tag until `TagTable.InOrder` is asked, and is put in order only after a node joined or `NodeReparented` fired. Read a tag's nodes through `InOrder`. Until then the list keeps a destroyed node alive too, with its tags and attributes.
+- Tags and the attributes scripts set are outside `MemoryBudget`, except those of a destroyed node a script holds. `AttributeLimits` and `TagLimits` bound them, and `AttributeMethods` and `TagMethods` do the refusing. What is put into the tables directly goes past the checks.
+- A tag's list keeps the place of a node that left it until `TagTable.InOrder` is asked, as `TagNodes.Vacant`, and is put in order only after a node joined or `NodeReparented` fired. Read a tag's nodes through `InOrder`.
 - A script's `GetTags` is sorted by bytes (`TagName.CompareBytes`): digits, capitals, small letters. The node, the map and the panel keep the order the tags were put on in.
-- An attribute's name may have `. - /` (`AttributeName`). Nothing may split a name or read it as a path. A map with such a name still asks for a reader of version 6, and an older build opens it and refuses the name.
+- An attribute's name may have `. - /` (`AttributeName`). Nothing may split a name or read it as a path. A map with such a name asks for a reader of version 7 (`EngineInfo.AttributeNameMapVersion`), and an older build refuses it by its version.
 - `TaggedNodeCount` and `AttributeNodeCount` leave a destroyed node out. A test of what destroyed nodes keep asks `DestroyedTaggedCount` and `DestroyedAttributeCount`, after a .NET collection. A destroyed node's `AddTag` and `SetAttribute` fire nothing.
 - A property or signal of a static script class may take the `ScriptContext` in front of the object. One with `Sets` may not.
 - `NodeLifetime.Destroyed` ends what runs for a destroyed node through `EndAllOf`: its connections, waits, modules and its script's owner. Its tags and attributes stay, as in Roblox, on a weak side of `TagTable` and `AttributeTable`, and go when nothing holds the node. `Forget` is for a tree no script can reach and takes everything. A new table keyed by node is emptied in `EndAllOf` or holds a destroyed node weakly, and `SpawnKeepsNothingTests` holds a clone to keeping nothing.
 - A destroyed node a script made counts against `TreeLimits.MaxMadeNodes` while a script holds it (`HeldNodes`), so `TreeWrites.MadeCount` is above what is in the level until Luau has collected. `LuauObjects.Released` takes it out when its handle is collected. Luau collects in its own time and does not see what the node keeps.
-- `LuauObjects.Reached` runs inside the push of an object no script held, and `Released` inside a push or a collection when the last handle is gone. Each may count and list. Neither pushes anything or runs a script.
+- `LuauObjects.Reached` runs inside the push of an object no script held, also one whose handle Luau collected while the object kept its slot. It may step the collector, so `Released` can run under it. Neither runs a script, and both leave the stacks as they were.
+- What a destroyed node keeps is weighed by `NodeWeight` and handed to Luau's collector with `LuauObjects.SetWeight`. Whatever else a script can put on a destroyed node needs a term there and a call of `NodeLifetime.DestroyedChanged`, or the collector and `MemoryBudget` do not see it.
+- The weight is kept by slot and generation, so it goes with the handle. Whatever hands a destroyed node a new handle weighs it again, which `HeldNodes.Add` does from `Reached`.
+- `HeldNodes` steps Luau's collector from inside Destroy, AddTag and SetAttribute once the held bytes pass its goal, so `Released` can run inside any of them. It counts a cycle only when it stepped itself: the step every 64 ticks does not set `_isCollecting`, or every Destroy steps for as long as a script holds a pool.
+- A text attribute over about 42 KiB is a string on .NET's large object heap. A level that churns them makes .NET collect its oldest generation every few ticks.
 - `LuauFunction.Start` makes a Luau thread per call. What the host calls every tick keeps one thread, as `MoverCall` does.
 - What a mover is handed reads between ticks and writes only inside the call. A mover's `Sweep` or `Gather` that leaves the tick's volume builds the part lane again (`MoverCollision.Cover`).
 - A listener whose script was switched off or whose thread was cancelled stays in `EntityWorld.Listeners` until its output fires next or `NodeSignals` looks them over. `ent_watch` counts it until then.
@@ -394,7 +398,7 @@ Tests and tools
 - Everything that opens a script goes through `ScriptLauncher`, and it starts a program only for a `.luau` file (`ScriptOpenPlan.IsScriptFile`), since a level can name any file as its script. No test starts a program, except `LuauLspTests`, which starts luau-lsp where the variable names it: `FakeProgramStarter` keeps what was asked.
 - An agent's worktree keeps about 4.6 GB of build output. Delete `bin` and `obj` in a worktree once its branch is merged, or the drive fills.
 - A build that runs out of disk leaves truncated files in `obj` that the next build takes for up to date. Delete `bin` and `obj`.
-- A save stamps `spectramap` with `EngineInfo.MapFormatVersion`. Raise it and every fixture that compares saved bytes has to name the new number.
+- A save stamps `spectramap` with `EngineInfo.MapFormatVersion`. Raise it and every fixture that compares saved bytes has to name the new number. A test that refuses a map as too new has to name a version above it.
 - CI is `.github/workflows/ci.yml`, on Windows and Linux. The VSIX builds only on Windows. The graphics suite is skipped on hosted runners, which have no GPU.
 
 ## Where things are written down
