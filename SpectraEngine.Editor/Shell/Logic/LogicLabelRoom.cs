@@ -12,6 +12,10 @@ internal static class LogicLabelRoom
 
         return graph.WithLabels(edge =>
         {
+            // What a script made says where in code it was made, and never anything else.
+            if (edge.IsScript)
+                return edge.Label;
+
             LogicTextStyle style = edge.Label.IsMono ? LogicTextStyle.MonoLabel : LogicTextStyle.Label;
             bool isWider = !edge.Label.IsEmpty && ruler.Width(edge.Label.Text, style) >= roomWidth;
             return isWider ? edge.Label : room;

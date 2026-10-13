@@ -148,7 +148,10 @@ public sealed class LogicWiring
     /// <summary>Selects the wire an edge draws, or none.</summary>
     public void Select(LogicSceneEdge? edge)
     {
-        LogicSelectedWire? wire = edge is null || !CanEdit ? null : LogicSelectedWire.Of(edge.Edge);
+        // What a script made is no wire of the level, so there is none to select.
+        LogicSelectedWire? wire = edge is null || !CanEdit || edge.Edge.IsScript
+            ? null
+            : LogicSelectedWire.Of(edge.Edge);
 
         // An edge of a scene that is gone names a place in its sender's list
         // that another wire may have by now.

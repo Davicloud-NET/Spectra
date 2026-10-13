@@ -43,6 +43,27 @@
     <Style Selector="TextBlock.event.failed">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextDanger}" />
     </Style>
+    <!-- The line of code behind what a script sent or heard, in the colour
+         of a script's wire. -->
+    <Style Selector="TextBlock.event.place">
+      <Setter Property="Foreground" Value="{StaticResource SpectraLogicScriptWire}" />
+    </Style>
+
+    <!-- The legend at the foot of the graph: a sample of a wire and what it means. -->
+    <Style Selector="TextBlock.legend">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Line.legend">
+      <Setter Property="StartPoint" Value="1,4" />
+      <Setter Property="EndPoint" Value="33,4" />
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="8" />
+      <Setter Property="StrokeThickness" Value="2" />
+      <Setter Property="StrokeLineCap" Value="Round" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
 
     <!-- A sentence that is also a button: the wire that goes nowhere. -->
     <Style Selector="Button.link">
@@ -95,6 +116,7 @@
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="1000*" />
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
@@ -127,11 +149,25 @@
                  KeyDown="OnStepsKeyDown" LostFocus="OnStepsLostFocus"
                  ToolTip.Tip="How many wires away from the selection an entity may be, from 1 to 6." />
 
-        <TextBox x:Name="FilterBox" Grid.Column="4" Classes="field" Margin="8,0,0,0"
+        <!-- A check row as in the ribbon: the mark lights, not the whole key. -->
+        <Border x:Name="ScriptsKey" Grid.Column="4" Classes="rtray" Margin="8,0,0,0" VerticalAlignment="Center">
+          <Button Classes="rsmall rcheck" Classes.active="{Binding ShowsScripts}" Click="OnScriptsClicked"
+                  ToolTip.Tip="Show the scripts inside an entity, and what scripts are wired to while the level runs.">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Panel Width="16" Height="16">
+                <Path Classes="markbox" Data="{StaticResource IconCheckBox}" />
+                <Path Classes="mark" Data="{StaticResource IconCheckTick}" />
+              </Panel>
+              <TextBlock Text="{x:Static logic:LogicViewText.ScriptsKey}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </Border>
+
+        <TextBox x:Name="FilterBox" Grid.Column="5" Classes="field" Margin="8,0,0,0"
                  VerticalAlignment="Center"
                  Text="{Binding Filter}" />
 
-        <Border x:Name="PlayingPill" Grid.Column="6" Margin="8,0,0,0" Padding="8,0"
+        <Border x:Name="PlayingPill" Grid.Column="7" Margin="8,0,0,0" Padding="8,0"
                 Height="{StaticResource SpectraLogicPillHeight}"
                 VerticalAlignment="Center"
                 BorderBrush="{StaticResource SpectraPlayFill}"
@@ -149,7 +185,7 @@
 
         <!-- The number keeps room for six digits, so the pill does not step
              aside as the tick grows. -->
-        <StackPanel x:Name="TickReadout" Grid.Column="7" Orientation="Horizontal" Spacing="5" Margin="8,0,0,0">
+        <StackPanel x:Name="TickReadout" Grid.Column="8" Orientation="Horizontal" Spacing="5" Margin="8,0,0,0">
           <TextBlock Classes="label" Text="tick" />
           <TextBlock Classes="value" MinWidth="42"
                      FontFamily="{StaticResource SpectraFontMono}"
@@ -157,7 +193,7 @@
                      Text="{Binding TickText}" />
         </StackPanel>
 
-        <Border x:Name="ZoomKeys" Grid.Column="8" Classes="rtray" Margin="8,0,0,0" VerticalAlignment="Center">
+        <Border x:Name="ZoomKeys" Grid.Column="9" Classes="rtray" Margin="8,0,0,0" VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal">
             <Button Classes="rsmall" Command="{Binding FitCommand}" ToolTip.Tip="Show the whole graph.">
               <TextBlock Text="Fit" />
@@ -172,6 +208,27 @@
 
     <Panel Grid.Row="1" ClipToBounds="True">
       <logic:LogicCanvas x:Name="Graph" />
+
+      <!-- What a solid and a dashed wire mean, and what is known of scripts
+           right now. It stands on a plate of the ground's colour, so a card
+           moved there passes under it and no text meets text. The code shows
+           it where the pane has room, and keeps the graph's fit clear of it. -->
+      <Border x:Name="Legend" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+              Margin="12,0,0,4" Padding="12,8,12,8"
+              Background="{StaticResource SpectraLogicGround}"
+              IsHitTestVisible="False">
+        <StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8" Height="16">
+            <Line Classes="legend" Stroke="{StaticResource SpectraLogicWire}" />
+            <TextBlock Classes="legend" Text="{x:Static logic:LogicViewText.LegendWired}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8" Height="16" Margin="0,6,0,0">
+            <Line Classes="legend" Stroke="{StaticResource SpectraLogicScriptWire}" StrokeDashArray="2.5,2" />
+            <TextBlock Classes="legend" Text="{x:Static logic:LogicViewText.LegendScripted}" />
+          </StackPanel>
+          <TextBlock x:Name="LegendHint" Classes="legend" Margin="0,10,0,0" />
+        </StackPanel>
+      </Border>
 
       <StackPanel x:Name="EmptyState" MaxWidth="260" Margin="16" Spacing="14"
                   HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -206,6 +263,8 @@
                            Text="{Binding Tick}" />
                 <TextBlock DockPanel.Dock="Right" Classes="event failed" Margin="12,0,0,0"
                            Text="{Binding Reason}" IsVisible="{Binding IsFailure}" />
+                <TextBlock DockPanel.Dock="Right" Classes="event place" Margin="12,0,0,0"
+                           Text="{Binding Place}" IsVisible="{Binding HasPlace}" />
                 <TextBlock Classes="event" Classes.failed="{Binding IsFailure}"
                            Margin="12,0,0,0" Text="{Binding Route}" />
               </DockPanel>
@@ -235,8 +294,14 @@
                      Text="{Binding Status.Entities}"
                      IsVisible="{Binding Status.Entities, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           <TextBlock Classes="status" Margin="0,0,14,0"
+                     Text="{Binding Status.Scripts}"
+                     IsVisible="{Binding Status.Scripts, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBlock Classes="status" Margin="0,0,14,0"
                      Text="{Binding Status.Wires}"
                      IsVisible="{Binding Status.Wires, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBlock Classes="status" Margin="0,0,14,0"
+                     Text="{Binding Status.ScriptWires}"
+                     IsVisible="{Binding Status.ScriptWires, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
         <Button DockPanel.Dock="Left" Classes="link" Margin="0,0,14,0"
                 Click="OnGoingNowhereClicked"

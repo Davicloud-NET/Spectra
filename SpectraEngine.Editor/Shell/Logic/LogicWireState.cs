@@ -96,6 +96,20 @@ public readonly record struct LogicWireState
             : new LogicWireState { Look = LogicWireLook.Fired, Amount = activity.Fired };
     }
 
+    /// <summary>
+    /// What a running script made. It lights for as long after it carried
+    /// something as a wire of the level does, and its label always says
+    /// where in code it comes from.
+    /// </summary>
+    /// <param name="activity">What it has carried. Several lines of code drawn as one are summed first.</param>
+    /// <param name="tick">The level's tick.</param>
+    public static LogicWireState OfScript(LogicScriptActivity activity, long tick) => new()
+    {
+        Look = activity.Fired > 0 && tick - activity.LastFiredTick < FiringTicks
+            ? LogicWireLook.ScriptFiring
+            : LogicWireLook.Script,
+    };
+
     /// <summary>What two wires drawn as one have done together.</summary>
     public static LogicWireActivity Sum(in LogicWireActivity a, in LogicWireActivity b)
     {

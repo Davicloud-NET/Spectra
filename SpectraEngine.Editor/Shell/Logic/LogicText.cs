@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace SpectraEngine.Editor.Shell.Logic;
@@ -44,6 +46,25 @@ public static class LogicText
             return declared == 1 ? "1 output, not wired" : $"{Number(declared)} outputs, none wired";
 
         return hidden == 1 ? "1 more output" : $"{Number(hidden)} more outputs";
+    }
+
+    /// <summary>The line under a script's name on its card, where an entity shows its class.</summary>
+    public const string ScriptLine = "Script";
+
+    /// <summary>
+    /// The line under a card's ports that names the scripts inside the
+    /// entity, or empty when it has none.
+    /// </summary>
+    public static string ScriptsInside(IReadOnlyList<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        return names.Count switch
+        {
+            0 => "",
+            1 => $"1 script inside: {names[0]}",
+            _ => $"{Number(names.Count)} scripts inside: {string.Join(", ", names)}",
+        };
     }
 
     private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);

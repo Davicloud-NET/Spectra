@@ -20,4 +20,10 @@ public enum LogicWireLook
 
     /// <summary>It has sent something that is not due yet.</summary>
     Waiting,
+
+    /// <summary>A running script made it: dashed, in a colour of its own.</summary>
+    Script,
+
+    /// <summary>A running script made it, and it carried something a moment ago.</summary>
+    ScriptFiring,
 }

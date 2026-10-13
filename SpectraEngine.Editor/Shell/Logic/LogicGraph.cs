@@ -51,14 +51,42 @@ public sealed class LogicGraph
         return new LogicGraphBuilder(info, catalog).Build();
     }
 
+    /// <summary>The same, with what the scripts of a running level hear and send.</summary>
+    /// <param name="info">The level's wiring.</param>
+    /// <param name="catalog">The entity classes, or null.</param>
+    /// <param name="running">What the engine lists for the level's scripts while it runs, or null.</param>
+    /// <param name="showsScripts">
+    /// Whether the graph says anything of scripts. Without it no entity names
+    /// the scripts inside it and no script has a card.
+    /// </param>
+    public static LogicGraph Build(
+        LogicGraphInfo info, EntitySchemaCatalog? catalog, LogicScriptWiring? running, bool showsScripts = true)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        return new LogicGraphBuilder(info, catalog, running, showsScripts).Build();
+    }
+
     /// <summary>
     /// The wired entities in scene order, then the stubs by kind and name,
-    /// then the entities with no wires in scene order.
+    /// then the scripts that hear or send something in scene order, then the
+    /// entities with no wires in scene order.
     /// </summary>
     public IReadOnlyList<LogicCard> Cards { get; }
 
-    /// <summary>The edges, by sender in scene order and then by wire.</summary>
+    /// <summary>
+    /// The edges, by sender in scene order and then by wire. The ones scripts
+    /// made come after them.
+    /// </summary>
     public IReadOnlyList<LogicEdge> Edges { get; }
+
+    /// <summary>
+    /// How many scripts run when the level plays. Zero for a graph that says
+    /// nothing of scripts.
+    /// </summary>
+    public int ScriptCount { get; internal init; }
+
+    /// <summary>How many scripts have a card: the ones that hear or send something right now.</summary>
+    public int ScriptCardCount { get; internal init; }
 
     /// <summary>How many wires the level has.</summary>
     public int WireCount { get; internal init; }
@@ -78,7 +106,10 @@ public sealed class LogicGraph
     /// <summary>Whether the level has more entities than the snapshot listed.</summary>
     public bool IsTruncated { get; internal init; }
 
-    /// <summary>The card of an entity, or null when the node is not an entity the level lists.</summary>
+    /// <summary>
+    /// The card of an entity or of a script, or null when the node is neither
+    /// an entity the level lists nor a script with a card.
+    /// </summary>
     public LogicCard? CardOf(Guid nodeId) => _byNode.GetValueOrDefault(nodeId);
 
     /// <summary>The edges that end at a card: who sends what to which of its inputs.</summary>

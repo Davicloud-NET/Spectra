@@ -19,6 +19,7 @@ public sealed class LogicCanvas : Control
 
     private readonly LogicWireMenus _menus;
     private readonly LogicHover _hover;
+    private double _footRoom;
     private LogicGraphPainter? _painter;
     private LogicViewModel? _heard;
     private bool _isShown;
@@ -59,11 +60,26 @@ public sealed class LogicCanvas : Control
     /// <summary>Raised when a double click asks for an entity to be selected and framed in the 3D view.</summary>
     public event Action<Guid>? FrameRequested;
 
+    /// <summary>Raised when a double click on a script's card asks for its code to be opened.</summary>
+    public event Action<Guid>? OpenScriptRequested;
+
     /// <summary>What the canvas draws.</summary>
     public LogicViewModel? Model
     {
         get => GetValue(ModelProperty);
         set => SetValue(ModelProperty, value);
+    }
+
+    /// <summary>The room at the foot of the canvas a legend stands on. A fitted graph keeps clear of it.</summary>
+    public double FootRoom
+    {
+        get => _footRoom;
+        set
+        {
+            _footRoom = value;
+            if (Model is { } model)
+                model.ViewSize = Room(Bounds.Size);
+        }
     }
 
     // The menu on show, or null. A menu is a window of its own, so this is
@@ -112,7 +128,7 @@ public sealed class LogicCanvas : Control
         base.OnSizeChanged(e);
 
         if (Model is { } model)
-            model.ViewSize = e.NewSize;
+            model.ViewSize = Room(e.NewSize);
     }
 
     /// <inheritdoc/>
@@ -161,7 +177,12 @@ public sealed class LogicCanvas : Control
             // selects nothing more and moves nothing.
             _clicks = false;
             _pans = false;
-            FrameRequested?.Invoke(entity);
+
+            // A script has no place in the level to frame. Its code is what there is to see.
+            if (model.Graph?.CardOf(entity) is { IsScript: true })
+                OpenScriptRequested?.Invoke(entity);
+            else
+                FrameRequested?.Invoke(entity);
         }
 
         Focus();
@@ -314,6 +335,8 @@ public sealed class LogicCanvas : Control
         e.Handled = true;
     }
 
+    private Size Room(Size canvas) => new(canvas.Width, Math.Max(0, canvas.Height - _footRoom));
+
     private static Guid? EntityOf(LogicSceneCard? card) => card is { Card.IsStub: false } ? card.Card.NodeId : null;
 
     private void Listen(LogicViewModel? model)
@@ -330,7 +353,7 @@ public sealed class LogicCanvas : Control
         if (model is not null)
         {
             model.Redraw += OnRedraw;
-            model.ViewSize = Bounds.Size;
+            model.ViewSize = Room(Bounds.Size);
         }
 
         InvalidateVisual();

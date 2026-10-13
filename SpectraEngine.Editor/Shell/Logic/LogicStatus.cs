@@ -41,6 +41,31 @@ public sealed record LogicStatus(
     /// </summary>
     public string Hint { get; init; } = LogicViewText.EditingHint;
 
+    /// <summary>The hint at the right of the row while the level runs.</summary>
+    public string PlayingHint { get; init; } = LogicViewText.PlayingHint;
+
+    /// <summary>
+    /// Whether the level has scripts that run and the view says so. The view
+    /// then explains its dashed wires.
+    /// </summary>
+    public bool HasScripts { get; init; }
+
+    /// <summary>How many running scripts have a card, or empty when none has.</summary>
+    public string Scripts { get; init; } = "";
+
+    /// <summary>How many of the wires on show running scripts made, or empty when none did.</summary>
+    public string ScriptWires { get; init; } = "";
+
+    /// <summary>
+    /// What the view says under its legend of solid and dashed wires. Empty
+    /// when there is no legend to show: the level has no scripts, or the
+    /// view shows none.
+    /// </summary>
+    /// <param name="isPlaying">Whether the level runs. Until it does, nothing is known of what its scripts connect.</param>
+    public string ScriptsHint(bool isPlaying) => !HasScripts ? ""
+        : isPlaying ? LogicViewText.ScriptsPlayingHint
+        : LogicViewText.ScriptsEditingHint;
+
     /// <summary>Reads the status off what a scope shows.</summary>
     /// <param name="scoped">The cards and edges shown.</param>
     /// <param name="info">The snapshot they were built from, for how much of the level it lists.</param>
@@ -59,9 +84,14 @@ public sealed record LogicStatus(
         int unwiredCount = mode == LogicScopeMode.WholeLevel ? counts.HiddenUnwiredEntities : 0;
         string unwired = LogicViewText.Unwired(scoped.FirstHiddenUnwiredName, unwiredCount);
 
+        // In a level with scripts a count of wires says whose they are.
+        string wires = scoped.Graph.ScriptCount > 0
+            ? LogicViewText.WiresInLevel(counts.Wires)
+            : LogicViewText.Wires(counts.Wires);
+
         return new LogicStatus(
             LogicViewText.Entities(counts.Entities),
-            LogicViewText.Wires(counts.Wires),
+            wires,
             LogicViewText.GoingNowhere(counts.WiresGoingNowhere),
             unwired,
             TruncatedText(info))
@@ -69,6 +99,10 @@ public sealed record LogicStatus(
             GoingNowhereSender = FirstGoingNowhere(scoped),
             UnwiredShort = LogicViewText.UnwiredShort(unwiredCount, counts.UnwiredCards),
             Hint = counts.UnwiredCards > 0 ? LogicViewText.UnwiredHint : LogicViewText.EditingHint,
+            PlayingHint = counts.ScriptWires > 0 ? LogicViewText.PlayingScriptsHint : LogicViewText.PlayingHint,
+            HasScripts = scoped.Graph.ScriptCount > 0,
+            Scripts = LogicViewText.Scripts(counts.Scripts),
+            ScriptWires = LogicViewText.MadeByScripts(counts.ScriptWires),
         };
     }
 

@@ -48,8 +48,12 @@ internal sealed class LogicGroups
             if (byFrom != 0)
                 return byFrom;
 
-            int byWire = a.WireIndices[0].CompareTo(b.WireIndices[0]);
-            return byWire != 0 ? byWire : _rank[a.To.Index].CompareTo(_rank[b.To.Index]);
+            int byWire = PlaceOf(a).CompareTo(PlaceOf(b));
+            if (byWire != 0)
+                return byWire;
+
+            int byTo = _rank[a.To.Index].CompareTo(_rank[b.To.Index]);
+            return byTo != 0 ? byTo : ComparePorts(a, b);
         });
 
         var loops = new int[_cards.Length];
@@ -160,6 +164,16 @@ internal sealed class LogicGroups
         }
 
         return card;
+    }
+
+    // What a script made has no place in a wire list. It comes after the
+    // card's own wires, and its port tells two of them apart.
+    private static int PlaceOf(LogicEdge edge) => edge.WireIndices.Count > 0 ? edge.WireIndices[0] : int.MaxValue;
+
+    private static int ComparePorts(LogicEdge a, LogicEdge b)
+    {
+        int byOutput = string.CompareOrdinal(a.Output, b.Output);
+        return Math.Sign(byOutput != 0 ? byOutput : string.CompareOrdinal(a.Input, b.Input));
     }
 
     // The room under a card for its wires to itself, down to the last one's label.

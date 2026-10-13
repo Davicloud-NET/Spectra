@@ -12,8 +12,8 @@ internal sealed class LogicCardFace
     public LogicCardFace(LogicCard card, LogicLayoutOptions options)
     {
         Card = card;
-        IsExpanded = !card.IsStub && options.ExpandedCards.Contains(card.NodeId);
-        HasStateRow = options.ShowsState && !card.IsStub;
+        IsExpanded = card.IsEntity && options.ExpandedCards.Contains(card.NodeId);
+        HasStateRow = options.ShowsState && card.IsEntity;
 
         int declaredOutputs = 0;
         int wiredOutputs = 0;
@@ -34,10 +34,12 @@ internal sealed class LogicCardFace
         }
 
         Note = IsExpanded ? "" : LogicText.OutputsNote(declaredOutputs, wiredOutputs);
+        ScriptsNote = LogicText.ScriptsInside(card.ScriptNames);
 
         double rows = (HasStateRow ? LogicMetrics.StateRowHeight : 0)
             + LogicMetrics.PortRowHeight * _rows.Count
-            + (Note.Length > 0 ? LogicMetrics.NoteRowHeight : 0);
+            + (Note.Length > 0 ? LogicMetrics.NoteRowHeight : 0)
+            + (ScriptsNote.Length > 0 ? LogicMetrics.NoteRowHeight : 0);
 
         // A card with no row under its header ends with the header.
         Height = LogicMetrics.HeaderHeight + (rows > 0 ? rows + LogicMetrics.CardBottomPadding : 0);
@@ -50,6 +52,9 @@ internal sealed class LogicCardFace
     public bool HasStateRow { get; }
 
     public string Note { get; }
+
+    // The line that names the scripts inside the entity, or empty.
+    public string ScriptsNote { get; }
 
     public double Height { get; }
 
@@ -65,7 +70,8 @@ internal sealed class LogicCardFace
                 return RowsTop + LogicMetrics.PortRowHeight * (i + 0.5);
         }
 
-        // Not reached: every wired port has a row.
+        // A script has no ports: what it hears and sends meets its header.
+        // For an entity this is not reached, since every wired port has a row.
         return LogicMetrics.HeaderHeight / 2;
     }
 
@@ -84,6 +90,7 @@ internal sealed class LogicCardFace
         }
 
         double noteTop = y + RowsTop + LogicMetrics.PortRowHeight * ports.Length;
+        double scriptsTop = noteTop + (Note.Length > 0 ? LogicMetrics.NoteRowHeight : 0);
 
         return new LogicSceneCard(Card, new Rect(x, y, width, Height), ports)
         {
@@ -92,6 +99,10 @@ internal sealed class LogicCardFace
                 : null,
             Note = Note,
             NoteRow = Note.Length > 0 ? new Rect(x, noteTop, width, LogicMetrics.NoteRowHeight) : null,
+            ScriptsNote = ScriptsNote,
+            ScriptsNoteRow = ScriptsNote.Length > 0
+                ? new Rect(x, scriptsTop, width, LogicMetrics.NoteRowHeight)
+                : null,
             IsExpanded = IsExpanded,
         };
     }

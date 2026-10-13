@@ -30,7 +30,7 @@ internal sealed class LogicShownEntities
 
         for (int i = 0; i < cards.Count; i++)
         {
-            if (cards[i].IsStub)
+            if (!cards[i].IsEntity)
                 continue;
 
             same = same && count < Ids.Length && Ids[count] == cards[i].NodeId;
@@ -45,7 +45,7 @@ internal sealed class LogicShownEntities
         var ids = new Guid[count];
         for (int i = 0, at = 0; i < cards.Count; i++)
         {
-            if (!cards[i].IsStub)
+            if (cards[i].IsEntity)
                 ids[at++] = cards[i].NodeId;
         }
 
@@ -61,7 +61,7 @@ internal sealed class LogicShownEntities
 
         for (int i = 0; i < cards.Count; i++)
         {
-            if (cards[i].IsStub || cards[i].IsWired)
+            if (!cards[i].IsEntity || cards[i].IsWired)
                 continue;
 
             before ??= [.. Ids];

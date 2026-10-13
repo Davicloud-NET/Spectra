@@ -48,6 +48,45 @@ public static class LogicViewText
     /// <summary>How many wires are drawn.</summary>
     public static string Wires(int count) => count == 1 ? "1 wire" : $"{Number(count)} wires";
 
+    /// <summary>The hint while a level runs and what its scripts made is on show.</summary>
+    public const string PlayingScriptsHint = "Dashed wires are made by scripts and last only while the level runs.";
+
+    /// <summary>The key that shows and hides what scripts do.</summary>
+    public const string ScriptsKey = "Scripts";
+
+    /// <summary>What the legend says of a wire of the level.</summary>
+    public const string LegendWired = "Wired in the level";
+
+    /// <summary>What the legend says of a dashed wire.</summary>
+    public const string LegendScripted = "Made by a script, while the level runs";
+
+    /// <summary>What the view says under the legend while the level is edited: nothing is known of its scripts yet.</summary>
+    public const string ScriptsEditingHint =
+        "Scripts connect when the level runs. Press Play to see what they are wired to.";
+
+    /// <summary>The same while the level runs.</summary>
+    public const string ScriptsPlayingHint = "A script shows as a name. Double-click it to open the code.";
+
+    /// <summary>How many scripts have a card, or empty when none has.</summary>
+    public static string Scripts(int count) => count switch
+    {
+        <= 0 => "",
+        1 => "1 script",
+        _ => $"{Number(count)} scripts",
+    };
+
+    /// <summary>How many wires are drawn, in a level whose scripts may make more.</summary>
+    public static string WiresInLevel(int count) =>
+        count == 1 ? "1 wire in the level" : $"{Number(count)} wires in the level";
+
+    /// <summary>How many dashed wires are drawn, or empty when there is none.</summary>
+    public static string MadeByScripts(int count) => count switch
+    {
+        <= 0 => "",
+        1 => "1 made by a script",
+        _ => $"{Number(count)} made by scripts",
+    };
+
     /// <summary>How many wires can never deliver, or empty when none.</summary>
     public static string GoingNowhere(int count) => count switch
     {
@@ -113,6 +152,9 @@ public static class LogicViewText
     {
         ArgumentNullException.ThrowIfNull(edge);
 
+        if (edge.IsScript)
+            return ScriptSentence(edge);
+
         string target = edge.To.Stub switch
         {
             LogicStubKind.Activator => "the activator",
@@ -137,6 +179,17 @@ public static class LogicViewText
             return $"{card.Name}, {card.DisplayName}";
 
         return card.Name.Length == 0 ? card.DisplayName + "." : $"{card.Name}. {card.DisplayName}.";
+    }
+
+    // What a script hears or sends, and that code made it.
+    private static string ScriptSentence(LogicEdge edge)
+    {
+        string does = edge.From.IsScript
+            ? $"{edge.From.Name} sends {edge.Input} to {edge.To.Name}"
+            : $"{edge.To.Name} hears {edge.From.Name}.{edge.Output}";
+
+        string from = edge.Label.IsEmpty ? "" : $", from {edge.Label.Text}";
+        return $"{does}{from}. Made by code. It lasts for as long as the level runs.";
     }
 
     private static string Problem(LogicEdge edge) => edge.Verdict switch

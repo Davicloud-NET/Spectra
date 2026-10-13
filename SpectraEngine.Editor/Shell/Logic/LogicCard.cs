@@ -50,13 +50,29 @@ public sealed class LogicCard
         IsWired = true;
     }
 
+    // A script that hears or sends something while the level runs.
+    internal LogicCard(int index, LogicScriptInfo script)
+    {
+        Index = index;
+        NodeId = script.NodeId;
+        Name = script.Name;
+        ClassName = "";
+        DisplayName = LogicText.ScriptLine;
+        Group = "";
+        Look = EditorIcons.ForFile(ContentKind.Script);
+        IsScript = true;
+        Inputs = [];
+        Outputs = [];
+        IsWired = true;
+    }
+
     /// <summary>Where this card is in <see cref="LogicGraph.Cards"/>.</summary>
     public int Index { get; }
 
-    /// <summary>The entity's node. Empty for a stub.</summary>
+    /// <summary>The node of the entity or of the script. Empty for a stub.</summary>
     public Guid NodeId { get; }
 
-    /// <summary>The entity's name, or for a stub the target a wire spelled.</summary>
+    /// <summary>The entity's or the script's name, or for a stub the target a wire spelled.</summary>
     public string Name { get; }
 
     /// <summary>The class as the map spells it. Empty for a stub.</summary>
@@ -82,6 +98,18 @@ public sealed class LogicCard
 
     /// <summary>Whether this card stands in for a target that is not an entity.</summary>
     public bool IsStub => Stub != LogicStubKind.None;
+
+    /// <summary>
+    /// Whether this is a running script. It has no ports: what it hears and
+    /// sends meets it at its header.
+    /// </summary>
+    public bool IsScript { get; }
+
+    /// <summary>Whether this is an entity of the level.</summary>
+    public bool IsEntity => !IsStub && !IsScript;
+
+    /// <summary>The names of the scripts inside the entity that run when the level plays, in scene order.</summary>
+    public IReadOnlyList<string> ScriptNames { get; internal init; } = [];
 
     /// <summary>
     /// Whether a wire leaves the card or arrives at it. An entity with none

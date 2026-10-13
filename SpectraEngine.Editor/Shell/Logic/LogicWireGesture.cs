@@ -46,7 +46,7 @@ public sealed class LogicWireGesture
     {
         if (IsActive || !canEdit
             || hit.Kind is not (LogicHitKind.Card or LogicHitKind.Port)
-            || hit.Card is not { Card.IsStub: false } card)
+            || hit.Card is not { Card.IsEntity: true } card)
         {
             return false;
         }
@@ -151,7 +151,7 @@ public sealed class LogicWireGesture
     // The sender's own card counts once the pointer has been off it. A press
     // that slips a few pixels on a card would otherwise ask for a wire.
     private bool Takes(LogicSceneCard? over) =>
-        over is { Card.IsStub: false }
+        over is { Card.IsEntity: true }
         && From is not null
         && (_hasLeftSender || !ReferenceEquals(over, From))
         && LogicWireList.TargetOf(From.Card, over.Card) is not null;

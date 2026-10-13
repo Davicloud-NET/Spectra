@@ -25,7 +25,7 @@ public static class LogicWireList
         ArgumentNullException.ThrowIfNull(from);
         ArgumentNullException.ThrowIfNull(to);
 
-        if (to.IsStub)
+        if (!to.IsEntity)
             return null;
 
         // A name that starts with ! is read as a token and matches nothing.

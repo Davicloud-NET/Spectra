@@ -38,6 +38,7 @@ public sealed class LogicViewModel : ObservableObject
     private LogicStatus _status = LogicStatus.None;
     private LogicEmptyReason _emptyReason;
     private bool _shownChanged;
+    private bool _showsScripts = true;
 
     /// <summary>Creates the model of a view that measures text with the fonts it draws in.</summary>
     public LogicViewModel()
@@ -143,6 +144,26 @@ public sealed class LogicViewModel : ObservableObject
         }
     }
 
+    /// <summary>Whether the view says anything of scripts. On unless switched off.</summary>
+    public bool ShowsScripts
+    {
+        get => _showsScripts;
+        set
+        {
+            if (!Set(ref _showsScripts, value))
+                return;
+
+            _arrangement.ShowScripts(value);
+            if (_play.ShowScripts(value))
+                Raise(nameof(Events));
+
+            Refresh();
+        }
+    }
+
+    /// <summary>What the view says under its legend of solid and dashed wires. Empty when it shows no legend.</summary>
+    public string ScriptsHint => _status.ScriptsHint(IsPlaying);
+
     /// <summary>Where the graph sits in the view.</summary>
     public LogicPanZoom View
     {
@@ -195,7 +216,7 @@ public sealed class LogicViewModel : ObservableObject
     public LogicStatus Status => Wiring.News.Length == 0 ? _status : _status with { News = Wiring.News };
 
     /// <summary>The hint at the right of the status row.</summary>
-    public string Hint => IsPlaying ? LogicViewText.PlayingHint : _status.Hint;
+    public string Hint => IsPlaying ? _status.PlayingHint : _status.Hint;
 
     /// <summary>What the view says in place of a graph, or empty when it has one.</summary>
     public string EmptyText => LogicViewText.Empty(_emptyReason);
@@ -227,6 +248,7 @@ public sealed class LogicViewModel : ObservableObject
             _arrangement.SelectionChanged();
 
         _arrangement.SetInfo(snapshot.LogicGraph);
+        _arrangement.SetScripts(snapshot.LogicPlay?.Scripts);
         Refresh(TakePlay(snapshot.LogicPlay));
     }
 
@@ -240,6 +262,7 @@ public sealed class LogicViewModel : ObservableObject
         _selection.Clear();
         _arrangement.SelectionChanged();
         _arrangement.SetInfo(null);
+        _arrangement.SetScripts(null);
 
         if (Set(ref _schemas, null, nameof(Schemas)))
             _arrangement.SetSchemas(null);
@@ -304,28 +327,26 @@ public sealed class LogicViewModel : ObservableObject
     // Returns whether the cards would be drawn differently.
     private bool TakePlay(LogicPlayInfo? info)
     {
-        bool wasPlaying = _play.IsPlaying;
-        long tick = _play.Tick;
-        IReadOnlyList<LogicEventLine> events = _play.Events;
-
-        if (!_play.Take(info))
+        LogicPlayChange change = _play.Take(info);
+        if (change == LogicPlayChange.None)
             return false;
 
         _arrangement.PlayChanged();
 
-        if (_play.IsPlaying != wasPlaying)
+        if (change.HasFlag(LogicPlayChange.Playing))
         {
             Raise(nameof(IsPlaying));
             Raise(nameof(Hint));
+            Raise(nameof(ScriptsHint));
         }
 
-        if (_play.Tick != tick || _play.IsPlaying != wasPlaying)
+        if (change.HasFlag(LogicPlayChange.Tick))
             Raise(TickTextChanged);
 
-        if (!ReferenceEquals(_play.Events, events))
+        if (change.HasFlag(LogicPlayChange.Events))
             Raise(nameof(Events));
 
-        return _play.StatesChanged;
+        return change.HasFlag(LogicPlayChange.States);
     }
 
     private void Refresh(bool redraw = false)
@@ -364,7 +385,10 @@ public sealed class LogicViewModel : ObservableObject
         LogicStatus status = shown is null || info is null ? LogicStatus.None : LogicStatus.Of(shown, info, _mode);
 
         if (Set(ref _status, status, nameof(Status)))
+        {
             Raise(nameof(Hint));
+            Raise(nameof(ScriptsHint));
+        }
 
         if (Set(ref _emptyReason, shown?.EmptyReason ?? LogicEmptyReason.None, nameof(EmptyText)))
             Raise(nameof(OffersWholeLevel));

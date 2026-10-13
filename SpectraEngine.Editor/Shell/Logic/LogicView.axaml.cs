@@ -23,7 +23,7 @@ public partial class LogicView : UserControl
         AvaloniaProperty.Register<LogicView, LogicViewModel?>(nameof(Model));
 
     private readonly LogicTextRuler _ruler = new();
-    private const int FilterColumn = 4;
+    private const int FilterColumn = 5;
 
     private LogicViewModel? _heard;
     private bool _isShown;
@@ -35,6 +35,7 @@ public partial class LogicView : UserControl
 
         Graph.SelectRequested += (entity, adds) => SelectRequested?.Invoke(entity, adds);
         Graph.FrameRequested += entity => FrameRequested?.Invoke(entity);
+        Graph.OpenScriptRequested += script => OpenScriptRequested?.Invoke(script);
         Toolbar.ColumnDefinitions[FilterColumn].MaxWidth = LogicViewFit.MostFilterWidth + FilterBox.Margin.Left;
         ShowModel();
     }
@@ -47,6 +48,9 @@ public partial class LogicView : UserControl
 
     /// <summary>Raised when the view asks for an entity to be selected and framed in the 3D view.</summary>
     public event Action<Guid>? FrameRequested;
+
+    /// <summary>Raised when the view asks for the code of a script to be opened: the script's node.</summary>
+    public event Action<Guid>? OpenScriptRequested;
 
     /// <summary>
     /// Raised when the view asks for an entity's wires to be replaced: the
@@ -161,6 +165,7 @@ public partial class LogicView : UserControl
         AroundName.Text = fit.UsesShortNames ? LogicViewText.AroundSelectionShort : LogicViewText.AroundSelection;
         WholeName.Text = fit.UsesShortNames ? LogicViewText.WholeLevelShort : LogicViewText.WholeLevel;
         StepsBox.IsVisible = fit.ShowsSteps;
+        ScriptsKey.IsVisible = fit.ShowsScriptsKey;
         PlayingPill.IsVisible = fit.ShowsPlaying;
         TickReadout.IsVisible = fit.ShowsTick;
         ZoomKeys.IsVisible = fit.ShowsZoomKeys;
@@ -177,6 +182,10 @@ public partial class LogicView : UserControl
         HintText.IsVisible = fit.ShowsHint;
         HintText.Text = fit.UsesShortHint ? LogicViewText.EditingHintShort : Model?.Hint ?? "";
         EventStrip.IsVisible = fit.ShowsEvents;
+
+        Legend.IsVisible = fit.ShowsLegend;
+        LegendHint.Text = Model?.ScriptsHint ?? "";
+        Graph.FootRoom = fit.ShowsLegend ? LogicViewFit.LegendRoom : 0;
     }
 
     private void OnWiringRequested(Guid entity, IReadOnlyList<EntityConnection> wires) =>
@@ -230,6 +239,12 @@ public partial class LogicView : UserControl
         }
 
         ShowSteps();
+    }
+
+    private void OnScriptsClicked(object? sender, RoutedEventArgs e)
+    {
+        if (Model is { } model)
+            model.ShowsScripts = !model.ShowsScripts;
     }
 
     private void OnGoingNowhereClicked(object? sender, RoutedEventArgs e)

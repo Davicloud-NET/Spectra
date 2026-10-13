@@ -1,7 +1,7 @@
 namespace SpectraEngine.Editor.Shell.Logic;
 
 /// <summary>The numbers a status line reads off a scoped graph.</summary>
-/// <param name="Cards">Cards shown, stubs included.</param>
+/// <param name="Cards">Cards shown, stubs and scripts included.</param>
 /// <param name="Entities">Cards shown that are entities.</param>
 /// <param name="UnwiredCards">Of those, the entities with no wires.</param>
 /// <param name="Wires">Wires with at least one edge shown.</param>
@@ -15,4 +15,11 @@ public readonly record struct LogicCounts(
     int Wires,
     int WiresGoingNowhere,
     int HiddenUnwiredEntities,
-    bool IsTruncated);
+    bool IsTruncated)
+{
+    /// <summary>Cards shown that are running scripts.</summary>
+    public int Scripts { get; init; }
+
+    /// <summary>Edges shown that a running script made.</summary>
+    public int ScriptWires { get; init; }
+}

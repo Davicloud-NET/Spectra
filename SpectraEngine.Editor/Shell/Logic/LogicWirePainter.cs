@@ -64,7 +64,7 @@ internal sealed class LogicWirePainter
         LogicInk ink = state.Look switch
         {
             LogicWireLook.Broken => LogicInk.BrokenLabel,
-            LogicWireLook.Firing or LogicWireLook.Waiting => LogicInk.LitLabel,
+            LogicWireLook.Firing or LogicWireLook.Waiting or LogicWireLook.ScriptFiring => LogicInk.LitLabel,
             _ => face.IsMono ? LogicInk.MonoLabel : LogicInk.Label,
         };
 
@@ -81,6 +81,7 @@ internal sealed class LogicWirePainter
         IPen edge = ink switch
         {
             _ when isSelected => _palette.LitLabelEdge,
+            _ when state.Look == LogicWireLook.ScriptFiring => _palette.ScriptLabelEdge,
             LogicInk.BrokenLabel => _palette.BrokenLabelEdge,
             LogicInk.LitLabel => _palette.LitLabelEdge,
             _ => isHovered ? _palette.HoveredEdge : _palette.LabelEdge,

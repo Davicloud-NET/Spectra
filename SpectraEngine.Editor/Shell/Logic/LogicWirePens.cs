@@ -20,6 +20,8 @@ internal sealed class LogicWirePens
     private readonly double _brokenGap = LogicTheme.Size("SpectraLogicWireBrokenGap");
     private readonly double _waitingDash = LogicTheme.Size("SpectraLogicWireWaitingDash");
     private readonly double _waitingGap = LogicTheme.Size("SpectraLogicWireWaitingGap");
+    private readonly double _scriptDash = LogicTheme.Size("SpectraLogicScriptWireDash");
+    private readonly double _scriptGap = LogicTheme.Size("SpectraLogicScriptWireGap");
     private readonly double _selectedWidth = LogicTheme.Size("SpectraLogicWireSelectedWidth");
     private ImmutablePen? _selected;
     private double _least = double.NaN;
@@ -36,6 +38,14 @@ internal sealed class LogicWirePens
         Set(LogicWireLook.Firing, LogicTheme.Brush("SpectraLogicWireFiring"), LogicTheme.Size("SpectraLogicWireFiringWidth"));
         Set(LogicWireLook.Fired, LogicTheme.Brush("SpectraLogicWireFired"), fired);
         Set(LogicWireLook.Waiting, accent, focus);
+        Set(
+            LogicWireLook.Script,
+            LogicTheme.Brush("SpectraLogicScriptWire"),
+            LogicTheme.Size("SpectraLogicScriptWireWidth"));
+        Set(
+            LogicWireLook.ScriptFiring,
+            LogicTheme.Brush("SpectraLogicScriptWireFiring"),
+            LogicTheme.Size("SpectraLogicScriptWireFiringWidth"));
 
         SetZoom(1);
     }
@@ -91,6 +101,8 @@ internal sealed class LogicWirePens
     {
         LogicWireLook.Broken => new ImmutableDashStyle([_brokenDash / width, _brokenGap / width], 0),
         LogicWireLook.Waiting => new ImmutableDashStyle([_waitingDash / width, _waitingGap / width], 0),
+        LogicWireLook.Script or LogicWireLook.ScriptFiring =>
+            new ImmutableDashStyle([_scriptDash / width, _scriptGap / width], 0),
         _ => null,
     };
 }

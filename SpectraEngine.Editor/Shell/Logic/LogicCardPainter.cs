@@ -39,7 +39,7 @@ internal sealed class LogicCardPainter
         {
             DrawState(context, card, model);
             DrawPorts(context, card);
-            DrawNote(context, card);
+            DrawNotes(context, card);
         }
 
         DrawEdge(context, card, isSelected, isHovered);
@@ -48,13 +48,19 @@ internal sealed class LogicCardPainter
     private static bool IsUnanswered(LogicSceneCard card) =>
         card.Stub is LogicStubKind.MissingName or LogicStubKind.MissingPrefix or LogicStubKind.NoTarget;
 
+    private IBrush BodyOf(LogicSceneCard card) =>
+        IsUnanswered(card) ? _palette.Stub : card.Card.IsScript ? _palette.ScriptCard : _palette.Card;
+
+    private IBrush HeadOf(LogicSceneCard card) =>
+        IsUnanswered(card) ? _palette.StubHead : card.Card.IsScript ? _palette.ScriptCardHead : _palette.CardHead;
+
     private void DrawBox(DrawingContext context, LogicSceneCard card, bool isSelected, bool isHovered, bool hasName)
     {
         Rect box = card.Bounds;
         double radius = _palette.CardRadius;
         bool isUnanswered = IsUnanswered(card);
 
-        IBrush fill = isSelected ? _palette.SelectedFill : isUnanswered ? _palette.StubHead : _palette.CardHead;
+        IBrush fill = isSelected ? _palette.SelectedFill : HeadOf(card);
         context.DrawRectangle(fill, null, box, radius, radius);
 
         if (isHovered)
@@ -79,18 +85,14 @@ internal sealed class LogicCardPainter
     {
         Rect box = card.Bounds;
         double radius = _palette.CardRadius;
-        bool isUnanswered = IsUnanswered(card);
 
         // A card with no row under its header is the header alone, round at
         // every corner and with no rule under it.
         bool hasRows = box.Height > card.Header.Height;
         double under = hasRows ? 0 : radius;
 
-        context.DrawRectangle(isUnanswered ? _palette.Stub : _palette.Card, null, box, radius, radius);
-        context.DrawRectangle(
-            isUnanswered ? _palette.StubHead : _palette.CardHead,
-            null,
-            new RoundedRect(card.Header, radius, radius, under, under));
+        context.DrawRectangle(BodyOf(card), null, box, radius, radius);
+        context.DrawRectangle(HeadOf(card), null, new RoundedRect(card.Header, radius, radius, under, under));
 
         if (!hasRows)
             return;
@@ -147,7 +149,7 @@ internal sealed class LogicCardPainter
     private void DrawState(DrawingContext context, LogicSceneCard card, LogicViewModel model)
     {
         if (card.StateRow is not Rect row
-            || card.Card.IsStub
+            || !card.Card.IsEntity
             || !model.TryGetState(card.Card.NodeId, out LogicEntityState state))
         {
             return;
@@ -196,12 +198,23 @@ internal sealed class LogicCardPainter
         }
     }
 
-    private void DrawNote(DrawingContext context, LogicSceneCard card)
+    // The line about outputs the card does not list, then the one that
+    // names the scripts inside the entity.
+    private void DrawNotes(DrawingContext context, LogicSceneCard card)
     {
-        if (card.NoteRow is not Rect row || card.Note.Length == 0)
+        if (card.NoteRow is Rect outputs)
+            DrawNote(context, card.Note, outputs);
+
+        if (card.ScriptsNoteRow is Rect scripts)
+            DrawNote(context, card.ScriptsNote, scripts);
+    }
+
+    private void DrawNote(DrawingContext context, string words, Rect row)
+    {
+        if (words.Length == 0)
             return;
 
-        FormattedText note = _texts.Get(card.Note, LogicInk.Note, row.Width - 2 * LogicDrawMetrics.RowPadding);
+        FormattedText note = _texts.Get(words, LogicInk.Note, row.Width - 2 * LogicDrawMetrics.RowPadding);
         context.DrawText(note, new Point(row.X + LogicDrawMetrics.RowPadding, row.Center.Y - note.Height / 2));
     }
 

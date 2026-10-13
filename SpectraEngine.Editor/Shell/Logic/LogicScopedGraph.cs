@@ -39,8 +39,11 @@ public sealed class LogicScopedGraph
             if (Cards.Count > 0)
                 return LogicEmptyReason.None;
 
-            // With wires in the level, only a scope that follows the selection shows nothing.
-            return Graph.WireCount == 0 ? LogicEmptyReason.LevelHasNoWires : LogicEmptyReason.NoEntitySelected;
+            // With wires in the level, or made by its scripts, only a scope
+            // that follows the selection shows nothing.
+            return Graph.WireCount == 0 && Graph.ScriptCardCount == 0
+                ? LogicEmptyReason.LevelHasNoWires
+                : LogicEmptyReason.NoEntitySelected;
         }
     }
 
@@ -85,20 +88,25 @@ public sealed class LogicScopedGraph
     private LogicCounts Count()
     {
         int entities = 0;
+        int scripts = 0;
         int unwired = 0;
 
         foreach (LogicCard card in Cards)
         {
-            entities += card.IsStub ? 0 : 1;
+            entities += card.IsEntity ? 1 : 0;
+            scripts += card.IsScript ? 1 : 0;
             unwired += card.IsWired ? 0 : 1;
         }
 
         // A wire drawn as several edges still counts once.
         var wires = new HashSet<LogicWireKey>();
         int goingNowhere = 0;
+        int madeByScripts = 0;
 
         foreach (LogicEdge edge in Edges)
         {
+            madeByScripts += edge.IsScript ? 1 : 0;
+
             foreach (int index in edge.WireIndices)
             {
                 var wire = new LogicWireKey(edge.From.NodeId, index);
@@ -114,7 +122,11 @@ public sealed class LogicScopedGraph
             wires.Count,
             goingNowhere,
             Graph.UnwiredCount - unwired,
-            Graph.IsTruncated);
+            Graph.IsTruncated)
+        {
+            Scripts = scripts,
+            ScriptWires = madeByScripts,
+        };
     }
 
     // The cards shown are some of the graph's, in its order, so one walk

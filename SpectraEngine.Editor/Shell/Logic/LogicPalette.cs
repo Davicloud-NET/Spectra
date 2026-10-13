@@ -33,6 +33,7 @@ internal sealed class LogicPalette
         LabelEdge = CardEdge;
         LitLabelEdge = new ImmutablePen(accent);
         BrokenLabelEdge = new ImmutablePen(LogicTheme.Brush("SpectraLogicStubEdge"));
+        ScriptLabelEdge = new ImmutablePen(LogicTheme.Brush("SpectraLogicScriptWire"));
         TravelEdge = new ImmutablePen(accent, LogicTheme.Size("SpectraLogicTravelDotEdge"));
     }
 
@@ -51,6 +52,11 @@ internal sealed class LogicPalette
     public IImmutableBrush Stub { get; } = LogicTheme.Brush("SpectraLogicStub");
 
     public IImmutableBrush StubHead { get; } = LogicTheme.Brush("SpectraLogicStubHead");
+
+    // The card of a running script.
+    public IImmutableBrush ScriptCard { get; } = LogicTheme.Brush("SpectraLogicScriptCard");
+
+    public IImmutableBrush ScriptCardHead { get; } = LogicTheme.Brush("SpectraLogicScriptCardHead");
 
     // A selected card seen from far out, where a ring would not show.
     public IImmutableBrush SelectedFill { get; } = LogicTheme.Brush("SpectraAccentRest");
@@ -97,6 +103,9 @@ internal sealed class LogicPalette
     public IPen LitLabelEdge { get; }
 
     public IPen BrokenLabelEdge { get; }
+
+    // Round the label of a script's wire that just carried something.
+    public IPen ScriptLabelEdge { get; }
 
     public IPen TravelEdge { get; }
 

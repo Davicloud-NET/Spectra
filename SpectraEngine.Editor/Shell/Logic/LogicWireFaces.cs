@@ -48,6 +48,12 @@ internal sealed class LogicWireFaces
         foreach (LogicWireFace face in _faces)
         {
             LogicEdge edge = face.Edge.Edge;
+            if (edge.IsScript)
+            {
+                changed |= face.Take(LogicWireState.OfScript(play.ScriptActivity(edge), play.Tick));
+                continue;
+            }
+
             LogicWireState state = LogicWireState.Authored(
                 edge.GoesNowhere,
                 selection.Contains(edge.From) || selection.Contains(edge.To));

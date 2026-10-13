@@ -21,6 +21,8 @@ internal sealed class LogicArrangement
 
     private LogicGraphInfo? _info;
     private EntitySchemaCatalog? _schemas;
+    private LogicScriptWiring? _scripts;
+    private bool _showsScripts = true;
     private LogicScope _scope = new() { Mode = LogicScopeMode.AroundSelection };
     private bool _graphStale;
     private bool _scopeStale;
@@ -89,6 +91,25 @@ internal sealed class LogicArrangement
         _schemas = schemas;
     }
 
+    // What the level's scripts hear and send while it runs. The engine hands
+    // on the same instance until that changes.
+    public void SetScripts(LogicScriptWiring? scripts)
+    {
+        // A level whose scripts are connected to nothing is drawn as one with none.
+        if (scripts is { Wires.Count: 0 })
+            scripts = null;
+
+        _graphStale |= !ReferenceEquals(scripts, _scripts);
+        _scripts = scripts;
+    }
+
+    // Whether the graph says anything of scripts.
+    public void ShowScripts(bool shows)
+    {
+        _graphStale |= shows != _showsScripts;
+        _showsScripts = shows;
+    }
+
     public void SetScope(LogicScope scope)
     {
         _scope = scope;
@@ -107,7 +128,7 @@ internal sealed class LogicArrangement
 
         if (_graphStale)
         {
-            Graph = _info is null ? null : LogicGraph.Build(_info, _schemas);
+            Graph = _info is null ? null : LogicGraph.Build(_info, _schemas, _scripts, _showsScripts);
             _scopeStale = true;
         }
 

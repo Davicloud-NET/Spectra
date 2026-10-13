@@ -35,6 +35,12 @@ public sealed class LogicSceneCard
     /// <summary>The row the note is drawn in, when there is one.</summary>
     public Rect? NoteRow { get; internal init; }
 
+    /// <summary>The line that names the scripts inside the entity, or empty.</summary>
+    public string ScriptsNote { get; internal init; } = "";
+
+    /// <summary>The row that line is drawn in, when there is one.</summary>
+    public Rect? ScriptsNoteRow { get; internal init; }
+
     /// <summary>Whether the card lists every port its class declares.</summary>
     public bool IsExpanded { get; internal init; }
 

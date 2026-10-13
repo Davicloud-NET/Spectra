@@ -22,6 +22,7 @@ public partial class MainWindow
         view.SelectRequested += OnLogicSelectRequested;
         view.FrameRequested += OnLogicFrameRequested;
         view.WiringRequested += OnLogicWiringRequested;
+        view.OpenScriptRequested += OnLogicOpenScriptRequested;
         LogicPaneBody.Child = view;
 
         _logic.ShownEntitiesChanged += SendLogicRequest;
@@ -37,6 +38,9 @@ public partial class MainWindow
         _session?.Select(nodeId);
         _session?.Post(EditorCameraCommand.FrameSelection);
     }
+
+    // As a double click on a script in the scene tree does.
+    private void OnLogicOpenScriptRequested(Guid nodeId) => _scripts.OpenOf(nodeId);
 
     // The entity's whole list, as the Properties panel sends it: one undo entry.
     private void OnLogicWiringRequested(Guid nodeId, IReadOnlyList<EntityConnection> wires) =>

@@ -22,6 +22,12 @@ public readonly record struct LogicViewFit
     /// <summary>The least height the graph keeps before the event strip gives way.</summary>
     public const double LeastGraphHeight = 200;
 
+    /// <summary>
+    /// The room the legend takes at the foot of the graph. A graph that is
+    /// fitted into the view keeps clear of it.
+    /// </summary>
+    public const double LegendRoom = 84;
+
     // The toolbar and the status row, which are always there, and the event
     // strip. LogicViewFitTests holds them to the theme's heights.
     internal const double Rows = 62;
@@ -36,6 +42,7 @@ public readonly record struct LogicViewFit
     private const double LongNames = 212;
     private const double ShortNames = 116;
     private const double Steps = 42;
+    private const double ScriptsKey = 86;
     private const double FilterGap = 8;
     private const double Playing = 82;
     private const double Tick = 76;
@@ -47,6 +54,11 @@ public readonly record struct LogicViewFit
     private const double StatusPadding = 20;
     private const double StatusGap = 14;
 
+    // What the legend takes beside its words: its margin and padding, and
+    // the sample of a wire in front of a line.
+    private const double LegendSides = 48;
+    private const double LegendSample = 42;
+
     /// <summary>Everything, as in a wide view of a running level.</summary>
     public static LogicViewFit Everything { get; } = new()
     {
@@ -55,6 +67,7 @@ public readonly record struct LogicViewFit
         ShowsFilter = true,
         ShowsZoomKeys = true,
         ShowsSteps = true,
+        ShowsScriptsKey = true,
         ShowsPlaying = true,
         ShowsCounts = true,
         ShowsNotes = true,
@@ -80,6 +93,9 @@ public readonly record struct LogicViewFit
     /// <summary>The steps field.</summary>
     public bool ShowsSteps { get; init; }
 
+    /// <summary>The key that shows and hides what scripts do.</summary>
+    public bool ShowsScriptsKey { get; init; }
+
     /// <summary>The Playing pill.</summary>
     public bool ShowsPlaying { get; init; }
 
@@ -101,12 +117,16 @@ public readonly record struct LogicViewFit
     /// <summary>The strip of what the wires just did.</summary>
     public bool ShowsEvents { get; init; }
 
+    /// <summary>The legend of solid and dashed wires at the foot of the graph.</summary>
+    public bool ShowsLegend { get; init; }
+
     /// <summary>How wide the toolbar is without its filter box.</summary>
     public double ToolbarWidth =>
         Padding
         + (ShowsLabels ? ShowLabel + StepsLabel : 0)
         + (UsesShortNames ? ShortNames : LongNames)
         + (ShowsSteps ? Steps : 0)
+        + (ShowsScriptsKey ? ScriptsKey : 0)
         + (ShowsPlaying ? Playing : 0)
         + (ShowsTick ? Tick : 0)
         + (ShowsZoomKeys ? ZoomKeys : 0);
@@ -128,12 +148,28 @@ public readonly record struct LogicViewFit
             ShowsEvents = isPlaying && size.Height >= Rows + EventStrip + LeastGraphHeight,
         };
 
+        fit = fit with { ShowsLegend = fit.HasRoomForLegend(size, status.ScriptsHint(isPlaying), ruler) };
         return fit.WithStatus(size.Width, status, isPlaying, ruler).WithToolbar(size.Width);
     }
 
     /// <summary>How wide the filter box is in a view of a width. Zero when it is not shown.</summary>
     public double FilterWidth(double width) =>
         ShowsFilter ? Math.Clamp(width - ToolbarWidth - FilterGap, 0, MostFilterWidth) : 0;
+
+    // The legend shows whole or not at all, and only over a graph tall
+    // enough to be worth looking at beside it.
+    private bool HasRoomForLegend(Size size, string hint, ILogicTextMeasure ruler)
+    {
+        if (hint.Length == 0)
+            return false;
+
+        double words = Math.Max(
+            ruler.Width(hint, LogicTextStyle.Label),
+            LegendSample + ruler.Width(LogicViewText.LegendScripted, LogicTextStyle.Label));
+
+        double graph = size.Height - Rows - (ShowsEvents ? EventStrip : 0);
+        return graph >= LeastGraphHeight && size.Width >= Math.Ceiling(words) + LegendSides;
+    }
 
     // The link and what the last edit did are the row's news and stay. The
     // counts give way to them. A sentence shows whole or not at all, the
@@ -142,7 +178,8 @@ public readonly record struct LogicViewFit
     private LogicViewFit WithStatus(double width, LogicStatus status, bool isPlaying, ILogicTextMeasure ruler)
     {
         double news = Part(status.GoingNowhere, ruler) + Part(status.News, ruler);
-        double counts = Part(status.Entities, ruler) + Part(status.Wires, ruler);
+        double counts = Part(status.Entities, ruler) + Part(status.Scripts, ruler)
+            + Part(status.Wires, ruler) + Part(status.ScriptWires, ruler);
         double left = width - StatusPadding - news;
 
         bool showsCounts = news == 0 || left >= counts;
@@ -157,7 +194,7 @@ public readonly record struct LogicViewFit
         bool showsShort = hasNotes && !showsLong && status.UnwiredShort.Length > 0 && left >= shortNotes;
         left -= showsLong ? longNotes : showsShort ? shortNotes : 0;
 
-        string hint = isPlaying ? LogicViewText.PlayingHint : status.Hint;
+        string hint = isPlaying ? status.PlayingHint : status.Hint;
         bool showsWhole = left >= Part(hint, ruler);
         bool showsShortHint = !showsWhole && !isPlaying && left >= Part(LogicViewText.EditingHintShort, ruler);
 
@@ -186,6 +223,8 @@ public readonly record struct LogicViewFit
         fit = fit with { ShowsTick = false };
         if (fit.Fits(width)) return fit;
         fit = fit with { UsesShortNames = true };
+        if (fit.Fits(width)) return fit;
+        fit = fit with { ShowsScriptsKey = false };
         if (fit.Fits(width)) return fit;
         fit = fit with { ShowsFilter = false };
         if (fit.Fits(width)) return fit;

@@ -27,13 +27,20 @@ internal sealed class LogicGraphBuilder
     private LogicCard[] _cardOfStub = [];
     private int _unwired;
 
+    // Null for a view that shows no scripts.
+    private readonly LogicScriptLinks? _scripts;
+    private readonly Dictionary<Guid, int> _entityByNode = [];
+    private LogicCard?[] _cardOfScript = [];
+    private int _scriptCards;
+
     // One wire reaching one receiver. Receiver is an entity index, or -1 when
     // Stub names the stub instead.
     private readonly record struct Hop(int Sender, int WireIndex, int Receiver, int Stub);
 
     private sealed record Stub(LogicStubKind Kind, string Name, List<string> Inputs);
 
-    public LogicGraphBuilder(LogicGraphInfo info, EntitySchemaCatalog? catalog)
+    public LogicGraphBuilder(
+        LogicGraphInfo info, EntitySchemaCatalog? catalog, LogicScriptWiring? running = null, bool showsScripts = true)
     {
         _info = info;
         _catalog = catalog;
@@ -41,6 +48,7 @@ internal sealed class LogicGraphBuilder
         _sent = new List<string>?[_entities.Count];
         _received = new List<string>?[_entities.Count];
         _cardOfEntity = new LogicCard?[_entities.Count];
+        _scripts = showsScripts ? new LogicScriptLinks(info, running) : null;
     }
 
     public LogicGraph Build()
@@ -61,9 +69,11 @@ internal sealed class LogicGraphBuilder
                 Resolve(sender, wire);
         }
 
+        MarkScriptPorts();
         CreateCards();
         List<LogicEdge> edges = CreateEdges();
         HashSet<LogicWireKey> goingNowhere = GoingNowhere(edges, out LogicEdge? first);
+        AddScriptEdges(edges);
 
         return new LogicGraph(_cards, edges, goingNowhere)
         {
@@ -71,7 +81,74 @@ internal sealed class LogicGraphBuilder
             UnwiredCount = _unwired,
             FirstGoingNowhere = first,
             IsTruncated = _info.IsTruncated,
+            ScriptCount = _scripts?.Scripts.Count ?? 0,
+            ScriptCardCount = _scriptCards,
         };
+    }
+
+    // What a script hears or sends counts as a wire of the entity: the port
+    // gets a row for the edge to meet, and the card is on show.
+    private void MarkScriptPorts()
+    {
+        if (_scripts is not { Links.Count: > 0 } scripts)
+            return;
+
+        for (int i = 0; i < _entities.Count; i++)
+            _entityByNode.TryAdd(_entities[i].NodeId, i);
+
+        foreach (LogicScriptLinks.Link link in scripts.Links)
+        {
+            if (!_entityByNode.TryGetValue(link.Entity, out int entity))
+                continue;
+
+            if (link.IsSend)
+                Mark(ref _received[entity], link.Port);
+            else
+                Mark(ref _sent[entity], link.Port);
+        }
+    }
+
+    // A card for each script that hears or sends something, in scene order.
+    private void CreateScriptCards()
+    {
+        if (_scripts is not { Links.Count: > 0 } scripts)
+            return;
+
+        _cardOfScript = new LogicCard?[scripts.Scripts.Count];
+        var linked = new bool[_cardOfScript.Length];
+        foreach (LogicScriptLinks.Link link in scripts.Links)
+            linked[link.Script] |= _entityByNode.ContainsKey(link.Entity);
+
+        for (int i = 0; i < linked.Length; i++)
+        {
+            if (!linked[i])
+                continue;
+
+            var card = new LogicCard(_cards.Count, scripts.Scripts[i]);
+            _cardOfScript[i] = card;
+            _cards.Add(card);
+            _scriptCards++;
+        }
+    }
+
+    private void AddScriptEdges(List<LogicEdge> edges)
+    {
+        if (_scripts is not { Links.Count: > 0 } scripts)
+            return;
+
+        foreach (LogicScriptLinks.Link link in scripts.Links)
+        {
+            if (!_entityByNode.TryGetValue(link.Entity, out int index) || _cardOfScript[link.Script] is not { } script)
+                continue;
+
+            LogicCard entity = CardOf(index);
+            edges.Add(new LogicEdge(
+                link.IsSend ? script : entity,
+                link.IsSend ? entity : script,
+                link.Port,
+                link.Wires,
+                scripts.LabelOf(link)));
+        }
     }
 
     private void Resolve(int sender, int wireIndex)
@@ -165,6 +242,8 @@ internal sealed class LogicGraphBuilder
             _cards.Add(_cardOfStub[i]);
         }
 
+        CreateScriptCards();
+
         int wired = _cards.Count;
         CreateEntityCards(isWired: false);
         _unwired = _cards.Count - wired;
@@ -187,7 +266,10 @@ internal sealed class LogicGraphBuilder
                 schema,
                 EditorIcons.ForEntity(_catalog, _entities[i].ClassName),
                 Ports(schema?.InputNames, _received[i], isOutput: false),
-                Ports(schema?.OutputNames, _sent[i], isOutput: true));
+                Ports(schema?.OutputNames, _sent[i], isOutput: true))
+            {
+                ScriptNames = _scripts?.Inside(_entities[i].NodeId) ?? [],
+            };
 
             _cardOfEntity[i] = card;
             _cards.Add(card);
