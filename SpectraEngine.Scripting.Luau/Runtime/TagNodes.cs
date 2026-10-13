@@ -12,12 +12,17 @@ internal sealed class TagNodes(string tag)
     // How many nodes have the tag, in the level's tree or out of it.
     public int Holders { get; set; }
 
-    // The nodes of the level's tree that have the tag.
-    public HashSet<SceneNode> InLevel { get; } = [];
+    // Stands in the list where a node was that left it, so the list keeps
+    // no node alive that is in no level any more.
+    public static readonly SceneNode Vacant = new("Vacant");
+
+    // The nodes of the level's tree that have the tag, each with its place
+    // in the list below, or -1 while it is not in it.
+    public Dictionary<SceneNode, int> InLevel { get; } = [];
 
     // The same nodes as GetTagged hands them out. A node that got the tag
-    // is missing and one that lost it is still there until the list is
-    // asked for, which is what the two flags say.
+    // is missing, and where one was that lost it stands the vacant node,
+    // until the list is asked for. That is what the two flags say.
     public List<SceneNode> Listed { get; } = [];
 
     public bool HasJoined { get; set; }

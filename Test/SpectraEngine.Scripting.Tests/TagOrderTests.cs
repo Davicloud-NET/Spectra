@@ -207,6 +207,40 @@ public sealed class TagOrderTests
     }
 
     [Fact]
+    public void A_node_that_left_a_tags_list_is_not_kept_by_it_while_nobody_asks_for_the_list()
+    {
+        var root = new SceneNode("Root");
+        var table = new TagTable();
+        List<SceneNode> nodes = [];
+        for (int i = 0; i < 10; i++)
+        {
+            nodes.Add(root.CreateChild($"Part{i}"));
+            table.Add(nodes[i], "Lit", isInLevel: true);
+        }
+
+        TagNodes lit = table.Find("Lit").ShouldNotBeNull();
+        table.InOrder(lit).ShouldBe(nodes);
+
+        table.Remove(nodes[1], "Lit", out _);
+        table.Leave(nodes[4]);
+        table.Destroyed(nodes[7]);
+        table.Forget(nodes[8]);
+
+        lit.Listed.ShouldNotContain(nodes[1]);
+        lit.Listed.ShouldNotContain(nodes[4]);
+        lit.Listed.ShouldNotContain(nodes[7]);
+        lit.Listed.ShouldNotContain(nodes[8]);
+        table.Tidyings.ShouldBe(0);
+
+        // Asked for, it is the nodes that are left, in the order they were in.
+        table.InOrder(lit).ShouldBe([nodes[0], nodes[2], nodes[3], nodes[5], nodes[6], nodes[9]]);
+        table.Remove(nodes[9], "Lit", out _);
+        table.Remove(nodes[0], "Lit", out _);
+        table.InOrder(lit).ShouldBe([nodes[2], nodes[3], nodes[5], nodes[6]]);
+        table.Orderings.ShouldBe(1);
+    }
+
+    [Fact]
     public void A_node_that_loses_a_tag_and_gets_it_back_before_the_list_is_asked_for_is_in_it_once()
     {
         var root = new SceneNode("Root");

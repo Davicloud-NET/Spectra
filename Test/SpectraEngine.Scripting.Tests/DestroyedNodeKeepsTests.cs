@@ -186,10 +186,9 @@ public sealed class DestroyedNodeKeepsTests
         runtime.DestroyedAttributeCount.ShouldBe(0);
     }
 
-    // A tag's list names a node that left it until the tag is asked for
-    // again. The keeper has the tag all along, so the list is never emptied.
+    // The keeper has the tag all along, so the list is never emptied.
     [Fact]
-    public void A_destroyed_part_a_tags_list_still_names_is_let_go_when_the_tag_is_asked_for_again()
+    public void A_tags_list_that_named_destroyed_parts_is_without_them_when_the_tag_is_asked_for_again()
     {
         using var level = new ScriptLevel(hasCharacter: false);
         level.Part("Keeper", new Vector3(2f, 1f, 3f)).Tags = TagSet.Of("Spare");
@@ -223,6 +222,44 @@ public sealed class DestroyedNodeKeepsTests
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(["21", "1"]);
         spares.Count(IsThere).ShouldBe(0, "a destroyed part is still held, with what it kept");
+        runtime.DestroyedTaggedCount.ShouldBe(0);
+        runtime.DestroyedAttributeCount.ShouldBe(0);
+    }
+
+    // The tag is asked for once and never again, and the keeper has it all
+    // along. The list keeps a place for each part that left and not the part.
+    [Fact]
+    public void A_tags_list_that_is_never_asked_for_again_keeps_no_destroyed_part()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.Part("Keeper", new Vector3(2f, 1f, 3f)).Tags = TagSet.Of("Spare");
+        level.AddScript(level.Scene.Root, """
+            local made = {}
+            for index = 1, 20 do
+                local part = Instance.new("Part")
+                part:AddTag("Spare")
+                part:SetAttribute("Index", index)
+                part.Parent = workspace
+                made[index] = part
+            end
+            print(#game:GetService("CollectionService"):GetTagged("Spare"))
+            task.wait(0.1)
+            for _, part in made do
+                part:Destroy()
+            end
+            made = nil
+            """, "Main");
+        LuauScriptRuntime runtime = level.Play().Tick(2).Runtime.ShouldNotBeNull();
+        WeakReference<SceneNode>[] spares = MadeNow(level);
+        spares.Length.ShouldBe(20);
+
+        level.Tick(20);
+        runtime.Collect();
+        CollectAll();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["21"]);
+        spares.Count(IsThere).ShouldBe(0, "the tag's list still holds a destroyed part");
         runtime.DestroyedTaggedCount.ShouldBe(0);
         runtime.DestroyedAttributeCount.ShouldBe(0);
     }

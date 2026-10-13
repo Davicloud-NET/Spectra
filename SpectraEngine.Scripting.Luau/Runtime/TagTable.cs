@@ -191,7 +191,7 @@ internal sealed class TagTable
         if (tag.HasJoined || tag.OrderedAtMove != _moves)
         {
             listed.Clear();
-            foreach (SceneNode node in tag.InLevel)
+            foreach (SceneNode node in tag.InLevel.Keys)
                 listed.Add(node);
 
             if (listed.Count > 1)
@@ -199,6 +199,9 @@ internal sealed class TagTable
                 _order.Sort(listed);
                 Orderings++;
             }
+
+            for (int i = 0; i < listed.Count; i++)
+                tag.InLevel[listed[i]] = i;
         }
         else if (tag.HasLeft)
         {
@@ -309,16 +312,20 @@ internal sealed class TagTable
 
     private static void Put(TagNodes tag, SceneNode node)
     {
-        if (tag.InLevel.Add(node))
+        if (tag.InLevel.TryAdd(node, -1))
             tag.HasJoined = true;
     }
 
-    // The list keeps the node until it is asked for. So taking a tag off
-    // every node of a large tag is paid once, and not once for each node.
+    // The list keeps the node's place until it is asked for, and not the
+    // node. So taking a tag off every node of a large tag is paid once, and
+    // a destroyed node is held by no list.
     private static bool TakeOut(TagNodes tag, SceneNode node)
     {
-        if (!tag.InLevel.Remove(node))
+        if (!tag.InLevel.Remove(node, out int place))
             return false;
+
+        if (place >= 0)
+            tag.Listed[place] = TagNodes.Vacant;
 
         tag.HasLeft = tag.InLevel.Count > 0;
         if (!tag.HasLeft)
@@ -337,8 +344,14 @@ internal sealed class TagTable
         int kept = 0;
         for (int i = 0; i < listed.Count; i++)
         {
-            if (tag.InLevel.Contains(listed[i]))
-                listed[kept++] = listed[i];
+            SceneNode node = listed[i];
+            if (ReferenceEquals(node, TagNodes.Vacant))
+                continue;
+
+            if (kept != i)
+                tag.InLevel[node] = kept;
+
+            listed[kept++] = node;
         }
 
         listed.RemoveRange(kept, listed.Count - kept);
