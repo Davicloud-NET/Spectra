@@ -105,6 +105,28 @@ public sealed class ListenerUpkeepTests
         warned.Script.ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData("Ping", "")]
+    [InlineData("SayMaybe", "")]
+    [InlineData("SayNode", "")]
+    [InlineData("SayAny", "")]
+    [InlineData("SayAny", "anything at all")]
+    [InlineData("SayNumber", "2.5")]
+    public void Text_an_outputs_type_reads_is_warned_of_never(string input, string sent)
+    {
+        string output = EchoEntity.Ports.Single(port => port.Input == input).Output;
+        using var level = new ScriptLevel();
+        Echo(level);
+        level.AddScript(level.Scene.Root, $"workspace.Echo.{output}:Connect(function() print('heard') end)");
+        level.Play();
+
+        level.Entities.QueueInput("Echo", input, sent);
+        level.Tick();
+
+        level.Printed.ShouldContain("heard");
+        level.Sink.Messages.ShouldAllBe(message => message.Severity == ScriptSeverity.Print);
+    }
+
     private static void Echo(ScriptLevel level) =>
         level.Scene.Root.CreateChild("Echo").Entity = new EntityData(EchoEntity.Class);
 }
