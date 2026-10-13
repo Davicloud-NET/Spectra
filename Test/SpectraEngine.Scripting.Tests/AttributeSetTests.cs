@@ -231,6 +231,33 @@ public sealed class AttributeSetTests
         level.Printed[1].ShouldBe("7");
     }
 
+    [Fact]
+    public void Nothing_is_kept_for_a_node_whose_attributes_were_all_taken_away()
+    {
+        using ScriptLevel level = House.With("""
+            local house = workspace.House
+            for _, node in house:GetDescendants() do
+                node:SetAttribute("Seen", true)
+                node:SetAttribute("Note", "kept for a while")
+            end
+            task.wait()
+            for _, node in house:GetDescendants() do
+                node:SetAttribute("Seen", nil)
+                node:SetAttribute("Note", nil)
+            end
+            house.Lamp:SetAttribute("Watts", 60)
+            house.Door.AttributeChanged:Connect(function() end)
+            """);
+
+        level.Play().Tick();
+        int held = level.Runtime.ShouldNotBeNull().AttributeNodeCount;
+        level.Tick();
+
+        level.Errors.ShouldBeEmpty();
+        held.ShouldBeGreaterThan(5);
+        level.Runtime.AttributeNodeCount.ShouldBe(2, "the lamp has an attribute and the door a signal");
+    }
+
     [Theory]
     [InlineData("door:SetAttribute(5, 1)", "invalid argument #1 to 'SetAttribute' (string expected, got number)")]
     [InlineData("door:SetAttribute()", "invalid argument #1 to 'SetAttribute' (string expected, got nil)")]

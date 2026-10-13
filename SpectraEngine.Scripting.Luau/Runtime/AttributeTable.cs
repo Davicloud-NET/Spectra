@@ -99,8 +99,16 @@ internal sealed class AttributeTable
     // No value keeps the name as one that was taken away.
     public void Set(SceneNode node, string name, in MemberValue value) => OfOrMake(node).Values[name] = value;
 
-    public void Forget(SceneNode node, ReadOnlySpan<char> name) =>
-        Of(node)?.Values.GetAlternateLookup<ReadOnlySpan<char>>().Remove(name);
+    // A node whose last attribute went, and that has no signal, is kept
+    // nothing for.
+    public void Forget(SceneNode node, ReadOnlySpan<char> name)
+    {
+        if (Of(node) is not { } own || !own.Values.GetAlternateLookup<ReadOnlySpan<char>>().Remove(name))
+            return;
+
+        if (own.Values.Count == 0 && own.Changed is null && own.ChangedOf is null && !_ofNode.Remove(node))
+            _ofDestroyed.Remove(node);
+    }
 
     // Gives a copy what scripts set on its source, with the names a script
     // took away. The signals stay the source's own.
