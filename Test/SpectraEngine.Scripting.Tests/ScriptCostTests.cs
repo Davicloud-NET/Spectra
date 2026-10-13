@@ -50,6 +50,7 @@ public sealed class ScriptCostTests
         ("read an input of an entity and do not call it", "local _ = echo.Ping"),
         ("call an input, whose output nothing hears", "echo:Tap()"),
         ("call an input, whose output a script hears", "echo:Nudge()"),
+        ("call an input from a function of a module", "tap(echo)"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
@@ -87,6 +88,7 @@ public sealed class ScriptCostTests
         using var level = new ScriptLevel(hasCharacter: false);
         SceneNode part = level.Part("Mover", new Vector3(0f, 2f, 0f));
         level.Scene.Root.CreateChild("Echo").Entity = new EntityData(EchoEntity.Class);
+        level.FileAt("Scripts/tapper.luau", "return function(echo) echo:Tap() end");
         level.AddScript(part, $$"""
             local part = script.Parent
             local a = Vector3.new(1, 2, 3)
@@ -96,6 +98,7 @@ public sealed class ScriptCostTests
             local run = game:GetService("RunService")
             local echo = workspace.Echo
             echo.OnNudged:Connect(function() end)
+            local tap = require("./tapper")
             run.Heartbeat:Connect(function()
                 for i = 1, {{Rounds}} do
                     {{statement}}

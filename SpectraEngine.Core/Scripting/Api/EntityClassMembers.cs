@@ -11,7 +11,7 @@ namespace SpectraEngine.Core.Scripting.Api;
 /// description of the class go by this.
 /// </summary>
 /// <param name="ClassName">The entity class, as a map spells it.</param>
-/// <param name="Extends">The script class a node of the entity class is of besides: Part or Instance.</param>
+/// <param name="Extends">The script class of the node that carries the entity, whose own members win.</param>
 /// <param name="Inputs">The inputs a script calls, in the schema's order.</param>
 /// <param name="Outputs">The outputs a script connects to, in the schema's order.</param>
 public sealed record EntityClassMembers(

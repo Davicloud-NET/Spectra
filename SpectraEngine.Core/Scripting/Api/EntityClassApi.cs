@@ -15,8 +15,10 @@ public static class EntityClassApi
 {
     private static readonly ScriptParameter[] Nothing = [];
 
-    // What a schema does not say may be anything, or nothing.
-    private static readonly ScriptParameter[] Anything = [new("...", "any")];
+    // What a schema does not say: a script hands over one value a wire can
+    // carry or none, and a listener gets the wire's text or nothing.
+    private static readonly ScriptParameter[] OneOfAny = [new("value", "(boolean | number | string | Vector3 | Instance)?")];
+    private static readonly ScriptParameter[] TextOrNothing = [new("text", "string?")];
 
     private static readonly HashSet<string> Reserved = new(StringComparer.Ordinal)
     {
@@ -59,14 +61,14 @@ public static class EntityClassApi
     };
 
     /// <summary>
-    /// What a script hands an input of that parameter, and what an output of
-    /// it hands a listener: each value with a name and its type as Luau
-    /// writes it. A parameter that does not say is any values at all.
+    /// What a script hands an input of that parameter: each value with a
+    /// name and its type as Luau writes it. A parameter that does not say
+    /// takes one value of a kind a wire can carry, or none.
     /// </summary>
     public static IReadOnlyList<ScriptParameter> ValuesOf(ParameterType parameter)
     {
         if (!parameter.IsSaid)
-            return Anything;
+            return OneOfAny;
         if (!parameter.HasValue)
             return Nothing;
 
@@ -86,6 +88,14 @@ public static class EntityClassApi
     }
 
     /// <summary>
+    /// What an output of that parameter hands a listener. The same as
+    /// <see cref="ValuesOf"/>, but for a parameter that does not say: the
+    /// listener then gets the wire's text, or nothing when it is empty.
+    /// </summary>
+    public static IReadOnlyList<ScriptParameter> SentValuesOf(ParameterType parameter) =>
+        parameter.IsSaid ? ValuesOf(parameter) : TextOrNothing;
+
+    /// <summary>
     /// The inputs and outputs of a class that a script reaches as members. A
     /// name stays out when Luau cannot write it, and when a member of the
     /// class it extends has it: that member wins. An input wins over an
@@ -96,13 +106,26 @@ public static class EntityClassApi
     public static EntityClassMembers MembersOf(EntitySchema schema, ScriptApiDescription api)
     {
         ArgumentNullException.ThrowIfNull(schema);
-        ArgumentNullException.ThrowIfNull(api);
 
-        string extends = ExtendsOf(schema);
-        var taken = new HashSet<string>(api.MemberNamesOf(extends), StringComparer.Ordinal);
+        return MembersOf(schema, api, ExtendsOf(schema));
+    }
+
+    /// <summary>
+    /// The same on a node of the script class <paramref name="carrier"/>,
+    /// whose members are the ones that win. The binding asks by what the
+    /// node carries, since a class placed as a brush may sit on a node that
+    /// is no part, and a point class on a light.
+    /// </summary>
+    public static EntityClassMembers MembersOf(EntitySchema schema, ScriptApiDescription api, string carrier)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        ArgumentNullException.ThrowIfNull(api);
+        ArgumentNullException.ThrowIfNull(carrier);
+
+        var taken = new HashSet<string>(api.MemberNamesOf(carrier), StringComparer.Ordinal);
 
         return new EntityClassMembers(
-            schema.ClassName, extends, Free(schema.Inputs, taken), Free(schema.Outputs, taken));
+            schema.ClassName, carrier, Free(schema.Inputs, taken), Free(schema.Outputs, taken));
     }
 
     /// <summary>
@@ -119,7 +142,7 @@ public static class EntityClassApi
         foreach (EntitySchema schema in schemas)
         {
             string name = schema.ClassName;
-            if (IsLuauName(name) && !LuauTypes.Contains(name) && api.FindClass(name) is null)
+            if (WhyNoClass(name, api) is null)
                 described.TryAdd(name, Describe(schema, MembersOf(schema, api)));
         }
 
@@ -143,6 +166,18 @@ public static class EntityClassApi
         return true;
     }
 
+    // Why the description has no class of that name: the end of a sentence.
+    // Null when it has one.
+    internal static string? WhyNoClass(string name, ScriptApiDescription api)
+    {
+        if (!IsLuauName(name))
+            return "Luau cannot write its name as a type";
+        if (LuauTypes.Contains(name))
+            return "Luau has a type of that name";
+
+        return api.FindClass(name) is null ? null : "the script API has a class of that name";
+    }
+
     private static ScriptClassDescription Describe(EntitySchema schema, EntityClassMembers members)
     {
         var methods = new List<ScriptFunctionDescription>(members.Inputs.Count);
@@ -157,7 +192,7 @@ public static class EntityClassApi
 
         var signals = new List<ScriptSignalDescription>(members.Outputs.Count);
         foreach (EntityPort output in members.Outputs)
-            signals.Add(new ScriptSignalDescription { Name = output.Name, Parameters = ValuesOf(output.Parameter) });
+            signals.Add(new ScriptSignalDescription { Name = output.Name, Parameters = SentValuesOf(output.Parameter) });
 
         return new ScriptClassDescription
         {

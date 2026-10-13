@@ -8,9 +8,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // The members a node has from its entity class: an input is a method and an
 // output is a signal. A class is data, so they are found by name in what
-// EntityClassApi reads from its schema, where a member of the script API is
-// found by its atom. ObjectMembers asks here after the node's own class and
-// before it looks for a child.
+// EntityClassApi reads from its schema. ObjectMembers asks here after the
+// node's own class and before it looks for a child.
 internal sealed class EntityMembers
 {
     private const string NoRoom =
@@ -20,8 +19,9 @@ internal sealed class EntityMembers
     private readonly EntityWorld _world;
     private readonly NodeSignals _signals;
 
+    // By the class and by what the node carries, whose own members win.
     // Null for a class this level cannot build, whose node is a placeholder.
-    private readonly Dictionary<string, EntityClassMembers?> _classes = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Class, NodeClassKind Carrier), EntityClassMembers?> _classes = [];
 
     // The function a script gets when it reads an input and does not call
     // it: one for each name, made on the first read.
@@ -95,16 +95,28 @@ internal sealed class EntityMembers
     {
         if (node.Entity is not { ClassName.Length: > 0 } data)
             return null;
-        if (_classes.TryGetValue(data.ClassName, out EntityClassMembers? known))
-            return known;
 
-        // The catalogue that builds the level's entities, so a class is to a
-        // script what it is to the level.
-        EntityClassMembers? members = _world.Catalog.TryGetSchema(data.ClassName, out EntitySchema? schema)
-            ? EntityClassApi.MembersOf(schema, LuauScriptApi.Description)
-            : null;
+        NodeClassKind carrier = NodeClass.KindOf(node);
+        return _classes.TryGetValue((data.ClassName, carrier), out EntityClassMembers? known)
+            ? known
+            : Learn(data.ClassName, carrier);
+    }
 
-        _classes.Add(data.ClassName, members);
+    // The catalogue that builds the level's entities, so a class is to a
+    // script what it is to the level. What of the class no script reaches on
+    // such a node is said here, once.
+    private EntityClassMembers? Learn(string className, NodeClassKind kind)
+    {
+        EntityClassMembers? members = null;
+        if (_world.Catalog.TryGetSchema(className, out EntitySchema? schema))
+        {
+            string carrier = NodeClass.NameOf(kind);
+            members = EntityClassApi.MembersOf(schema, LuauScriptApi.Description, carrier);
+            foreach (string gap in EntityClassGaps.OfPorts(schema, LuauScriptApi.Description, carrier))
+                _host.Report(new ScriptMessage(ScriptSeverity.Warning, gap, string.Empty, 0));
+        }
+
+        _classes.Add((className, kind), members);
         return members;
     }
 
@@ -136,10 +148,18 @@ internal sealed class EntityMembers
         if (!ParameterText.TryFormat(input.Parameter, in value, out string text))
             return stack.Fail($"{input.Name} was not sent: no wire can carry that value");
 
+        return Queue(stack, entity, input.Name, text) ? 0 : stack.Fail($"{input.Name} {NoRoom}");
+    }
+
+    // Only a trace reads who sent an input, so only a watched level looks
+    // the place up. The name of a module's file is a new string each time.
+    private bool Queue(LuauStack stack, Entity entity, string input, string text)
+    {
+        if (_world.Trace is null)
+            return _world.QueueScriptInput(entity, input, text, string.Empty, 0);
+
         ScriptMessage place = ScriptReport.Line(stack.State, _host.ScriptOf(stack), ScriptSeverity.Print, string.Empty);
-        return _world.QueueScriptInput(entity, input.Name, text, place.Script, place.Line)
-            ? 0
-            : stack.Fail($"{input.Name} {NoRoom}");
+        return _world.QueueScriptInput(entity, input, text, place.Script, place.Line);
     }
 
     private int PushMethod(LuauStack stack, string input) =>

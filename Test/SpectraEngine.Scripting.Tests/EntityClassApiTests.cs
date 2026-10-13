@@ -79,13 +79,25 @@ public sealed class EntityClassApiTests
     }
 
     [Fact]
-    public void A_value_that_may_be_left_out_is_optional_and_a_port_that_does_not_say_takes_anything()
+    public void A_value_that_may_be_left_out_is_optional_and_an_input_or_output_may_take_none()
     {
         Written(EntityClassApi.ValuesOf(ParameterType.Optional(KeyvalueType.Float))).ShouldBe("value: number?");
         Written(EntityClassApi.ValuesOf(ParameterType.Optional(KeyvalueType.Vec2))).ShouldBe("x: number?, y: number?");
         Written(EntityClassApi.ValuesOf(ParameterType.Optional(KeyvalueType.NodeRef))).ShouldBe("node: Instance?");
         Written(EntityClassApi.ValuesOf(ParameterType.None)).ShouldBeEmpty();
-        Written(EntityClassApi.ValuesOf(ParameterType.NotSaid)).ShouldBe("...: any");
+        Written(EntityClassApi.SentValuesOf(ParameterType.None)).ShouldBeEmpty();
+        Written(EntityClassApi.SentValuesOf(ParameterType.Optional(KeyvalueType.Float))).ShouldBe("value: number?");
+        Written(EntityClassApi.SentValuesOf(ParameterType.Of(KeyvalueType.Vec3))).ShouldBe("value: Vector3");
+    }
+
+    // What the binding does with one: WireValues takes one value of five
+    // kinds or none, and hands a listener the wire's text or nothing.
+    [Fact]
+    public void A_port_that_does_not_say_its_type_takes_one_value_a_wire_can_carry_and_sends_its_text()
+    {
+        Written(EntityClassApi.ValuesOf(ParameterType.NotSaid))
+            .ShouldBe("value: (boolean | number | string | Vector3 | Instance)?");
+        Written(EntityClassApi.SentValuesOf(ParameterType.NotSaid)).ShouldBe("text: string?");
     }
 
     [Fact]
@@ -162,9 +174,9 @@ public sealed class EntityClassApiTests
 
             --- logic_poke. An entity class.
             declare extern type logic_poke extends Instance with
-                read OnPoked: RBXScriptSignal<...any>
+                read OnPoked: RBXScriptSignal<string?>
                 read OnNode: RBXScriptSignal<Instance?>
-                function Poke(self, ...: any): ()
+                function Poke(self, value: (boolean | number | string | Vector3 | Instance)?): ()
                 function Add(self, value: number?): ()
                 [string]: Instance
             end
