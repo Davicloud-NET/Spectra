@@ -66,6 +66,9 @@ public sealed class ScriptCostTests
         ("read a number attribute of an entity", "local _ = sign:GetAttribute('speed')"),
         ("read a Color3 attribute of an entity", "local _ = sign:GetAttribute('tint')"),
         ("show and hide a part", "part.Visible = i % 2 == 0"),
+        ("read the Touched of a part", "local _ = part.Touched"),
+        ("read whether a connection is connected", "local _ = heard.Connected"),
+        ("call a function of Color3, three numbers out", "local _ = Color3.toHSV(c)"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
@@ -120,6 +123,7 @@ public sealed class ScriptCostTests
             local d = Color3.fromRGB(10, 20, 30)
             local lamp = workspace.Lamp
             local sign = workspace.Sign
+            local heard = part.Touched:Connect(function() end)
             run.Heartbeat:Connect(function()
                 for i = 1, {{Rounds}} do
                     {{statement}}
