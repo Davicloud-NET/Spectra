@@ -190,7 +190,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
     /// <inheritdoc/>
     // The player's touch hands the listener the one character the level's
-    // scripts have, so a script can hold it against the one it knows.
+    // scripts have, so a script can hold it against the one it knows. Also
+    // when the player has left since: an end has to say whose touch ended.
     public void HearTouch(long listener, in TouchVisitor visitor)
     {
         if (_isClosed)

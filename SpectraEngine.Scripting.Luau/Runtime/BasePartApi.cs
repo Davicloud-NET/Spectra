@@ -32,7 +32,7 @@ internal static partial class BasePartApi
     public static ScriptSignal Touched(ScriptContext context, SceneNode node) =>
         Touch(context, node, TouchSignal.Touched);
 
-    /// <summary>Fires once when the player stops touching the part, with the player's character. A touch also ends when CanTouch is switched off and when the part leaves the level.</summary>
+    /// <summary>Fires once when the player stops touching the part, with the player's character. A touch also ends when CanTouch is switched off, when the part leaves the level and when the player does. A character that has left is handed over all the same, and reading a member of it is an error.</summary>
     [ScriptSignal("character: Character")]
     public static ScriptSignal TouchEnded(ScriptContext context, SceneNode node) =>
         Touch(context, node, TouchSignal.TouchEnded);

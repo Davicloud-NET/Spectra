@@ -40,7 +40,10 @@ public interface IScriptRuntime
     /// under a name of <see cref="TouchSignal"/>.
     /// </summary>
     /// <param name="listener">What the runtime named the listener by when it added it.</param>
-    /// <param name="visitor">Who touches. Its player is null when the player has left the level since.</param>
+    /// <param name="visitor">
+    /// Who touches. Its player is the level's player as it is at the
+    /// listener's turn: null, or no longer present, when it has left since.
+    /// </param>
     void HearTouch(long listener, in TouchVisitor visitor);
 
     /// <summary>The point of a tick before the physics step.</summary>
