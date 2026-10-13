@@ -75,6 +75,16 @@ If the project had a `.vscode/settings.json` of its own, the editor left it alon
 }
 ```
 
+The same goes for a `.luaurc` of your own. Without the alias in it, a `require("@assets/...")` still runs in the engine, and Visual Studio Code marks it as an unknown require. Add the alias to your file:
+
+```json
+{
+  "aliases": {
+    "assets": "./Assets"
+  }
+}
+```
+
 ## Play
 
 <Steps>
@@ -85,7 +95,7 @@ If the project had a `.vscode/settings.json` of its own, the editor left it alon
 
 3. Read the Output panel. It has the line the script printed, `Hello world!`, and at the right end of the line where it came from: `Part.luau:4`.
 
-4. Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop.
+4. Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop. The Play button reads Stop while the level plays, and stops it too.
 
 </Steps>
 
@@ -107,6 +117,8 @@ Press Play. The part turns, once round in a little over six seconds.
 
 `script.Parent` is the part. `Heartbeat` fires 60 times a second while the level plays, and `step` is how long one of those is, in seconds. So the part turns by one radian a second.
 
+Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop.
+
 ## Find a mistake
 
 Break the script. Change the name in quotes to `RunServise` and save:
@@ -123,7 +135,13 @@ end)
 
 Visual Studio Code puts a red line under the name at once. Press Play all the same.
 
+:::note
+The red line comes from the type solver the extension starts with. If you have switched its new solver on, with `luau-lsp.fflags.enableNewSolver`, there is no line: the new solver says nothing of this mistake in a script that does not start with `--!strict`.
+:::
+
 The part stands still. The Output panel has a line in red, `'RunServise' is not a valid Service name`, and at its right end `Part.luau:2`.
+
+Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop. While a level plays the mouse looks around and has no pointer, so nothing can be clicked. The red line stays in Output.
 
 Click the line. Visual Studio Code comes up with the caret on line 2 of `Part.luau`. Put the name right, save, and press Play again.
 

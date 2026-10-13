@@ -70,6 +70,31 @@ public sealed partial class FirstScriptGuideTests
             written.ShouldContain(file);
     }
 
+    // The editor leaves a settings file and a .luaurc alone that were there,
+    // so the page is where their owner learns what they lack.
+    [Fact]
+    public void The_page_shows_what_a_file_of_the_persons_own_has_to_hold()
+    {
+        string[] shown = Blocks("json");
+
+        shown.ShouldContain(ScriptProjectFiles.CodeSettingsText());
+        shown.ShouldContain(ScriptProjectFiles.LuauRcText());
+    }
+
+    // The sample marks its slip for the old solver alone. While that holds,
+    // a reader who uses the new one sees no red line and has to be told.
+    [Fact]
+    public void The_page_names_the_solver_that_passes_its_mistake()
+    {
+        ScriptSample mistake = ScriptSamples.At(ScriptSamples.FirstMistakePath);
+
+        mistake.Expected(isNewSolver: false).ShouldNotBeEmpty();
+        mistake.Expected(isNewSolver: true).ShouldBeEmpty(
+            "the new solver reports the page's mistake now, so the page's note on it is out of date");
+        Page.ShouldContain("`luau-lsp.fflags.enableNewSolver`");
+        Page.ShouldContain("`--!strict`");
+    }
+
     [Fact]
     public void The_page_names_every_file_a_project_gets()
     {
