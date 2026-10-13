@@ -40,7 +40,7 @@ internal sealed class LogicLanes
             else if (wire.Route == LogicWireRoute.Forward)
             {
                 int lane = wire.To.Column - 1;
-                widestLabel[lane] = Math.Max(widestLabel[lane], wire.LabelWidth);
+                widestLabel[lane] = Math.Max(widestLabel[lane], wire.LabelWidth + ExtraRoom(wire));
             }
         }
 
@@ -87,6 +87,11 @@ internal sealed class LogicLanes
     // Where a back wire runs up, beside its receiver's column.
     public double UpRunX(LogicLayoutWire wire) =>
         ColumnLeft(wire.To.Column) - LogicMetrics.BackRunStep * (wire.UpRun + 1);
+
+    // What the label of a script's wire needs beside it past a lane's own margin.
+    private static double ExtraRoom(LogicLayoutWire wire) => wire.Edge.IsScript && wire.HasLabel
+        ? 2 * (LogicMetrics.ScriptLaneMargin - LogicMetrics.LaneMargin)
+        : 0;
 
     // Short wires first. They get the runs nearest the cards and the group,
     // and longer ones pass outside them.

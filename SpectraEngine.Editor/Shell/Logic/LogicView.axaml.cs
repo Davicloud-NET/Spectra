@@ -166,6 +166,7 @@ public partial class LogicView : UserControl
         WholeName.Text = fit.UsesShortNames ? LogicViewText.WholeLevelShort : LogicViewText.WholeLevel;
         StepsBox.IsVisible = fit.ShowsSteps;
         ScriptsKey.IsVisible = fit.ShowsScriptsKey;
+        ScriptsName.IsVisible = !fit.UsesShortScriptsKey;
         PlayingPill.IsVisible = fit.ShowsPlaying;
         TickReadout.IsVisible = fit.ShowsTick;
         ZoomKeys.IsVisible = fit.ShowsZoomKeys;

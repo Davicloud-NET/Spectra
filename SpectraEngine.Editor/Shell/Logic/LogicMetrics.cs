@@ -36,6 +36,13 @@ public static class LogicMetrics
     /// <summary>The room a lane keeps between its widest label and the cards on each side.</summary>
     public const double LaneMargin = 12;
 
+    /// <summary>
+    /// The room a lane keeps on each side of the label of a wire a script
+    /// made. More than <see cref="LaneMargin"/>, so a few dashes show beside
+    /// the label and the wire still reads as dashed.
+    /// </summary>
+    public const double ScriptLaneMargin = 30;
+
     /// <summary>The room between two cards in one column.</summary>
     public const double CardGap = 24;
 

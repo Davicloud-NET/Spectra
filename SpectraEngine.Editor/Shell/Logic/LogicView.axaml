@@ -158,7 +158,8 @@
                 <Path Classes="markbox" Data="{StaticResource IconCheckBox}" />
                 <Path Classes="mark" Data="{StaticResource IconCheckTick}" />
               </Panel>
-              <TextBlock Text="{x:Static logic:LogicViewText.ScriptsKey}" VerticalAlignment="Center" />
+              <TextBlock x:Name="ScriptsName" Text="{x:Static logic:LogicViewText.ScriptsKey}"
+                         VerticalAlignment="Center" />
             </StackPanel>
           </Button>
         </Border>

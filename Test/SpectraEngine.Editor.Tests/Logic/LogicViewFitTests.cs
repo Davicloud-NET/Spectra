@@ -61,18 +61,20 @@ public sealed class LogicViewFitTests
         LogicViewFit fit = Fit(480);
 
         fit.UsesShortNames.ShouldBeTrue();
+        fit.UsesShortScriptsKey.ShouldBeFalse();
         (fit.ShowsFilter && fit.ShowsSteps && fit.ShowsScriptsKey && fit.ShowsZoomKeys).ShouldBeTrue();
     }
 
     [Fact]
-    public void A_running_level_at_480_gives_up_the_scripts_key_and_keeps_the_other_controls()
+    public void A_running_level_at_480_keeps_every_control_by_shortening_the_mode_names_and_the_scripts_key()
     {
         LogicViewFit fit = Fit(480, isPlaying: true);
 
         fit.ShowsTick.ShouldBeFalse();
         fit.UsesShortNames.ShouldBeTrue();
-        fit.ShowsScriptsKey.ShouldBeFalse();
-        (fit.ShowsPlaying && fit.ShowsFilter && fit.ShowsSteps && fit.ShowsZoomKeys).ShouldBeTrue();
+        fit.UsesShortScriptsKey.ShouldBeTrue();
+        (fit.ShowsPlaying && fit.ShowsFilter && fit.ShowsSteps && fit.ShowsScriptsKey && fit.ShowsZoomKeys)
+            .ShouldBeTrue();
     }
 
     [Fact]
@@ -85,8 +87,9 @@ public sealed class LogicViewFitTests
             {
                 LogicViewFit fit = Fit(width, isPlaying);
                 int shown = Count(
-                    fit.ShowsLabels, fit.ShowsTick, !fit.UsesShortNames, fit.ShowsScriptsKey, fit.ShowsFilter,
-                    fit.ShowsZoomKeys, fit.ShowsSteps, fit.ShowsPlaying);
+                    fit.ShowsLabels, fit.ShowsTick, !fit.UsesShortNames, fit.ShowsFilter,
+                    fit.ShowsZoomKeys, fit.ShowsSteps, fit.ShowsPlaying,
+                    fit.ShowsScriptsKey, fit.ShowsScriptsKey && !fit.UsesShortScriptsKey);
 
                 shown.ShouldBeLessThanOrEqualTo(before, $"at {width}");
                 before = shown;

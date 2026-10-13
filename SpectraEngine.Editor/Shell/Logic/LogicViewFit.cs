@@ -43,6 +43,7 @@ public readonly record struct LogicViewFit
     private const double ShortNames = 116;
     private const double Steps = 42;
     private const double ScriptsKey = 86;
+    private const double ShortScriptsKey = 40;
     private const double FilterGap = 8;
     private const double Playing = 82;
     private const double Tick = 76;
@@ -96,6 +97,9 @@ public readonly record struct LogicViewFit
     /// <summary>The key that shows and hides what scripts do.</summary>
     public bool ShowsScriptsKey { get; init; }
 
+    /// <summary>Whether that key is its mark alone, without its word.</summary>
+    public bool UsesShortScriptsKey { get; init; }
+
     /// <summary>The Playing pill.</summary>
     public bool ShowsPlaying { get; init; }
 
@@ -126,7 +130,7 @@ public readonly record struct LogicViewFit
         + (ShowsLabels ? ShowLabel + StepsLabel : 0)
         + (UsesShortNames ? ShortNames : LongNames)
         + (ShowsSteps ? Steps : 0)
-        + (ShowsScriptsKey ? ScriptsKey : 0)
+        + (!ShowsScriptsKey ? 0 : UsesShortScriptsKey ? ShortScriptsKey : ScriptsKey)
         + (ShowsPlaying ? Playing : 0)
         + (ShowsTick ? Tick : 0)
         + (ShowsZoomKeys ? ZoomKeys : 0);
@@ -224,11 +228,13 @@ public readonly record struct LogicViewFit
         if (fit.Fits(width)) return fit;
         fit = fit with { UsesShortNames = true };
         if (fit.Fits(width)) return fit;
-        fit = fit with { ShowsScriptsKey = false };
+        fit = fit with { UsesShortScriptsKey = true };
         if (fit.Fits(width)) return fit;
         fit = fit with { ShowsFilter = false };
         if (fit.Fits(width)) return fit;
         fit = fit with { ShowsZoomKeys = false };
+        if (fit.Fits(width)) return fit;
+        fit = fit with { ShowsScriptsKey = false, UsesShortScriptsKey = false };
         if (fit.Fits(width)) return fit;
         fit = fit with { ShowsSteps = false };
         if (fit.Fits(width)) return fit;

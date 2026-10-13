@@ -57,6 +57,11 @@ public sealed class LogicSheetTests(RibbonSession session)
             Whole(model, Snapshot(VaultLevel(), null, OpenVault));
             model.Wiring.Select(model.Scene.ShouldNotBeNull().Edge("OpenVault", "Lift"));
         },
+        ["scripts-editing"] = (model, _) => LogicScriptSheets.Editing(model),
+        ["scripts-playing"] = (model, _) => LogicScriptSheets.Playing(model),
+        ["scripts-playing-near"] = (model, _) => LogicScriptSheets.PlayingNear(model),
+        ["scripts-off"] = (model, _) => LogicScriptSheets.PlayingWithScriptsOff(model),
+        ["scripts-busy"] = (model, _) => LogicScriptSheets.PlayingBusy(model),
     };
 
     /// <summary>Where the sheets land. Gitignored.</summary>
@@ -119,6 +124,13 @@ public sealed class LogicSheetTests(RibbonSession session)
     [InlineData("playing-near", 900, 700)]
     [InlineData("no-wires", 480, 500)]
     [InlineData("playing", 180, 90)]
+    [InlineData("scripts-editing", 1123, 880)]
+    [InlineData("scripts-editing", 480, 500)]
+    [InlineData("scripts-playing", 1123, 880)]
+    [InlineData("scripts-playing", 480, 500)]
+    [InlineData("scripts-playing-near", 1123, 880)]
+    [InlineData("scripts-off", 1123, 880)]
+    [InlineData("scripts-busy", 1123, 880)]
     public void More_of_the_Logic_view_rasterises_into_sheets(string state, int width, int height)
     {
         session.On(() =>

@@ -96,7 +96,7 @@ internal sealed class LogicGraphBuilder
         for (int i = 0; i < _entities.Count; i++)
             _entityByNode.TryAdd(_entities[i].NodeId, i);
 
-        foreach (LogicScriptLinks.Link link in scripts.Links)
+        foreach (LogicScriptLink link in scripts.Links)
         {
             if (!_entityByNode.TryGetValue(link.Entity, out int entity))
                 continue;
@@ -116,7 +116,7 @@ internal sealed class LogicGraphBuilder
 
         _cardOfScript = new LogicCard?[scripts.Scripts.Count];
         var linked = new bool[_cardOfScript.Length];
-        foreach (LogicScriptLinks.Link link in scripts.Links)
+        foreach (LogicScriptLink link in scripts.Links)
             linked[link.Script] |= _entityByNode.ContainsKey(link.Entity);
 
         for (int i = 0; i < linked.Length; i++)
@@ -136,7 +136,7 @@ internal sealed class LogicGraphBuilder
         if (_scripts is not { Links.Count: > 0 } scripts)
             return;
 
-        foreach (LogicScriptLinks.Link link in scripts.Links)
+        foreach (LogicScriptLink link in scripts.Links)
         {
             if (!_entityByNode.TryGetValue(link.Entity, out int index) || _cardOfScript[link.Script] is not { } script)
                 continue;

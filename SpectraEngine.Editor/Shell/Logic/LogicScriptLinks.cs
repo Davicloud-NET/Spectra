@@ -38,14 +38,14 @@ internal sealed class LogicScriptLinks
     public IReadOnlyList<LogicScriptInfo> Scripts { get; }
 
     // In the order the engine lists their first wire.
-    public List<Link> Links { get; } = [];
+    public List<LogicScriptLink> Links { get; } = [];
 
     // The names of the scripts inside an entity, in scene order.
     public IReadOnlyList<string> Inside(Guid entity) =>
         _inside.TryGetValue(entity, out List<string>? names) ? names : [];
 
     // What a link's edge says: the line of code that made it, or how many did.
-    public LogicLabel LabelOf(Link link)
+    public LogicLabel LabelOf(LogicScriptLink link)
     {
         if (_running is null || link.Wires.Count == 0)
             return LogicLabel.None;
@@ -63,7 +63,7 @@ internal sealed class LogicScriptLinks
         if (_running is null)
             return;
 
-        var joined = new Dictionary<(int Script, Guid Entity, string Port, bool IsSend), Link>();
+        var joined = new Dictionary<(int Script, Guid Entity, string Port, bool IsSend), LogicScriptLink>();
         for (int i = 0; i < _running.Wires.Count; i++)
         {
             LogicScriptWire wire = _running.Wires[i];
@@ -71,30 +71,14 @@ internal sealed class LogicScriptLinks
                 continue;
 
             var key = (script, wire.Entity, wire.Port ?? "", wire.IsSend);
-            if (!joined.TryGetValue(key, out Link? link))
+            if (!joined.TryGetValue(key, out LogicScriptLink? link))
             {
-                link = new Link(script, wire.Entity, wire.Port ?? "", wire.IsSend);
+                link = new LogicScriptLink(script, wire.Entity, wire.Port ?? "", wire.IsSend);
                 joined.Add(key, link);
                 Links.Add(link);
             }
 
             link.Wires.Add(i);
         }
-    }
-
-    // One script hears one output of one entity, or sends it one input.
-    public sealed class Link(int script, Guid entity, string port, bool isSend)
-    {
-        // The script's place in Scripts.
-        public int Script { get; } = script;
-
-        public Guid Entity { get; } = entity;
-
-        public string Port { get; } = port;
-
-        public bool IsSend { get; } = isSend;
-
-        // The engine's wires it joins, by their place in its list.
-        public List<int> Wires { get; } = [];
     }
 }

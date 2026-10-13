@@ -29,6 +29,8 @@ public sealed class LogicToolbarTests(RibbonSession session)
     [InlineData("playing")]
     [InlineData("empty")]
     [InlineData("unwired")]
+    [InlineData("scripts-editing")]
+    [InlineData("scripts-playing")]
     public void Nothing_in_the_rows_is_cut_or_pushed_onto_its_neighbour_at_any_width(string state)
     {
         Sweep(state, (view, width) =>
@@ -51,6 +53,8 @@ public sealed class LogicToolbarTests(RibbonSession session)
     [InlineData("whole")]
     [InlineData("playing")]
     [InlineData("unwired")]
+    [InlineData("scripts-editing")]
+    [InlineData("scripts-playing")]
     public void Every_sentence_under_the_graph_shows_whole_or_not_at_all_at_any_width(string state)
     {
         var ruler = new LogicTextRuler();
@@ -192,7 +196,7 @@ public sealed class LogicToolbarTests(RibbonSession session)
 
             try
             {
-                foreach (string name in new[] { "ModeKeys", "StepsBox", "FilterBox", "ZoomKeys" })
+                foreach (string name in new[] { "ModeKeys", "StepsBox", "FilterBox", "ZoomKeys", "ScriptsKey" })
                     view.FindControl<Control>(name).ShouldNotBeNull().IsVisible.ShouldBeTrue(name);
 
                 view.FindControl<Control>("PlayingPill").ShouldNotBeNull().IsVisible.ShouldBe(state == "playing");

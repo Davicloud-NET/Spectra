@@ -26,6 +26,7 @@
     <Compile Include="..\SpectraEngine.Editor.Tests\Logic\LogicFixture.cs" Link="Logic\LogicFixture.cs" />
     <Compile Include="..\SpectraEngine.Editor.Tests\Logic\LogicPlayFixture.cs" Link="Logic\LogicPlayFixture.cs" />
     <Compile Include="..\SpectraEngine.Editor.Tests\Logic\FixedWidthRuler.cs" Link="Logic\FixedWidthRuler.cs" />
+    <Compile Include="..\SpectraEngine.Editor.Tests\Logic\LogicScriptFixture.cs" Link="Logic\LogicScriptFixture.cs" />
   </ItemGroup>
 
   <!-- The WAV writer the cook's tests use, for the sheets that list sounds. -->
