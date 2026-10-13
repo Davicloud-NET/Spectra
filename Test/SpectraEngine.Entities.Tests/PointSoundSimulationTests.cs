@@ -17,7 +17,7 @@ public sealed class PointSoundSimulationTests
     // A sound with all four switched off, and one that says nothing.
     private const string SoundFixture = """
         {
-          "spectramap": 5,
+          "spectramap": 6,
           "minimumReadableVersion": 3,
           "engine": "1.0.0",
           "scene": {
