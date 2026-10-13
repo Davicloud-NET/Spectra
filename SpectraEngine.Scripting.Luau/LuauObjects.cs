@@ -22,6 +22,9 @@ public sealed unsafe class LuauObjects
     /// <summary>How many objects scripts can reach. One that only grows is a leak.</summary>
     public int Count => _slotOf.Count;
 
+    /// <summary>The bytes <see cref="SetWeight"/> named for the userdata Luau has not collected.</summary>
+    public long WeightBytes => _host.IsClosed ? 0 : Shim.sl_outside(_host.Stack.State);
+
     /// <summary>
     /// Is told of an object each time a script comes to hold one that no
     /// script held. It runs inside the push: it pushes nothing and runs no script.
@@ -104,6 +107,22 @@ public sealed unsafe class LuauObjects
     {
         ArgumentNullException.ThrowIfNull(value);
         return _slotOf.ContainsKey(value);
+    }
+
+    /// <summary>
+    /// Says how many bytes the host keeps for as long as a script holds the object's
+    /// userdata. They count against <see cref="LuauHost.MemoryBudget"/> until Luau has
+    /// collected the userdata. Hands back by how much <see cref="WeightBytes"/> moved,
+    /// which is 0 for an object no script can hold.
+    /// </summary>
+    public long SetWeight(object value, long bytes)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (_host.IsClosed || !_slotOf.TryGetValue(value, out int index))
+            return 0;
+
+        uint weight = (uint)Math.Clamp(bytes, 0, uint.MaxValue);
+        return Shim.sl_setobjectweight(_host.Stack.State, (uint)index, _slots[index].Generation, weight);
     }
 
     /// <summary>

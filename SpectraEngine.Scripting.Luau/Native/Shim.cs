@@ -9,7 +9,7 @@ namespace SpectraEngine.Scripting.Luau.Native;
 internal static unsafe partial class Shim
 {
     // Moves with SL_SHIM_REVISION in spectra_luau.h. LuauLibrary compares the two.
-    internal const int Revision = 9;
+    internal const int Revision = 10;
 
     // What a host function returns instead of a result count. The shim raises
     // the error or yields once the managed frame has returned.
@@ -88,6 +88,15 @@ internal static unsafe partial class Shim
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_setvectormetatable(nint L);
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_pushobject(nint L, int tag, uint slot, uint generation, uint nextGeneration, int* created);
     [LibraryImport(Lua.Library)] internal static partial int sl_takereleased(nint L, ulong* buffer, int capacity);
+
+    // Bytes the host keeps while the userdata of a slot lives. They count against
+    // the budget. Returns by how much the count moved, 0 when the userdata is gone.
+    [LibraryImport(Lua.Library)] internal static partial long sl_setobjectweight(nint L, uint slot, uint generation, uint weight);
+    [LibraryImport(Lua.Library), SuppressGCTransition] internal static partial long sl_outside(nint L);
+
+    // Has the collector work as for so many kilobytes allocated. 1 when it
+    // rests between two cycles afterwards. With 0 it only answers.
+    [LibraryImport(Lua.Library)] internal static partial int sl_gcstep(nint L, int kilobytes);
 
     // Pushes the value as text, through __tostring when it has one.
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_tostring(nint L, int index);

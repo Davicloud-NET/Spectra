@@ -36,6 +36,9 @@ internal sealed class LevelTags
     // What reads a node that comes into the level, or null.
     public LevelSeed? Seed { get; set; }
 
+    // Is told of a destroyed node that got a tag or lost one.
+    public Action<SceneNode>? DestroyedChanged { get; set; }
+
     public void Listen()
     {
         Scene scene = _world.Scene;
@@ -60,15 +63,25 @@ internal sealed class LevelTags
             LookOver();
 
         bool isInLevel = NodeTree.IsIn(_world.Scene.Root, node);
-        if (Table.Add(node, tag, isInLevel) is { } added && isInLevel)
+        if (Table.Add(node, tag, isInLevel) is not { } added)
+            return;
+
+        if (isInLevel)
             Fire(added.Added, node);
+        else if (TreeWrites.IsDestroyed(node))
+            DestroyedChanged?.Invoke(node);
     }
 
     // Nor does taking away one it lacks.
     public void Remove(SceneNode node, ReadOnlySpan<char> tag)
     {
-        if (Table.Remove(node, tag, out bool wasInLevel) is { } removed && wasInLevel)
+        if (Table.Remove(node, tag, out bool wasInLevel) is not { } removed)
+            return;
+
+        if (wasInLevel)
             Fire(removed.Removed, node);
+        else if (TreeWrites.IsDestroyed(node))
+            DestroyedChanged?.Invoke(node);
     }
 
     // The nodes of the level's tree with that tag, in the tree's order.

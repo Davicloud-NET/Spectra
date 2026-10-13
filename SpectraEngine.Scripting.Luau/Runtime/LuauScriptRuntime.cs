@@ -82,6 +82,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             _lifetime = new NodeLifetime(context, _starter, modules, _signals, _tags);
             context.Lifetime = _lifetime;
             new InstanceLibrary(_lifetime).ScriptInstall(context);
+            _tags.DestroyedChanged = _lifetime.DestroyedChanged;
             _host.Objects.Reached = _lifetime.Reached;
             _host.Objects.Released = _lifetime.Released;
 
@@ -165,6 +166,20 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
     // How many destroyed nodes scripts made count on, as far as is known.
     internal int HeldDestroyedCount => _lifetime.HeldCount;
+
+    // What those nodes keep, by the estimate Luau's collector is told, and
+    // the most there was of each since the level started.
+    internal long HeldDestroyedBytes => _host.IsClosed ? 0 : _lifetime.Held.Bytes;
+
+    internal int PeakHeldDestroyedCount => _lifetime.Held.PeakCount;
+
+    internal long PeakHeldDestroyedBytes => _lifetime.Held.PeakBytes;
+
+    // How many cycles of Luau's collector the destroyed nodes asked for.
+    internal int HeldCollectionCount => _lifetime.Held.Cycles;
+
+    // What Luau counts for the scripts, garbage included.
+    internal long LuauBytes => _host.MemoryUsed;
 
     // Has Luau collect in full, so the counts above say what is held now,
     // and so does the count of made nodes.
@@ -321,6 +336,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             }
 
             // What scripts let go of since the last tick.
+            _lifetime.EndTick();
             _host.Objects.ReleaseCollected();
             _prints.EndTick();
         }

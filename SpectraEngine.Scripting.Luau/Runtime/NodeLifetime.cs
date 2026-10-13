@@ -40,7 +40,7 @@ internal sealed class NodeLifetime
         _tags = tags;
         _attributes = context.Attributes;
         _loose = new LooseNodes(_host, _tree, Forget);
-        _held = new HeldNodes(_host, _tree);
+        _held = new HeldNodes(_host, _tree, _tags.Table, _attributes.Table);
     }
 
     // How many made trees are in no level and may still be reached.
@@ -48,6 +48,9 @@ internal sealed class NodeLifetime
 
     // How many destroyed nodes scripts made count on, as far as is known.
     public int HeldCount => _held.Count;
+
+    // The destroyed nodes scripts hold, for whoever asks how much they keep.
+    public HeldNodes Held => _held;
 
     // Instance.new: a node of a class, in no tree. Null with the reason
     // when none was made.
@@ -138,6 +141,13 @@ internal sealed class NodeLifetime
         else if (_tree.CountAgain(node) && !_tree.IsInLevel(node))
             _loose.Add(TopOf(node));
     }
+
+    // A script gave a destroyed node a tag or an attribute, or took one, so
+    // the node keeps more or less than it did.
+    public void DestroyedChanged(SceneNode node) => _held.Changed(node);
+
+    // Once a tick, after the scripts ran.
+    public void EndTick() => _held.EndTick();
 
     // No script holds the object any more. A destroyed node a script made
     // stops counting, and the runtime keeps it no longer.

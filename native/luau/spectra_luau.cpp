@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unordered_map>
 
 #if !LUA_USE_LONGJMP
 #error "Build Luau with LUA_USE_LONGJMP=1. The binding checks for it at startup."
@@ -73,6 +74,14 @@ struct HostState
 
     // Bytes the state may hold, or 0 for no limit. Written by any thread.
     std::atomic<int64_t> budget{0};
+
+    // Bytes the host keeps outside the state for the object userdata that are
+    // not collected yet. Written by the thread that runs the state, read by any.
+    std::atomic<int64_t> outside{0};
+
+    // What makes up `outside`: the bytes for one userdata, by (slot << 32) |
+    // generation. Few userdata have any, so the userdata holds no field for it.
+    std::unordered_map<uint64_t, uint32_t> weights;
 
     // (serial << 1) | running, for the outermost call into Luau. Written by
     // the thread that runs the state, read by the watchdog.
@@ -278,16 +287,22 @@ struct CallScope
     }
 };
 
+int64_t heldBytes(const HostState* host)
+{
+    return host->bytes.load(std::memory_order_relaxed) + host->outside.load(std::memory_order_relaxed);
+}
+
 // A full collection first: what the allocator counts includes garbage, and
-// the budget is for what scripts hold.
+// the budget is for what scripts hold. The collection takes what the host
+// keeps for a freed userdata off the count as well.
 bool isOverBudget(lua_State* L, HostState* host)
 {
     int64_t budget = host->budget.load(std::memory_order_relaxed);
-    if (budget <= 0 || host->bytes.load(std::memory_order_relaxed) <= budget)
+    if (budget <= 0 || heldBytes(host) <= budget)
         return false;
 
     lua_gc(L, LUA_GCCOLLECT, 0);
-    return host->bytes.load(std::memory_order_relaxed) > budget;
+    return heldBytes(host) > budget;
 }
 
 // Installed for the life of the state. Another thread only stores a serial,
@@ -355,6 +370,22 @@ void threadCreated(lua_State* parent, lua_State* thread)
         lua_setthreaddata(thread, reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(lua_getthreaddata(parent)) & 0xffffffffu));
 }
 
+// Returns by how much the count of outside bytes moved.
+int64_t setWeight(HostState* host, uint64_t key, uint32_t weight)
+{
+    auto found = host->weights.find(key);
+    int64_t moved = static_cast<int64_t>(weight) - (found == host->weights.end() ? 0 : static_cast<int64_t>(found->second));
+    if (weight == 0 && found != host->weights.end())
+        host->weights.erase(found);
+    else if (weight != 0 && found != host->weights.end())
+        found->second = weight;
+    else if (weight != 0)
+        host->weights.emplace(key, weight);
+
+    host->outside.store(host->outside.load(std::memory_order_relaxed) + moved, std::memory_order_relaxed);
+    return moved;
+}
+
 // Runs inside the collector, so it may not touch the VM. The host asks for
 // the list later.
 void objectCollected(lua_State* L, void* data)
@@ -375,7 +406,10 @@ void objectCollected(lua_State* L, void* data)
     }
 
     const ObjectPayload* payload = static_cast<const ObjectPayload*>(data);
-    host->released[host->releasedCount++] = (static_cast<uint64_t>(payload->slot) << 32) | payload->generation;
+    uint64_t key = (static_cast<uint64_t>(payload->slot) << 32) | payload->generation;
+    host->released[host->releasedCount++] = key;
+    if (!host->weights.empty())
+        setWeight(host, key, 0);
 }
 
 // What a host function returned, once its managed frame is gone. A raise from
@@ -940,8 +974,8 @@ SL_API int64_t sl_memory(lua_State* L)
     return hostOf(L)->bytes.load(std::memory_order_relaxed);
 }
 
-// Bytes the state may hold before the running script is stopped, or 0 for no
-// limit. Safe from any thread.
+// Bytes the state and what the host keeps for its object userdata may hold
+// before the running script is stopped, or 0 for no limit. Safe from any thread.
 SL_API void sl_setbudget(lua_State* L, int64_t bytes)
 {
     hostOf(L)->budget.store(bytes, std::memory_order_relaxed);
@@ -1297,6 +1331,46 @@ SL_API int sl_takereleased(lua_State* L, uint64_t* buffer, int capacity)
     while (count < capacity && host->releasedCount > 0)
         buffer[count++] = host->released[--host->releasedCount];
     return count;
+}
+
+// Says how many bytes the host keeps for as long as the userdata of a slot
+// lives. The collector is not told by this: sl_gcstep does that. Returns by
+// how much the count moved, which is 0 when the userdata is gone.
+SL_API int64_t sl_setobjectweight(lua_State* L, uint32_t slot, uint32_t generation, uint32_t weight)
+{
+    HostState* host = hostOf(L);
+    if (slot >= 0x7fffffffu || !lua_checkstack(L, 2))
+        return 0;
+
+    lua_getref(L, host->objects);
+    lua_rawgeti(L, -1, static_cast<int>(slot) + 1);
+    const ObjectPayload* found = static_cast<const ObjectPayload*>(lua_touserdata(L, -1));
+    bool isThere = found && found->slot == slot && found->generation == generation;
+    lua_pop(L, 2);
+    return isThere ? setWeight(host, (static_cast<uint64_t>(slot) << 32) | generation, weight) : 0;
+}
+
+// Bytes the host keeps for the object userdata that are not collected yet.
+// Safe from any thread.
+SL_API int64_t sl_outside(lua_State* L)
+{
+    return hostOf(L)->outside.load(std::memory_order_relaxed);
+}
+
+// Has the collector work as it would for so many kilobytes a script
+// allocated, which is how it learns of bytes the host keeps for a userdata.
+// It starts a cycle when none runs. Returns 1 when the collector rests
+// between two cycles afterwards.
+SL_API int sl_gcstep(lua_State* L, int kilobytes)
+{
+    if (kilobytes > 0)
+    {
+        int size = lua_gc(L, LUA_GCSETSTEPSIZE, kilobytes);
+        lua_gc(L, LUA_GCSTEP, 0);
+        lua_gc(L, LUA_GCSETSTEPSIZE, size);
+    }
+
+    return lua_gc(L, LUA_GCISPAUSED, 0);
 }
 
 // lua_gettable can run an __index metamethod.

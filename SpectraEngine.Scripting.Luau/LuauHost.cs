@@ -21,6 +21,9 @@ public sealed unsafe class LuauHost : IDisposable
 
     private const long Megabyte = 1024 * 1024;
 
+    /// <summary>The most bytes one call of <see cref="StepCollector"/> has the collector work for.</summary>
+    public const long MaxStepBytes = Megabyte;
+
     private readonly IScriptSink _sink;
     private readonly nint _main;
     private readonly CallWatchdog _watchdog;
@@ -86,9 +89,9 @@ public sealed unsafe class LuauHost : IDisposable
     }
 
     /// <summary>
-    /// How many bytes the state may hold. When it holds more after a full collection, the
-    /// script that is running stops with an error and is switched off. Zero or less turns
-    /// the budget off.
+    /// How many bytes the state may hold, with what <see cref="LuauObjects.SetWeight"/> says
+    /// the host keeps for it. When it holds more after a full collection, the script that
+    /// is running stops with an error and is switched off. Zero or less turns the budget off.
     /// </summary>
     public long MemoryBudget
     {
@@ -274,6 +277,20 @@ public sealed unsafe class LuauHost : IDisposable
     }
 
     /// <summary>
+    /// Has Luau's collector work as it would for so many bytes a script allocated. That
+    /// is how it learns of bytes the host keeps for an object: its own count sees the
+    /// userdata and no more. A cycle starts when none runs. True when the collector
+    /// rests between two cycles afterwards.
+    /// </summary>
+    public bool StepCollector(long bytes)
+    {
+        if (_isClosed)
+            return true;
+
+        return Shim.sl_gcstep(_main, (int)(Math.Clamp(bytes, 0, MaxStepBytes) / 1024)) != 0;
+    }
+
+    /// <summary>
     /// Closes the state, with every script and thread in it. Any thread may close a host
     /// that no thread is using. From inside a call into Luau, the close waits for that
     /// call to end.
@@ -327,8 +344,12 @@ public sealed unsafe class LuauHost : IDisposable
     {
         string budget = _memoryBudget >= Megabyte ? $"{_memoryBudget / Megabyte} MB" : $"{_memoryBudget / 1024} KB";
 
+        // What a destroyed node keeps counts too, and a script that reads only
+        // Luau's own count would not find it.
+        string held = Objects.WeightBytes > 0 ? ", with what the destroyed nodes they keep hold," : string.Empty;
+
         return stop == Shim.StopMemory
-            ? $"the scripts hold more than {budget} and this one was switched off"
+            ? $"the scripts hold more than {budget}{held} and this one was switched off"
             : string.Create(CultureInfo.InvariantCulture, $"the script ran for more than {CallLimit.TotalSeconds:0.###} s without a pause and was switched off");
     }
 

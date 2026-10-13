@@ -70,6 +70,9 @@ internal sealed class AttributeMethods
         else
             Table.Set(node, kept, in value);
 
+        if (TreeWrites.IsDestroyed(node))
+            context.Lifetime?.DestroyedChanged(node);
+
         FireChanged(node, kept);
         return 0;
     }
