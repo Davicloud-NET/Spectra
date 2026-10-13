@@ -51,6 +51,10 @@ public sealed class Light
     private float _width = 1f;
     private float _height = 1f;
     private float _radius = 0.5f;
+    private Vector3 _color = Vector3.One;
+
+    // The colour Color was set as, while Color still is what that became.
+    private Color3? _displayColor;
 
     /// <summary>The light's shape.</summary>
     public LightKind Kind { get; set; } = LightKind.Directional;
@@ -59,7 +63,31 @@ public sealed class Light
     /// Linear RGB colour, not a display colour. Convert a picked colour with
     /// <c>ColorSpace.SrgbToLinear</c>.
     /// </summary>
-    public Vector3 Color { get; set; } = Vector3.One;
+    public Vector3 Color
+    {
+        get => _color;
+        set
+        {
+            _color = value;
+            _displayColor = null;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Color"/> as a person picks one. Setting it sets
+    /// <see cref="Color"/> to its linear value, and it reads back as it was set.
+    /// </summary>
+    // Two display colours can become one linear colour, so the linear one
+    // alone could not say which was set.
+    public Color3 DisplayColor
+    {
+        get => _displayColor ?? Color3.FromLinear(_color);
+        set
+        {
+            _color = value.ToLinear();
+            _displayColor = value;
+        }
+    }
 
     /// <summary>Multiplier on <see cref="Color"/>. Negative values are refused.</summary>
     public float Intensity
