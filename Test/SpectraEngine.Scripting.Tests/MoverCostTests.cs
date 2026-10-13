@@ -26,6 +26,11 @@ public sealed class MoverCostTests
 
     private const string Nothing = "an empty loop";
 
+    // The seam with nothing behind it.
+    private const string DoesNothing = """
+        game:GetService("Players").LocalPlayer.Character:SetMover(function() end)
+        """;
+
     // What a mover does in one round, by what it is called in the table.
     private static readonly (string Name, string Statement)[] Crossings =
     [
@@ -147,10 +152,6 @@ public sealed class MoverCostTests
 
         File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "mover-costs.txt"), table.ToString());
     }
-
-    private const string DoesNothing = """
-        game:GetService("Players").LocalPlayer.Character:SetMover(function() end)
-        """;
 
     private static void Row(StringBuilder table, string name, double nanoseconds) =>
         table.AppendLine(string.Create(CultureInfo.InvariantCulture, $"  {name,-56} {nanoseconds,8:0} ns"));
