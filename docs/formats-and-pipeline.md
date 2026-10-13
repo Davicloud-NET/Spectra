@@ -402,6 +402,8 @@ Two consequences elsewhere. `.scmap`'s `SourceMapDigest` (§2.7) becomes the has
                   "outputs": [ {"output":"OnFullyOpen","target":"light1","input":"TurnOn",
                                 "param":"","delay":0,"times":-1} ] },
       "script": { "path": "Scripts/door.luau" },
+      "tags": ["Door","Wooden"],
+      "attributes": {"Health":100,"Locked":true,"Swing":{"vector3":[0,90,0]}},
       "children": []
     }
   ]
@@ -455,6 +457,25 @@ The script member as built on 2026-10-11 replaces the inline `source` and the bu
 - It binds to `SceneNode.Script` (`docs/data-model.md` §3). The path is not resolved on load, so a map that names a missing file loads and saves unchanged.
 
 As built on 2026-10-11, `realm` and `state` bind to `SceneNode.DeclaredRealm` and `SceneNode.DeclaredState`. Before, the reader checked both and a save from the editor dropped them, because the scene had nowhere to keep them. Only the node's own declaration is kept. Nothing resolves it and nothing reads it yet. A document that carries either one declares `minimumReadableVersion` 5 (`EngineInfo.NodeRealmMapVersion`), since an older editor's save drops them. A baked map keeps both as well (§2.7).
+
+The `tags` and `attributes` members, as built on 2026-10-13. A builder marks a node with them in Properties, and the scripts of a playing level find them (`docs/data-model.md` §3).
+
+- Both are node members, written after `script` and before `editor`, each on one line. Neither is written for a node that has none, so a map from before them saves to the bytes it had.
+- `tags` is an array of strings, in the order the node got them: `"tags": ["Lava","Hot stuff"]`. A tag is 1 to 256 bytes of UTF-8 and is case sensitive. A node has at most 256.
+- `attributes` is one object with a value under each name, in the order the names were added. It is never sorted:
+
+```json
+"attributes": {"Damage":25,"Label":"hot","Deadly":true,"Push":{"vector3":[0,12.5,-1]},"Glow":{"color3":[1,0.5,0]},"Rest":{"cframe":[1,2,3,0,0.70710677,0,0.70710677]}}
+```
+
+- Text, true or false and a number are JSON's own. A number is a double, written as the shortest text that reads back as the same double.
+- The three kinds JSON has no value for are an object with one member that names the kind. `vector3` is three numbers. `color3` is red, green and blue as a person picks them, 0 to 1, not linear. `cframe` is seven numbers: the position, then the rotation as a quaternion `x, y, z, w`. Their numbers are floats.
+- A name is 1 to 100 ASCII letters, digits and underscores and does not start with `RBX`. A node holds at most 256 attributes, and text is at most 65536 bytes of UTF-8.
+- Both are closed records. A reader error names the node and the byte offset for a tag or a name that breaks its rule or is there twice, one more than a node can have, a value of no kind (`null`, an array, an object with another member or with two), an array of the wrong length, and a number that is not finite. Nothing of them is carried as an unknown member: a save builds the node anew, so what was carried would be dropped.
+- `EngineInfo.MapFormatVersion` went from 5 to 6. A document that carries a tag or an attribute declares `minimumReadableVersion` 6 (`EngineInfo.NodeTagsMapVersion`). An older editor keeps both as unknown members, and its next save drops them. A document without them declares what it did before.
+- They bind to `SceneNode.Tags` and `SceneNode.Attributes`. A baked map keeps both (§2.7, `NTAG` and `NATR`).
+
+Oracles: `MapNodeTagTests` (byte for byte through a read and a write and through a scene, every kind of value, the limits, a map from before them, and each refusal), `NodeTagSetTests`.
 
 **Editor metadata is confined to one key name, `"editor"`, at top level and per node, and the cook never reads it.** A structural rule beats a list. The subtle part is the split it forces: an *editor viewport* camera is editor state; a *gameplay spawn* is `scene.spawn`. `P2` currently says the map holds "camera" without distinguishing, and conflating them is how a shipped game spawns wherever the level designer last parked the viewport. **Amended by §3.3's project-layout rules: the `editor` key holds only SHARED, deliberate editor settings (the grid size); per-user state such as the viewport camera lives in the bundle's `editor.user.json` sidecar, gitignored and never load-bearing.** The example above shows `grid` under `editor` for exactly that reason and no longer shows a viewport there.
 
@@ -532,7 +553,7 @@ Section table entry — 32 bytes
 
 **Unknown section kinds are skipped, not fatal** — that is what makes a future lightmap, navmesh or audio-occlusion section additive.
 
-Sections: `STRT` strings · `ASTB` asset table · `META` map metadata and compile constants · `NODE` node graph · `CHDR` chunk directory · `CMSH` chunk meshes · `CBSP` chunk BSPs · `RGNI` region index (reserved, §4.5) · `BMDL` brush models (**reserved, no longer emitted**, by §2.7's `PayloadKind` ruling) · `BRSH` authored brush source (optional) · `ENTT`/`ECON` entities and connections · `COLL` world collision hulls · `COLM` what their faces are made of (optional) · `LGHT` lights · `SCPT` script nodes · `LUAB`/`LUAS` script code inside the map (**retired, no longer emitted**: a script's code is a pack entry, §2.9) · `NBND` per-node local bounds (optional).
+Sections: `STRT` strings · `ASTB` asset table · `META` map metadata and compile constants · `NODE` node graph · `CHDR` chunk directory · `CMSH` chunk meshes · `CBSP` chunk BSPs · `RGNI` region index (reserved, §4.5) · `BMDL` brush models (**reserved, no longer emitted**, by §2.7's `PayloadKind` ruling) · `BRSH` authored brush source (optional) · `ENTT`/`ECON` entities and connections · `COLL` world collision hulls · `COLM` what their faces are made of (optional) · `LGHT` lights · `SCPT` script nodes · `NTAG`/`NATR` the tags and attributes nodes were built with (optional) · `LUAB`/`LUAS` script code inside the map (**retired, no longer emitted**: a script's code is a pack entry, §2.9) · `NBND` per-node local bounds (optional).
 
 **`STRT`** — `u32 count`, `u32 offsets[count+1]`, `u32 blobSize`, UTF-8 blob (not NUL-terminated). Index 0 is the empty string. Strings are emitted in **first-reference order during the canonical node walk**, never dictionary iteration order, which would leak the runtime hash seed into the file and break the two-process byte-identity test.
 
@@ -784,6 +805,37 @@ SCPT preamble, 16 bytes: u32 count, then 12 zero bytes
 - The bake reports nothing for a map with scripts, so the map is cached like any other.
 
 `ScmapBuilder.AddScript`, `ScmapScriptSection` and `ScmapBake` write the section. `ScmapScriptTable` validates it for `ScmapReader`. Oracles: `ScmapScriptTableTests` (sizes, offsets, every pairing of switched on or off with script or module, and the refusals), `CompiledMapScriptTests` (a real bake and a real load beside the authored level), `ScmapDeterminismTests` over a fixture with script nodes.
+
+**AS BUILT (2026-10-13), `NTAG` and `NATR`: a baked map keeps the tags and attributes its nodes were built with.** Two sections, each optional. A map where no node has a tag has no `NTAG`, and one where no node has an attribute has no `NATR`, so a map without them bakes to the bytes it had, and the format version did not move: it stays 4.
+
+```
+NTAG preamble, 16 bytes: u32 count, then 12 zero bytes
++0x00  u32  NodeIndex    the node that has the tag
++0x04  u32  TagString    the tag, a string of STRT
+
+NATR preamble, 16 bytes: u32 count, then 12 zero bytes
++0x00  u32  NodeIndex    the node that holds the attribute
++0x04  u32  NameString   its name, a string of STRT
++0x08  u8   Kind         1 text, 2 true or false, 3 number, 4 vector3, 5 color3, 6 cframe
++0x09  u8   0
++0x0A  u16  0
++0x0C  u32  TextString   the text, a string of STRT, for kind 1
++0x10  f64  Number       the number, or 1 and 0 for true and false
++0x18  3 f32             three numbers, a colour's red, green and blue, or a frame's position
++0x24  4 f32             a frame's rotation as a quaternion x, y, z, w
++0x34  u32  0
+```
+
+- One record for each tag and one of 56 bytes for each attribute. Records are in node order, and a node's own are in the order of its set, which is the order a script reads its tags in.
+- A field the kind does not use is written zero. The kinds are numbered here and not by `MemberValueKind`, so that enum can change and a file cannot.
+- Tags, names and text are strings of `STRT`. They are interned after the entities' strings, node by node: a node's tags, then each attribute's name and its text. A map with neither adds no string.
+- They follow `SCPT` in the file, `NTAG` first.
+- The reader refuses a count that runs past its section, a node or a string that is out of range, records that are not in node order, and a kind it has no value for. It then makes every node's two sets once to check them, so a tag there twice, a name no attribute has and a number that is not finite are refused before anything is loaded. `TagSet` and `AttributeSet` would throw on those half way through the graph.
+- A reader that does not know the two codes steps over them and loads the level with no tag and no attribute.
+- The loader sets `SceneNode.Tags` and `SceneNode.Attributes` on every node. A world brush has no brush once it is baked and still has both.
+- `MapRule.Version` went from 7 to 8, so a cached bake of a map that already had the two members in its file is not served.
+
+`ScmapBuilder.AddNodeSets`, `ScmapNodeSetsSection` and `ScmapNodeBake` write the sections. `ScmapTagTable` and `ScmapAttributeTable` validate them for `ScmapReader` and make the sets for `CompiledMapLoader`. Oracles: `ScmapNodeSetsTableTests` (sizes, offsets, a map with neither, a real bake and load, and the refusals), `TaggedMapDeterminismTests` (two processes, one worker against eight, and the cache, over a level with tags and attributes of every kind), and `LooseAndCookedLevelTests`, where one script reads what the level was built with from its loose files and from its pack.
 
 **AS BUILT (2026-10-12): a node of a baked level says what the bake took from it.** Under a baked map no node carries its world brush, and a mesh instance is not bound. So a node that is a `Part` in the editor would be a `Folder` in the game, and a script could move a wall's node while the wall and its collision stayed where they were baked. `SceneNode.BakedKind` holds what the node was: a world brush, a cut, or a mesh. The loader sets it from the record's payload kind, which the format already had, so the file did not change for it.
 

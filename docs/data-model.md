@@ -190,6 +190,7 @@ Some node fields are not payloads and do not move the count:
 - `PhysicsFlags` is one byte of bits and `CollisionGroup` is another byte. Physics bodies are kept out of the payload list on purpose (`docs/physics.md` §2.6). They are meant to live in a side table, which is not built.
 - `IsRendered` is a bool.
 - `MeshSource` names the model file a `MeshRenderer` came from. Clearing the renderer clears it.
+- `Tags` and `Attributes` are what a builder marks a node with for scripts to find. See "Tags and attributes" below.
 
 `Brush.Operation` is not a node field at all. It is a one-byte enum on the immutable `Brush` value (`docs/negative-brushes.md`).
 
@@ -341,6 +342,27 @@ Writing one raises nothing and dirties nothing. `Clone` copies both.
 
 A `.smap` saves them as `realm` and `state`, by name, and leaves each out when it is `Inherit`. A baked map keeps them too. The cook writes them into the `.scmap` node record's two-bit fields (`ScmapNodeRealm`, `ScmapNodeState`) and the loader sets them on the node, so the enums are numbered as those fields are.
 
+### Tags and attributes
+
+A builder marks a node so that scripts find it without knowing its name. `SceneNode.Tags` is a `TagSet` (`Scene/TagSet.cs`): the node's tags in the order it got them. `SceneNode.Attributes` is an `AttributeSet` (`Scene/AttributeSet.cs`): a value under each name, in the order the names were added. Any node can have both, whatever it carries. They are not payloads: a node has no tag and no attribute until told to, and neither changes what the node is.
+
+- A tag is text of 1 to 256 bytes of UTF-8 (`Scripting/TagName.cs`). It is case sensitive, and a node has at most 256.
+- An attribute's name is 1 to 100 ASCII letters, digits and underscores and does not start with `RBX` (`Scripting/AttributeName.cs`), which is Roblox's rule. A node holds at most 256.
+- A value is a `MemberValue` of one of six kinds: text, true or false, a number, three numbers (`Vector3`), a colour (`Color3`, as a person picks one) and a position and rotation (`CFrame`). `Scripting/AttributeValueRule.cs` holds what a level cannot keep: a number that is not finite, since a map is text, and text over 65536 bytes.
+- These are the limits a running script lives by (`TagLimits`, `AttributeLimits`), with two differences. A script may add the empty tag and set a number that is not finite, and a level can be built with neither.
+
+Both sets never change once made. An edit makes a new one, `tags.With("Lava")`, and sets it on the node, so an undo entry holds the set before and the set after. A set cannot be made that breaks a rule: `With` throws and `TryMake` says why. Two sets are equal when they hold the same in the same order. `Clone` hands the copy the same two sets.
+
+Setting other tags on a node of a scene raises `Scene.NodeTagsChanged`. The change log sends it to a UI as `SceneChangeKind.TagsChanged`, and every `SceneChange` carries the node's tags, so the scene tree's `tag:lava` filter finds a node by one. Setting attributes raises nothing. Neither touches the BVH, a brush count or the static world.
+
+A `.smap` saves them as `tags` and `attributes`, each left out for a node that has none. A baked map keeps them in two sections of their own, `NTAG` and `NATR` (`docs/formats-and-pipeline.md` §2.6 and §2.7).
+
+The editor writes them with `SetTagsCommand` and `SetAttributesCommand`. `TagEditor` and `AttributeEditor` apply one edit to a whole selection as one undo entry: a tag put on or taken off every selected node, an attribute set on all of them, renamed or removed. The Properties panel shows the selection merged (`Inspection/TagPanelInfo.cs`, `Inspection/AttributePanelInfo.cs`): a tag or an attribute only some of the nodes have is marked as such, and a value that differs is shown as mixed.
+
+While a level plays, its scripts read and change a copy. `LevelSeed` (in `SpectraEngine.Scripting.Luau/Runtime`) puts every node's tags and attributes into the script runtime's tables before the first script starts. `AddTag`, `RemoveTag` and `SetAttribute` change those tables and never the node, so there is nothing for the play journal to put back, and a save after Stop writes the bytes a save before Play did.
+
+On a node that carries an entity, a script also reads the entity's keyvalues as attributes. A keyvalue and an attribute of one name would be two values, one the entity runs with and one only scripts see. So the keyvalue wins: the editor refuses an attribute with the name of a keyvalue of the node's entity, declared by its class or held by the node (`Entities/EntityKeyvalueNames.cs`), and a level that has one anyway does not hand it to scripts and warns.
+
 ---
 
 ## 4. Derived data: brushes to pixels
@@ -420,7 +442,7 @@ Every command's `NodeId` is a `Guid` (`SetTransformCommand.cs:87`, `SetLocalTran
 
 ## 6. What the designs add: all PLANNED, none in the tree
 
-Nothing in this section exists in the code, but for the two enums the first two rows name. Each row names the document that owns it. What is built is in §3: `BrushKind`, `Brush.Operation`, the light, entity and script payloads, the node flags, and the declared realm and state.
+Nothing in this section exists in the code, but for the two enums the first two rows name. Each row names the document that owns it. What is built is in §3: `BrushKind`, `Brush.Operation`, the light, entity and script payloads, the node flags, the declared realm and state, and a node's tags and attributes.
 
 | Concept | What it is | Why | Owner |
 | --- | --- | --- | --- |
@@ -509,6 +531,8 @@ One consequence already written down: instantiating a project template must **re
 | `PlayerWrites` / `IPlayerPresence` | **Yes** | `Scripting/PlayerWrites.cs`, `Entities/IPlayerPresence.cs` | The one way a script changes the player: a teleport, a respawn, a velocity, and the walk speed and jump height, which record first. The presence is the player as the entity runtime sees it |
 | `Scene.ScriptNodes` / `SceneNodeKind.Script` | **Yes** | `Scene/Scene.cs`, `Scene/SceneNodeKind.cs` | The script nodes in attachment order, and the kind of a node whose only payload is a script |
 | Declared realm and state on a node | **Yes** | `Scene/SceneNode.cs`; enums in `Scene/NodeRealm.cs`, `Scene/NodeState.cs` | The node's own declaration, saved in `.smap` as `realm` and `state`. Not payloads. Nothing resolves them yet |
+| Tags and attributes on a node | **Yes** | `Scene/SceneNode.cs`; types in `Scene/TagSet.cs`, `Scene/AttributeSet.cs` | What a builder marks a node with for scripts to find. Not payloads. Saved in `.smap` as `tags` and `attributes`, and kept by a baked map |
+| `SetTagsCommand`, `SetAttributesCommand`, `TagEditor`, `AttributeEditor` | **Yes** | `Editing/Commands/` | Undoable edits of a node's tags and attributes, and one edit over a whole selection as one entry |
 | `SetNodeFlagsCommand`, `SetEntityCommand`, `SetEntityKeyvalueCommand`, `SetEntityConnectionsCommand`, `SetLightCommand`, `SetScriptCommand` | **Yes** | `Editing/Commands/` | Undoable edits of the flags, the entity payload, the light and the script |
 | `BrushPlacement` | **Yes** | `Bsp/BrushPlacement.cs` | Brush + captured world matrix: the snapshot unit |
 | Rigidity validation | **Yes** | `Scene/Scene.cs`, `Scene/Scene.Placements.cs` | Rejects scale/shear/mirror/NaN brush placements at the snapshot |
@@ -526,8 +550,8 @@ One consequence already written down: instantiating a project template must **re
 | Inherited `NodeRealm` (audience) | **No** | `docs/realms.md` §2.2 | "Who holds this node", taken from the nodes above. The declaration is built, the inheriting is not |
 | Inherited `NodeState` (liveness) | **No** | `docs/realms.md` §2.2 | "Is this node live", taken from the nodes above. The declaration is built, the inheriting is not |
 | `RealmSet` / `EffectiveRealm` / `IsLive` | **No** | `docs/realms.md` §2.3–2.4 | Set-valued resolution; the empty set is `Inert` |
-| Attributes (`AttributeValue`, `NodeRef`) | **No** | `docs/roblox-onboarding.md` O3 | One typed keyvalue bag for both Roblox attributes and entity keyvalues |
-| Tags + reverse index + `ObserveTag` | **No** | `docs/roblox-onboarding.md` O3 | `CollectionService` equivalent with the boilerplate removed |
+| Attributes (`AttributeValue`, `NodeRef`) | **No** | `docs/roblox-onboarding.md` O3 | One typed keyvalue bag for both Roblox attributes and entity keyvalues. What is built is §3's `AttributeSet` beside the entity's keyvalues, which a script reads as one |
+| Tags + reverse index + `ObserveTag` | **No** | `docs/roblox-onboarding.md` O3 | `CollectionService` equivalent with the boilerplate removed. What is built is §3's `TagSet` and the script runtime's `CollectionService`, with no `ObserveTag` |
 | `NetId` | **No** | `docs/networking.md` §3.3 | Session-scoped 4-byte gameplay identity, `Shared` nodes only |
 | Physics-world side table for bodies | **No** | `docs/physics.md` §2.6 | Designed, and not a payload: the `HasBody` bit on the node, the body handle in a side table |
 | `PrefabInstance` payload | **No** | `ROADMAP.md` P10 | `{prefab, seed, overrides}` with derived child GUIDs |

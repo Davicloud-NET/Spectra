@@ -11,7 +11,7 @@ The file is plain JSON, written the same way every time, so a saved level only d
 
 ```json
 {
-  "spectramap": 5,
+  "spectramap": 6,
   "minimumReadableVersion": 1,
   "engine": "1.0.0",
   "scene": {
@@ -45,6 +45,7 @@ The file is plain JSON, written the same way every time, so a saved level only d
 | `touch` | `false` when the node raises no touch events. |
 | `render` | `false` when the node is not drawn. |
 | `brush`, `mesh`, `light`, `entity` | What the node carries, if anything. |
+| `tags`, `attributes` | What you marked the node with for scripts to find. See below. |
 | `children` | The nodes inside this one. |
 
 ## A brush
@@ -117,3 +118,18 @@ The model's path, and which piece of it this node draws when the model has sever
 ```
 
 `keys` are the entity's settings, always as text. `outputs` are its wires. See [Entities and wiring](/concepts/entities-and-wiring/).
+
+## Tags and attributes
+
+```json
+"tags": ["Lava","Checkpoint 3"],
+"attributes": {"Damage":25,"Label":"hot","Deadly":true,"Push":{"vector3":[0,12.5,-1]},"Glow":{"color3":[1,0.5,0]},"Rest":{"cframe":[1,2,3,0,0,0,1]}}
+```
+
+`tags` are the node's tags, in the order you added them. `attributes` holds a value under each name. Text, `true` or `false` and a number are written as they are. The other three say what they are:
+
+| Member | Holds |
+|---|---|
+| `vector3` | Three numbers. |
+| `color3` | Red, green and blue as you pick them on screen, each 0 to 1. |
+| `cframe` | A position, then a rotation as a quaternion `[x, y, z, w]`. |
