@@ -104,9 +104,18 @@ On a node:
 - A world position or a world rotation the node already has is not solved again. So `node.CFrame = node.CFrame * CFrame.Angles(0, 0.01, 0)` turns the node where it stands, and `node.CFrame = node.CFrame + offset` moves it and leaves its rotation alone, as in Roblox, however often either is written.
 - Writing a frame equal to the one the node has changes nothing, in either setter. Equal means equal as frames: the same rotation with its quaternion negated is no move. A world frame the node already has is not solved at all, since the answer would come back a rounding error away and count as a move.
 
-Where Roblox's documentation gives no answer, the engine's is its own and the tests say so: a look along the up vector keeps the right vector on +X, a look at the frame's own position gives no rotation, `FromAxisAngle` takes an axis of any length, `FromMatrix` squares up columns that are not a rotation, at an Euler pole the Z angle is zero, and `Lerp` with an alpha below 0 or above 1 carries on along the same line and the same arc.
+Where Roblox's documentation gives no answer, Studio was asked, and the engine answers as it does:
 
-The meanings are pinned twice. The tests hold `CFrame` against the rules written out with plain 3 by 3 matrices (`RobloxFrame` in the Bsp tests). And `Test/SpectraEngine.Bsp.Tests/Data/cframe-probe.luau` asks Roblox Studio the same cases: paste it into Studio's command bar, save what it prints beside it as `cframe-studio.json`, and the suite compares every case. Until that file exists those two tests skip.
+- A look along the up vector takes +X for up, and +Y when it also runs along X.
+- `Lerp` with an alpha below 0 or above 1 carries on along the same line and the same arc.
+- `Lerp` blends two rotations in a straight line when the dot of their quaternions is above 0.99981, which is about 2.2 degrees apart. Between the two that is the arc. Past either end it turns less.
+- `FromAxisAngle` takes an axis of any length, and at an Euler pole the Z angle is zero.
+
+Where Studio answers with a NaN the engine's answer is its own: a look at the frame's own position gives no rotation, and so does an axis of no length. An up vector of no length is +Y.
+
+One difference is kept. `FromMatrix` squares up columns that are not a rotation, and gives no rotation for two columns along one line. Roblox keeps the columns as given. A frame here always holds a rotation.
+
+The meanings are pinned twice. The tests hold `CFrame` against the rules written out with plain 3 by 3 matrices (`RobloxFrame` in the Bsp tests). And `Test/SpectraEngine.Bsp.Tests/Data/cframe-probe.luau` asks Roblox Studio the same cases. Its answers are beside it as `cframe-studio.json`, taken from Studio 0.742 on 2026-10-13, and the suite compares every case. A new case needs Studio asked again: paste the probe into Studio's command bar and save what it prints. Studio's log file cuts a long message short, so copy from the Output window.
 
 ### 2.4 Payload bookkeeping
 

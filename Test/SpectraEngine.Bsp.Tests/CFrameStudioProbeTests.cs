@@ -16,6 +16,14 @@ public sealed class CFrameStudioProbeTests
         "Roblox Studio has not been asked yet. Paste Test/SpectraEngine.Bsp.Tests/Data/cframe-probe.luau " +
         "into Studio's command bar and save what it prints as cframe-studio.json beside the probe.";
 
+    // Where Studio answers and the engine keeps another answer on purpose,
+    // with the reason.
+    private static readonly Dictionary<string, string> KeptOurs = new(StringComparer.Ordinal)
+    {
+        ["choice_from_matrix_parallel_columns"] =
+            "Roblox keeps the two columns as they are given, which is no rotation. A frame here always holds one.",
+    };
+
     private static string ProbePath => Path.Combine(DataFolder(), "cframe-probe.luau");
 
     private static string AnswersPath => Path.Combine(DataFolder(), "cframe-studio.json");
@@ -66,7 +74,7 @@ public sealed class CFrameStudioProbeTests
 
     // Where the documentation is silent Roblox may still answer. A finite
     // answer that differs from ours is a decision to make: follow it, or keep
-    // the difference and say so on the differences page.
+    // the difference in KeptOurs and say so on the differences page.
     [Fact]
     public void Where_the_engine_chose_an_answer_Studio_gives_the_same_or_none()
     {
@@ -75,7 +83,7 @@ public sealed class CFrameStudioProbeTests
 
         foreach (CFrameProbeCase probeCase in CFrameProbeCases.All)
         {
-            if (!probeCase.IsOurChoice)
+            if (!probeCase.IsOurChoice || KeptOurs.ContainsKey(probeCase.Name))
                 continue;
 
             bool studioHasNone =
@@ -86,6 +94,21 @@ public sealed class CFrameStudioProbeTests
         }
 
         faults.ShouldBeEmpty();
+    }
+
+    // A kept difference that is none any more has to leave the list.
+    [Fact]
+    public void Every_answer_the_engine_keeps_against_Studio_still_differs()
+    {
+        Dictionary<string, float[]> answers = StudioAnswers();
+
+        foreach ((string name, string reason) in KeptOurs)
+        {
+            CFrameProbeCase probeCase = CFrameProbeCases.All.Single(c => c.Name == name);
+
+            probeCase.IsOurChoice.ShouldBeTrue($"{name} is documented, so it cannot be kept: {reason}");
+            Fault(probeCase, answers).ShouldNotBeNull($"{name} is Studio's answer now and can leave the list: {reason}");
+        }
     }
 
     private static Dictionary<string, float[]> StudioAnswers()
