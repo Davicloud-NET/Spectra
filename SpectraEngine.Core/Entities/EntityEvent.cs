@@ -1,8 +1,8 @@
 namespace SpectraEngine.Core.Entities;
 
-// Thinks, inputs and the wakes of scripts share one record and one order.
-// The wakes wait in a queue of their own, and a drain takes whichever of the
-// two queues has the earlier event next.
+// Thinks, inputs and what scripts wait for share one record and one order.
+// What scripts made waits in a queue of its own, and a drain takes whichever
+// of the two queues has the earlier event next.
 internal struct EntityEvent
 {
     // The tick it is due on. A wait in seconds became ticks when it was queued.
@@ -38,6 +38,12 @@ internal struct EntityEvent
     // taken for wire zero.
     public int WireOrdinal;
 
-    // What the script runtime asked to be handed back. Only a script wake has one.
+    // What the script runtime asked to be handed back: the thread of a wake,
+    // or the listener of a fired output.
     public long Token;
+
+    // The file and the line of the script that sent an input. Null and zero
+    // for what no script sent. Only a trace reads them.
+    public string? SenderScript;
+    public int SenderLine;
 }

@@ -22,6 +22,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     private readonly RunService _runService;
     private readonly ScriptStarter _starter;
     private readonly ChildWaits _childWaits;
+    private readonly NodeSignals _signals;
     private volatile bool _isClosed;
 
     /// <summary>Opens a Luau state and gives it everything a script of this level can reach.</summary>
@@ -60,6 +61,10 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             var players = new Players(new PlayerWrites(_world));
             new LevelGlobals(new DataModel(_host, workspace, _runService, players), workspace).ScriptInstall(context);
             new ModuleLoader(_host, setup.Source, _sink, _waiting).ScriptInstall(context);
+
+            // No library: an entity class is data, and its members are found by name.
+            _signals = new NodeSignals(new SignalHub(_host, _waiting), _world);
+            context.Entities = new EntityMembers(_host, _world, _signals);
 
             _host.Seal();
             _starter = new ScriptStarter(_host, setup.Source, _sink);
@@ -160,6 +165,22 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         }
 
         return true;
+    }
+
+    /// <inheritdoc/>
+    public void Hear(long listener, string parameter)
+    {
+        if (_isClosed)
+            return;
+
+        try
+        {
+            _signals.Hear(listener, parameter);
+        }
+        catch (Exception e) // boundary: nothing of a script may throw into the tick
+        {
+            ReportFault(e);
+        }
     }
 
     /// <inheritdoc/>

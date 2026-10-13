@@ -5,7 +5,7 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Entities;
 
 // What an entity world is waiting to send, and the sending of it once it is
-// due. Thinks, inputs and the wakes of scripts share one order: the tick,
+// due. Thinks, inputs and what scripts wait for share one order: the tick,
 // then the order made in.
 internal sealed class EntityDispatcher
 {
@@ -149,6 +149,27 @@ internal sealed class EntityDispatcher
             Output = "",
         });
 
+    // An input a script sent to one entity. It waits with what scripts made,
+    // so a script that sends too many takes no room from the wires. False
+    // when it was not queued and will not come.
+    public bool QueueScriptInput(Entity target, string input, string parameter, string script, int line)
+    {
+        EntityEvent sent = ScriptEvents.Input(_world.TickNumber, _sequence++, target, input, parameter, script, line);
+        if (!TryPush(_scripts, sent))
+            return false;
+
+        _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, _world, sent, target));
+        return true;
+    }
+
+    // One event for each listener of a fired output, in the order they were
+    // added. One the queue has no room for does not hear this fire.
+    public void QueueSignal(Entity source, string output, string parameter, List<long> listeners)
+    {
+        for (int i = 0; i < listeners.Count; i++)
+            TryPush(_scripts, ScriptEvents.Signal(_world.TickNumber, _sequence++, source, output, parameter, listeners[i]));
+    }
+
     // Sends what is due, the earlier of the two lanes' next events first. A
     // lane that has used up its share stops for this drain, and the other
     // goes on.
@@ -259,6 +280,12 @@ internal sealed class EntityDispatcher
         if (due.Kind == EntityEventKind.ScriptWake)
         {
             _world.Scripts?.Wake(due.Token);
+            return;
+        }
+
+        if (due.Kind == EntityEventKind.ScriptSignal)
+        {
+            _world.Scripts?.Hear(due.Token, due.Parameter);
             return;
         }
 

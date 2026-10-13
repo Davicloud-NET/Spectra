@@ -8,6 +8,7 @@ using SpectraEngine.Core.Physics.Character;
 using SpectraEngine.Core.Play;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
+using SpectraEngine.Entities;
 using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.Tests;
@@ -30,6 +31,10 @@ internal sealed class ScriptLevel : IDisposable
         var catalog = new EntityCatalog();
         catalog.Add(new EntitySchema(SayingEntity.Class), () => new SayingEntity(Sink));
         catalog.Add(new EntitySchema(PacingEntity.Class), () => new PacingEntity());
+        catalog.Add(EchoEntity.Schema, () => new EchoEntity(Sink));
+        catalog.Add(EchoEntity.ClashingSchema, () => new EchoEntity(Sink));
+        catalog.Add(FuncButton.SpectraSchema, static () => new FuncButton());
+        catalog.Add(FuncDoor.SpectraSchema, static () => new FuncDoor());
 
         Manager = new SceneManager(NullLogger<SceneManager>.Instance)
         {

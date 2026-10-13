@@ -159,14 +159,16 @@ public abstract class Entity
     }
 
     /// <summary>
-    /// Fires <paramref name="output"/> along this entity's wires. Every wire
+    /// Fires <paramref name="output"/> along this entity's wires, and then to
+    /// the functions scripts connected to it. Every wire and every listener
     /// queues an event, even at zero delay; nothing is delivered inside this call.
     /// </summary>
     /// <param name="output">The output's name.</param>
     /// <param name="activator">Whoever started the chain. Null means this entity.</param>
     /// <param name="parameterOverride">
     /// Replaces the parameter each wire authored, or null to send what the map
-    /// says. Empty is a real, blank argument.
+    /// says. Empty is a real, blank argument. A listener gets it as the
+    /// output's value, and null as no value.
     /// </param>
     public void FireOutput(string output, Entity? activator = null, string? parameterOverride = null)
     {
@@ -174,11 +176,19 @@ public abstract class Entity
 
         EntityOutput? wired = FindOutput(output);
 
+        // One check in a level where no script listens.
+        List<long>? listeners = World.Listeners.Find(Node, output);
+
         // Before the wires fire, so the output is on record ahead of the
         // inputs it queues.
-        World.Trace?.Record(EntityTraceEvent.OfOutput(this, activator ?? this, output, wired));
+        World.Trace?.Record(EntityTraceEvent.OfOutput(this, activator ?? this, output, wired, listeners?.Count ?? 0));
 
         wired?.Fire(this, activator ?? this, parameterOverride);
+
+        // After the wires and numbered on from them, so a listener is called
+        // after the inputs the output's own wires send with no delay.
+        if (listeners is { Count: > 0 })
+            World.Dispatcher.QueueSignal(this, output, parameterOverride ?? "", listeners);
     }
 
     /// <summary>This entity's <paramref name="output"/>, or null if nothing wires it.</summary>

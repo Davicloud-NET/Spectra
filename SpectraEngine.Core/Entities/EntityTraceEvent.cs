@@ -85,6 +85,21 @@ public readonly struct EntityTraceEvent
     /// </summary>
     public long Sequence { get; init; }
 
+    /// <summary>
+    /// The file of the script that sent the input, as a content path. Empty
+    /// for an input no script sent, and for a fired output.
+    /// </summary>
+    public string SenderScript { get; init; }
+
+    /// <summary>The line in <see cref="SenderScript"/> that sent the input, or 0 when it is not known.</summary>
+    public int SenderLine { get; init; }
+
+    /// <summary>
+    /// How many functions of scripts a fired output was queued for. Zero for
+    /// every other kind.
+    /// </summary>
+    public int ListenersQueued { get; init; }
+
     // Both builders are called only behind a null check on the world's trace,
     // so an unwatched world builds no event.
     internal static EntityTraceEvent OfInput(
@@ -108,10 +123,13 @@ public readonly struct EntityTraceEvent
         Activator = queued.Activator,
         Wire = queued.WireOrdinal - 1,
         Sequence = queued.Sequence,
+        SenderScript = queued.SenderScript ?? "",
+        SenderLine = queued.SenderLine,
     };
 
     // Counts the wires as they stand, so build it before they fire.
-    internal static EntityTraceEvent OfOutput(Entity source, Entity activator, string output, EntityOutput? wired)
+    internal static EntityTraceEvent OfOutput(
+        Entity source, Entity activator, string output, EntityOutput? wired, int listeners)
     {
         int live = wired?.LiveWireCount ?? 0;
 
@@ -132,6 +150,8 @@ public readonly struct EntityTraceEvent
             WiresSpent = (wired?.WireCount ?? 0) - live,
             Wire = -1,
             Sequence = -1,
+            SenderScript = "",
+            ListenersQueued = listeners,
         };
     }
 }

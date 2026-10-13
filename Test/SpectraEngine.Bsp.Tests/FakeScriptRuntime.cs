@@ -20,6 +20,9 @@ internal sealed class FakeScriptRuntime : IScriptRuntime
     // whether what waited for the wake was ended.
     public Func<long, bool>? OnDrop { get; set; }
 
+    // What a function connected to an output would do when it is called.
+    public Action<long>? OnHear { get; set; }
+
     public bool IsClosed { get; private set; }
 
     public void StartScripts()
@@ -38,6 +41,12 @@ internal sealed class FakeScriptRuntime : IScriptRuntime
     {
         _log.Add($"drop {token}");
         return OnDrop?.Invoke(token) ?? true;
+    }
+
+    public void Hear(long listener, string parameter)
+    {
+        _log.Add(parameter.Length == 0 ? $"hear {listener}" : $"hear {listener} '{parameter}'");
+        OnHear?.Invoke(listener);
     }
 
     public void BeforeSimulation() => _log.Add("before simulation");

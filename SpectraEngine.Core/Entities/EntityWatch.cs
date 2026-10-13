@@ -241,6 +241,8 @@ public sealed class EntityWatch : IEntityTrace
         line.Append(CultureInfo.InvariantCulture, $" wires={traced.WiresQueued}");
         if (traced.WiresSpent > 0)
             line.Append(CultureInfo.InvariantCulture, $" spent={traced.WiresSpent}");
+        if (traced.ListenersQueued > 0)
+            line.Append(CultureInfo.InvariantCulture, $" listeners={traced.ListenersQueued}");
 
         AppendActivator(line, traced);
     }
@@ -255,6 +257,12 @@ public sealed class EntityWatch : IEntityTrace
 
     private static void AppendSender(StringBuilder line, in EntityTraceEvent traced)
     {
+        if (traced.SenderScript is { Length: > 0 } script)
+        {
+            EntityConsoleText.AppendPlace(line, script, traced.SenderLine);
+            return;
+        }
+
         if (traced.Source is not { } source)
         {
             line.Append(traced.TargetName.Length > 0 ? ConsoleSender : GameSender);

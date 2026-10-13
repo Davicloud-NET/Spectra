@@ -1,21 +1,26 @@
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
 /// <summary>Something that happens in the level, which a script connects a function to or waits for.</summary>
-// The host fires it with the values every listener gets.
+// The host fires it with the values every listener gets: where it stands,
+// as RunService does, or from the level's queue, as an entity's output does.
 [ScriptClass(LuauDefinitions.SignalType, TypeParameters = "T... = ...any")]
 internal sealed partial class ScriptSignal : ScriptObject
 {
     private readonly List<ScriptConnection> _connections = [];
     private readonly SignalHub _hub;
+    private readonly QueuedSignal? _queued;
     private int _fireDepth;
     private bool _hasDisconnected;
 
-    public ScriptSignal(string name, SignalHub hub)
+    // With `queued` the level's queue calls each listener, and Fire is not used.
+    public ScriptSignal(string name, SignalHub hub, QueuedSignal? queued = null)
     {
         Name = name;
         _hub = hub;
+        _queued = queued;
     }
 
     // "Signal Heartbeat", as Roblox prints one.
@@ -23,10 +28,14 @@ internal sealed partial class ScriptSignal : ScriptObject
 
     public int ListenerCount => _connections.Count;
 
+    // What a queued signal's fire carries, as a wire's text. Not said for a
+    // signal the host fires where it stands.
+    public ParameterType Sends => _queued?.Sends ?? ParameterType.NotSaid;
+
     public ScriptConnection Connect(LuauFunction function, bool isOnce)
     {
         ScriptConnection connection = new(this, function, isOnce);
-        _connections.Add(connection);
+        Add(connection);
         return connection;
     }
 
@@ -55,8 +64,9 @@ internal sealed partial class ScriptSignal : ScriptObject
         }
     }
 
-    public void OnDisconnected()
+    public void OnDisconnected(ScriptConnection connection)
     {
+        _queued?.Forget(connection);
         _hasDisconnected = true;
         DropDisconnected();
     }
@@ -85,8 +95,14 @@ internal sealed partial class ScriptSignal : ScriptObject
             return stack.Fail(WaitingThreads.CannotYield);
 
         WaitingThreads waiting = _hub.Waiting;
-        _connections.Add(new ScriptConnection(this, waiting, waiting.Add(WaitingThread.ForSignal(thread))));
+        Add(new ScriptConnection(this, waiting, waiting.Add(WaitingThread.ForSignal(thread))));
         return LuauStack.Yield();
+    }
+
+    private void Add(ScriptConnection connection)
+    {
+        _connections.Add(connection);
+        _queued?.Listen(connection);
     }
 
     private int Listen(LuauStack stack, string method, bool isOnce)

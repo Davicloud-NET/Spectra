@@ -38,6 +38,10 @@ internal sealed class ScriptContext
     // The threads that wait for a child, which WaitForChild adds to.
     public ChildWaits ChildWaits { get; }
 
+    // The inputs and outputs a node has from its entity class. The runtime
+    // sets it once the signals behind it are made. Null until then.
+    public EntityMembers? Entities { get; set; }
+
     // Nil for null. False: an error value is on top instead.
     public bool PushObject(LuauStack stack, object? value) =>
         value is null ? stack.PushNil() : Host.Objects.Push(stack, ScriptTags.Object, value);

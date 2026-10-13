@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
@@ -32,6 +33,13 @@ internal sealed partial class ScriptConnection : ScriptObject
 
     public override string Name => "Connection";
 
+    // What the level's queue names this listener by, for a signal the queue
+    // fires. Zero for any other, and once the connection has ended.
+    public long Listener { get; set; }
+
+    // What a fire of the signal carries.
+    public ParameterType Sends => _signal.Sends;
+
     /// <summary>Whether the function is still called when the signal fires.</summary>
     [ScriptProperty(Name = "Connected")]
     public bool IsConnected { get; private set; } = true;
@@ -60,7 +68,7 @@ internal sealed partial class ScriptConnection : ScriptObject
         // The function may be running now. Its own call keeps it alive.
         _function?.Dispose();
         _function = null;
-        _signal.OnDisconnected();
+        _signal.OnDisconnected(this);
     }
 
     // A thread that was cancelled or went on to another wait has left this

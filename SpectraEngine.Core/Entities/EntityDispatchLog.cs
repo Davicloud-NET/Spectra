@@ -22,12 +22,22 @@ internal sealed class EntityDispatchLog
 
     public void FellBehind(bool ofScripts, int budget, in EntityEvent next)
     {
-        if (ofScripts)
+        if (ofScripts && next.Kind == EntityEventKind.ScriptWake)
         {
             _logger.LogWarning(
                 "More than {Budget} waiting script threads were due on one tick. The rest go on over the next " +
                 "ticks, in the same order, so those scripts run late. Entities are not held up. Said once a level.",
                 budget);
+            return;
+        }
+
+        if (ofScripts)
+        {
+            _logger.LogWarning(
+                "More than {Budget} events of scripts were due on one tick. The rest go on over the next " +
+                "ticks, in the same order, so what scripts send and hear runs late. First in line is {What} " +
+                "at '{TargetName}'. Entities are not held up. Said once a level.",
+                budget, Describe(next), NameOf(next));
             return;
         }
 
@@ -43,10 +53,11 @@ internal sealed class EntityDispatchLog
         if (ofScripts)
         {
             _logger.LogError(
-                "Scripts started more than {Budget} threads in one tick that were to run in that same tick. " +
-                "The {Discarded} that had not run were ended. This is what a loop of task.defer with no " +
-                "wait looks like.",
-                budget, discarded);
+                "Scripts made more than {Budget} events in one tick that were due in that same tick: threads " +
+                "to run, inputs to send and listeners to call. The {Discarded} that had not gone out were " +
+                "dropped, {What} at '{TargetName}' first. This is what a loop of task.defer with no wait " +
+                "looks like, or a listener that sets off its own signal.",
+                budget, discarded, Describe(offender), NameOf(offender));
             return;
         }
 
@@ -60,13 +71,23 @@ internal sealed class EntityDispatchLog
 
     public void RefusedForRoom(bool ofScripts, int room, in EntityEvent made)
     {
-        if (ofScripts)
+        if (ofScripts && made.Kind == EntityEventKind.ScriptWake)
         {
             _logger.LogError(
                 "{Limit} script threads are waiting, so a wait was refused, and so is every wait asked for " +
                 "while there is no room. The script that asked gets an error. This is what a loop that " +
                 "starts threads and never ends them looks like.",
                 room);
+            return;
+        }
+
+        if (ofScripts)
+        {
+            _logger.LogError(
+                "The scripts of this level have {Limit} events waiting, so {What} at '{TargetName}' was " +
+                "dropped, and so is everything a script sends or is to hear while there is no room. A " +
+                "script that sends an input gets an error. What entities send is not held up.",
+                room, Describe(made), NameOf(made));
             return;
         }
 
@@ -81,13 +102,14 @@ internal sealed class EntityDispatchLog
     {
         EntityEventKind.Think => "a think",
         EntityEventKind.ScriptWake => "the wake of a waiting thread",
+        EntityEventKind.ScriptSignal => $"a listener's call for output '{made.Output}'",
         _ when made.Output.Length > 0 => $"output '{made.Output}' sending '{made.Input}'",
         _ => $"input '{made.Input}'",
     };
 
     private static string NameOf(in EntityEvent made) => made.Kind switch
     {
-        EntityEventKind.Think => made.Entity?.TargetName ?? "",
+        EntityEventKind.Think or EntityEventKind.ScriptSignal => made.Entity?.TargetName ?? "",
         EntityEventKind.ScriptWake => "a script",
         _ => made.Target?.TargetName ?? made.TargetName,
     };

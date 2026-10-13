@@ -37,6 +37,15 @@ internal sealed class ObjectMembers
         if (read != ScriptMember.None)
             return read;
 
+        // Next an input or an output of the node's entity class, which wins
+        // over a child of its name.
+        if (target is SceneNode entity && _context.Entities is { } entities)
+        {
+            read = entities.Read(_context, stack, entity);
+            if (read != ScriptMember.None)
+                return read;
+        }
+
         // A name that is no member is a child's, as in Roblox. Looked for
         // only here, so a member always wins and costs what it did.
         return target is SceneNode parent && ChildNamed(stack, parent) is { } child
@@ -54,6 +63,9 @@ internal sealed class ObjectMembers
         int written = target is SceneNode node
             ? NodeMembers.Write(_context, stack, node, atom)
             : ((ScriptObject)target).WriteMember(_context, stack, atom);
+
+        if (written == ScriptMember.None && target is SceneNode entity && _context.Entities is { } entities)
+            written = entities.Write(stack, entity);
 
         return written switch
         {
@@ -74,6 +86,10 @@ internal sealed class ObjectMembers
         int called = target is SceneNode node
             ? NodeMembers.Invoke(_context, stack, node, atom)
             : ((ScriptObject)target).InvokeMember(_context, stack, atom);
+
+        // door:Open(): an input of the node's entity class, found by its name.
+        if (called == ScriptMember.None && target is SceneNode entity && _context.Entities is { } entities)
+            called = entities.Invoke(_context, stack, entity);
 
         if (called == ScriptMember.None)
             return FailNoMethod(stack, target);
@@ -127,8 +143,17 @@ internal sealed class ObjectMembers
     private static string NotAName(LuauStack stack) =>
         $"a member is named by a string, not by a {ScriptArguments.TypeName(stack, 2)}";
 
-    // Roblox's words for a name a class does not have.
-    private static string NotAMember(string? name, object target) => target is SceneNode node
-        ? $"{name} is not a valid member of {NodeClassName.Of(node)} \"{node.Name}\""
-        : $"{name} is not a valid member of {((ScriptObject)target).ClassName} \"{((ScriptObject)target).Name}\"";
+    // Roblox's words for a name a class does not have. A placeholder gets a
+    // sentence more: the name may be right and the class is what is missing.
+    private string NotAMember(string? name, object target)
+    {
+        if (target is not SceneNode node)
+            return $"{name} is not a valid member of {((ScriptObject)target).ClassName} \"{((ScriptObject)target).Name}\"";
+
+        string className = NodeClassName.Of(node);
+        string words = $"{name} is not a valid member of {className} \"{node.Name}\"";
+        return _context.Entities?.IsOfMissingClass(node) == true
+            ? $"{words}. The class {className} is not in this build, so the node has none of its inputs and outputs"
+            : words;
+    }
 }

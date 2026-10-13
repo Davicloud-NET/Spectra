@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Scripting.Tests;
@@ -45,6 +46,10 @@ public sealed class ScriptCostTests
         ("find a child by its name", "local _ = part:FindFirstChild('Script')"),
         ("read a child by its name", "local _ = part.Script"),
         ("ask a node what it is", "local _ = part:IsA('BasePart')"),
+        ("read an output of an entity", "local _ = echo.OnPing"),
+        ("read an input of an entity and do not call it", "local _ = echo.Ping"),
+        ("call an input, whose output nothing hears", "echo:Tap()"),
+        ("call an input, whose output a script hears", "echo:Nudge()"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
@@ -81,6 +86,7 @@ public sealed class ScriptCostTests
 
         using var level = new ScriptLevel(hasCharacter: false);
         SceneNode part = level.Part("Mover", new Vector3(0f, 2f, 0f));
+        level.Scene.Root.CreateChild("Echo").Entity = new EntityData(EchoEntity.Class);
         level.AddScript(part, $$"""
             local part = script.Parent
             local a = Vector3.new(1, 2, 3)
@@ -88,6 +94,8 @@ public sealed class ScriptCostTests
             local f = CFrame.new(1, 2, 3) * CFrame.Angles(0.1, 0.2, 0.3)
             local g = CFrame.new(4, 5, 6)
             local run = game:GetService("RunService")
+            local echo = workspace.Echo
+            echo.OnNudged:Connect(function() end)
             run.Heartbeat:Connect(function()
                 for i = 1, {{Rounds}} do
                     {{statement}}

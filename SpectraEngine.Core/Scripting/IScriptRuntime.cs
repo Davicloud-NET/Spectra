@@ -25,6 +25,15 @@ public interface IScriptRuntime
     /// </returns>
     bool Drop(long token);
 
+    /// <summary>
+    /// What a node fired has come due for one listener the runtime added to
+    /// <see cref="EntityWorld.Listeners"/>. A listener removed since then
+    /// still gets what was queued for it, and the runtime drops that.
+    /// </summary>
+    /// <param name="listener">What the runtime named the listener by when it added it.</param>
+    /// <param name="parameter">What was sent with the fire, as a wire carries it. Empty for nothing.</param>
+    void Hear(long listener, string parameter);
+
     /// <summary>The point of a tick before the physics step.</summary>
     void BeforeSimulation();
 

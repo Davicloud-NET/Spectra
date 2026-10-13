@@ -37,6 +37,22 @@ internal static class EntityConsoleText
         return AppendQuoted(text, parameter).Append(')');
     }
 
+    // A script as the sender of an input: Scripts/opener.luau:12. The dot of
+    // a file name ends nothing here, so only a path with a space is quoted.
+    public static StringBuilder AppendPlace(StringBuilder text, string script, int line)
+    {
+        bool isPlain = true;
+        foreach (char c in script)
+            isPlain &= !char.IsWhiteSpace(c) && c != '"';
+
+        if (isPlain)
+            text.Append(script);
+        else
+            AppendQuoted(text, script);
+
+        return line > 0 ? text.Append(CultureInfo.InvariantCulture, $":{line}") : text;
+    }
+
     // An input or output as its class declares it: Open() takes nothing,
     // SetValue(float) takes a number, Add(float?) works with or without. A
     // bare name is one whose class does not say.

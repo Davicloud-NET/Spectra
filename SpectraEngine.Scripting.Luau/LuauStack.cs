@@ -105,6 +105,12 @@ public readonly unsafe ref struct LuauStack
         }
     }
 
+    /// <summary>
+    /// Inside a <c>__namecall</c>, the name of the method that was called, as the bytes Luau
+    /// keeps. They live as long as the call. Empty when there is none.
+    /// </summary>
+    public ReadOnlySpan<byte> NamecallUtf8 => LuaText.FromNative(Lua.lua_namecallatom(_state, null));
+
     /// <summary>Reads the block of a userdata made by <see cref="PushUserdata"/> with this tag.</summary>
     public bool TryGetUserdata<T>(int index, int tag, out T value)
         where T : unmanaged

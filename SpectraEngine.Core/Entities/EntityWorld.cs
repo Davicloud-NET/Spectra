@@ -154,6 +154,13 @@ public sealed class EntityWorld
     public IScriptRuntime? Scripts { get; set; }
 
     /// <summary>
+    /// The functions scripts connected to what nodes fire. An output looks
+    /// here when it fires, and <see cref="Scripts"/> is handed each listener
+    /// when its turn in the queue comes. <see cref="Deactivate"/> empties it.
+    /// </summary>
+    public ScriptListeners Listeners { get; } = new();
+
+    /// <summary>
     /// The most events one <see cref="Tick"/> sends of those that were
     /// waiting, and the most it sends of those it makes itself. Waiting
     /// events past it stay queued and go first on the next tick. What a tick
@@ -234,6 +241,7 @@ public sealed class EntityWorld
         _moves.Begin();
         Touches.Clear();
         Sounds.Clear();
+        Listeners.Clear();
         _dispatcher.Clear();
         _entities.Clear();
         _pendingSpawn.Clear();
@@ -289,8 +297,10 @@ public sealed class EntityWorld
 
         IsActive = false;
 
-        // Before OnRemove: a stop tells no listener that its touch ended.
+        // Before OnRemove: a stop tells no listener that its touch ended,
+        // and no script hears what a removal fires.
         Touches.Clear();
+        Listeners.Clear();
 
         try
         {
@@ -450,6 +460,35 @@ public sealed class EntityWorld
         ThrowIfStopped(nameof(QueueScriptWake));
 
         return _dispatcher.QueueScriptWake(token, ticks);
+    }
+
+    /// <summary>
+    /// Queues an input a script sent to one entity, with no caller and no
+    /// activator. It is delivered by the next drain, in the one order of
+    /// wires and thinks, and counts against what scripts may queue.
+    /// </summary>
+    /// <param name="target">Who receives it. An entity that is gone by then gets nothing.</param>
+    /// <param name="input">The input's name. The caller has checked it against the class.</param>
+    /// <param name="parameter">The argument as a wire carries it. Empty for none.</param>
+    /// <param name="script">The file of the script that sent it, which a trace names as the sender.</param>
+    /// <param name="line">The line in that file, or 0 when it is not known.</param>
+    /// <returns>False when the input was not queued and will not come: the queue is full.</returns>
+    /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    public bool QueueScriptInput(Entity target, string input, string parameter, string script, int line)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(parameter);
+        ArgumentNullException.ThrowIfNull(script);
+        ThrowIfStopped(nameof(QueueScriptInput));
+
+        if (!ReferenceEquals(target.World, this))
+        {
+            throw new ArgumentException(
+                "The entity belongs to another entity world, or to none.", nameof(target));
+        }
+
+        return _dispatcher.QueueScriptInput(target, input, parameter, script, line);
     }
 
     /// <summary>

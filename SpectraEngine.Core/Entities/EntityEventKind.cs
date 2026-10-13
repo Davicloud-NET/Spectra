@@ -9,4 +9,8 @@ internal enum EntityEventKind : byte
 
     // Handed back to the script runtime, which knows what its token names.
     ScriptWake = 2,
+
+    // A fired output on its way to one listener of a script. The runtime
+    // knows the listener by its token.
+    ScriptSignal = 3,
 }
