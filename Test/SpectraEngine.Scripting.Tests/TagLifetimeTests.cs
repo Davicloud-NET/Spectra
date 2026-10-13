@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Scripting.Luau.Runtime;
 
@@ -162,6 +163,50 @@ public sealed class TagLifetimeTests
 
         level.Printed.ShouldBeEmpty();
         level.Sink.Messages.ShouldBeEmpty();
+    }
+
+    // The node left the level while it played, so by Stop only the runtime
+    // knew of it: its tag, its attribute and a listener of its signal.
+    [Fact]
+    public void A_node_that_left_the_level_is_held_by_nothing_once_the_level_has_stopped()
+    {
+        using var level = new ScriptLevel();
+        WeakReference marker = PlayAndLoseATaggedNode(level);
+
+        // The next play has a runtime of its own, and the test lets go of the first.
+        level.Play().Tick();
+        level.Stop();
+        level.Runtimes.Clear();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        marker.IsAlive.ShouldBeFalse();
+    }
+
+    // Apart, so no local of the test keeps the node.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference PlayAndLoseATaggedNode(ScriptLevel level)
+    {
+        SceneNode marker = level.Scene.Root.CreateChild("Marker");
+        level.AddScript(level.Scene.Root, """
+            local marker = workspace:FindFirstChild("Marker")
+            if marker then
+                marker:AddTag("Heavy")
+                marker:SetAttribute("Weight", 4)
+                marker.AttributeChanged:Connect(function() end)
+                game:GetService("CollectionService"):GetInstanceRemovedSignal("Heavy"):Connect(function() end)
+                print("marked")
+            end
+            """);
+        level.Play().Tick();
+        level.Scene.Root.RemoveChild(marker);
+        level.Tick();
+        level.Stop();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["marked"]);
+        return new WeakReference(marker);
     }
 
     // Stack holds Low, Low holds Mid and Mid holds Top.

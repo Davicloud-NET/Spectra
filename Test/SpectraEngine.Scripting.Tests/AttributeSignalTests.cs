@@ -244,6 +244,36 @@ public sealed class AttributeSignalTests
     }
 
     [Fact]
+    public void A_change_with_a_full_queue_reaches_the_listeners_there_is_room_for_and_nothing_fails()
+    {
+        using ScriptLevel level = House.With("""
+            local door = workspace.House.Door
+            for index = 1, 6 do
+                door.AttributeChanged:Connect(function(name) print("heard", index, name) end)
+            end
+            task.delay(0.05, function() door:SetAttribute("Second", 1) end)
+            task.wait()
+            door:SetAttribute("First", 1)
+            """);
+        level.Play().Tick();
+
+        // Room for four, and the delayed thread waits in one of them.
+        level.Entities.MaxPendingEvents = 4;
+        level.Tick();
+        level.Entities.DiscardedEventCount.ShouldBe(3);
+        level.Entities.MaxPendingEvents = 65536;
+        level.Tick(3);
+
+        // The queue has room again, and every listener is still connected.
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(
+        [
+            "heard 1 First", "heard 2 First", "heard 3 First",
+            "heard 1 Second", "heard 2 Second", "heard 3 Second", "heard 4 Second", "heard 5 Second", "heard 6 Second",
+        ]);
+    }
+
+    [Fact]
     public void A_listener_whose_script_was_switched_off_is_not_called_and_the_others_are()
     {
         using var level = new ScriptLevel();

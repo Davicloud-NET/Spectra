@@ -13,6 +13,10 @@ internal sealed class AttributeMethods
     // In bytes of UTF-8. A longer name gets an array of its own.
     private const int NameRoom = 512;
 
+    // What a script reads when the bytes it handed over as a name are no text.
+    private const string NotText =
+        "A name that is not valid UTF-8 is not a valid attribute name. " + AttributeName.Rule;
+
     private readonly SignalHub _hub;
     private readonly DeferredCalls _calls;
     private readonly List<string> _built = [];
@@ -35,7 +39,7 @@ internal sealed class AttributeMethods
 
         Span<char> room = stackalloc char[NameChars.Room];
         if (!NameChars.TryRead(utf8, room, out ReadOnlySpan<char> name))
-            return stack.Fail(AttributeName.NotText);
+            return stack.Fail(NotText);
         if (!AttributeName.IsValid(name))
             return stack.Fail(AttributeName.Refusal(name));
 
@@ -57,14 +61,6 @@ internal sealed class AttributeMethods
 
         FireChanged(node, kept);
         return 0;
-    }
-
-    // Whether the node reads as that value with nothing set by a script: its
-    // entity's keyvalue, or nil. A reference to a node is no value a script sets.
-    private static bool IsWhatWasBuilt(ScriptContext context, SceneNode node, ReadOnlySpan<char> name, in MemberValue value)
-    {
-        AttributeRead.TryRead(context, node, name, out MemberValue built, out SceneNode? reference);
-        return reference is null && built == value;
     }
 
     // GetAttribute. The name is the second value.
@@ -97,11 +93,17 @@ internal sealed class AttributeMethods
         AuthoredAttributes.AddNames(node, context.World.Catalog, _built);
         foreach (string name in _built)
         {
-            // A name a script set or took away is its own from then on.
-            if (set?.ContainsKey(name) == true || !AttributeRead.TryRead(context, node, name, out MemberValue built, out SceneNode? reference))
+            // A name a script set or took away is the script's from then on.
+            if (set?.ContainsKey(name) == true)
                 continue;
-            if (reference is null && built.Kind == MemberValueKind.None)
+
+            // One that reads as nil is no entry: a table holds no nil.
+            if (!AttributeRead.TryRead(context, node, name, out MemberValue built, out SceneNode? reference)
+                || (reference is null && built.Kind == MemberValueKind.None))
+            {
                 continue;
+            }
+
             if (!AttributeRead.Push(context, stack, in built, reference) || !SetNamed(stack, table, name))
                 return LuauStack.Raise;
         }
@@ -134,7 +136,7 @@ internal sealed class AttributeMethods
 
         Span<char> room = stackalloc char[NameChars.Room];
         if (!NameChars.TryRead(utf8, room, out ReadOnlySpan<char> name))
-            return stack.Fail(AttributeName.NotText);
+            return stack.Fail(NotText);
 
         NodeAttributes own = Table.OfOrMake(node);
         own.ChangedOf ??= new Dictionary<string, ScriptSignal>(StringComparer.Ordinal);
@@ -145,6 +147,15 @@ internal sealed class AttributeMethods
         }
 
         return ScriptResult.Of(context.PushObject(stack, signal));
+    }
+
+    // Whether the node reads as that value with nothing set by a script: its
+    // entity's keyvalue, or nil. A reference to a node is no value a script sets.
+    private static bool IsWhatWasBuilt(
+        ScriptContext context, SceneNode node, ReadOnlySpan<char> name, in MemberValue value)
+    {
+        AttributeRead.TryRead(context, node, name, out MemberValue built, out SceneNode? reference);
+        return reference is null && built == value;
     }
 
     // A listener of AttributeChanged is handed the name. One that asked for
