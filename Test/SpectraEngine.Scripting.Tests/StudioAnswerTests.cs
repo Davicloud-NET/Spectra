@@ -5,9 +5,9 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Scripting.Tests;
 
 /// <summary>
-/// What Roblox Studio 0.742 answered when it was asked on 2026-10-13, where
-/// the engine used to answer otherwise. Each test here states one of those
-/// answers, so a change that leaves Studio's answer fails by its name.
+/// Answers Roblox Studio 0.742 gave when it was asked on 2026-10-13, which
+/// the engine gives too. Each test here states one of them, so a change
+/// that leaves Studio's answer fails by its name.
 /// </summary>
 public sealed class StudioAnswerTests
 {

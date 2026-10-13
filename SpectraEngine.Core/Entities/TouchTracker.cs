@@ -8,13 +8,9 @@ using System.Numerics;
 namespace SpectraEngine.Core.Entities;
 
 /// <summary>
-/// Finds, once a tick, which sensing entities the player is inside, and tells
-/// each one when a touch starts and when it ends. An entity senses with the
-/// part brushes it registered that have <see cref="SceneNode.CanTouch"/>,
-/// each tested as its real shape. What one tick finds is told in entity order.
-/// The same pass finds which parts and meshes with a listener under a name
-/// of <see cref="TouchSignal"/> the player touches, and queues a call for
-/// each listener after the entities have been told.
+/// Finds, once a tick, which sensing entities the player is inside and which
+/// parts scripts listen to it touches, and tells each when a touch starts
+/// and when it ends. Entities are told first, in entity order.
 /// </summary>
 // Runs from the visitor: one box query, then the brushes it returns. A level
 // full of triggers costs what the ones near the player cost.

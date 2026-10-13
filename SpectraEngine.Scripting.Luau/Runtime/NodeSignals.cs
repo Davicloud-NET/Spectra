@@ -4,11 +4,10 @@ using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The signals the level's queue fires: the outputs of entities, and the
-// touch of a part. There is one for each node and name, so a script reads
-// the same object every time. A listener is kept twice: in the level's own
-// table, which a fire reads, and here under the number the queue hands back
-// when the listener's turn comes.
+// The signals the level's queue fires: the outputs of entities and the touch
+// of a part, one for each node and name, so a script reads the same object
+// every time. A listener is kept twice: in the level's own table, which a
+// fire reads, and here under the number the queue hands back at its turn.
 internal sealed class NodeSignals
 {
     // With fewer listeners than this none is looked over.

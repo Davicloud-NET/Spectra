@@ -258,10 +258,12 @@ A listener sits in `EntityWorld.Listeners` under the node and one of the two nam
 
 - Only the player touches. The listener is handed the character, the same object `Players.LocalPlayer.Character` gives.
 - A level where no script listens for a touch pays one check a tick. Otherwise the pass asks the scene for what is near the player and measures only a node that has a listener, or a touch that has yet to end.
-- A solid part is touched from where the mover stops the player, which is two of its skins away, and the part the mover says the player stands on is touched whatever the gap. A part with `CanCollide` off is touched by overlap, as a trigger is. A mesh has no shape of its own yet and is touched by overlap with the box around it.
-- A touch starts once and ends once, when the player is clear by `TouchTracker.ExitMargin`, when `CanTouch` goes off, when the node leaves the scene or when the player leaves the level. Stop tells nobody.
+- The mover stops the player one skin off a solid part and counts as contact what is within two. So a solid part is touched within two skins, and the skin is the one the player says (`IPlayerPresence.SkinWidth`). A part with `CanCollide` off is touched by overlap, as a trigger is.
+- What the mover says of its last tick is touched whatever the gap: the part the player stands on (`CharacterState.GroundNodeId`), and each part its slide stopped at (`CharacterState.SlideContacts`). Off a corner the slide ends the tick well clear of what it hit, the further the faster the player is, so the end of the tick alone would miss it.
+- A mesh has no shape of its own yet and is touched by overlap with the box around it, stretched as the node is scaled. A baked map does not load a mesh yet. Nothing touches one there, and the level's log warns once for each such mesh a script listens to (`TouchSignal.WhyNotHere`).
+- A touch starts once and ends once, when the player is clear by `TouchTracker.ExitMargin`, when `CanTouch` goes off, when the node leaves the scene or when the player leaves the level. Stop tells nobody. A listener of an end that came because the player left is handed the character all the same, so a script can tell whose touch ended. Reading a member of it is an error by then, as for any object that has left.
 - A part first listened to with the player on it is touched on the next tick. A touch outlives its listeners: one that comes while it goes on hears no second start, so a thread that calls `Touched:Wait()` in a loop is resumed once for a touch.
-- A trigger entity is told first, as before, and fires its own outputs then. What a script hears of the same touch is queued after them. Among parts, ends go before starts, each in the order the parts were first listened to.
+- A trigger entity is told first, as before, and fires its own outputs then. What a script hears of the same touch is queued after them. Among parts, ends go before starts, each by the oldest listener a part has at that time.
 - A world brush cannot tell what touches it. The fused world is hulls that name no node, in an authored level and in a baked one, so `Connect`, `Once` and `Wait` on its signal are an error that says to convert the brush to a part (`TouchSignal.WhyNone`).
 
 A touch is no entity's output, so a trace is told nothing of it yet.
@@ -270,7 +272,7 @@ A touch is no entity's output, so a trace is told nothing of it yet.
 
 `typeof` reads its answer off a userdata's metatable, and a userdata tag has one metatable. So a signal and a connection each have a tag of their own (`ScriptTags`), with the metatable every object has but for its `__type`: `RBXScriptSignal` and `RBXScriptConnection`, as in Roblox. Every other object is an `Instance`. `ScriptContext.PushObject` picks the tag by the object's type, and a reader that takes any object tries all three (`ScriptTags.TryGet`).
 
-`StudioAnswerTests` holds what Roblox Studio answered where the engine used to answer otherwise. A test there names the answer it states.
+`StudioAnswerTests` holds answers of Roblox Studio that the engine gives too. A test there names the answer it states.
 
 ## What is generated
 

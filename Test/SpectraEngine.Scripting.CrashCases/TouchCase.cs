@@ -10,11 +10,10 @@ using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.CrashCases;
 
-// A kill brick in a level that plays, with the real mover walking onto it:
-// the touch pass queues the listener, the listener is handed the character
-// and sends it back to the start, over and over. Listening to a world brush
-// is refused, which is an error raised out of a host function, and every
-// printed line runs the collector.
+// A kill brick in a level that plays, with the real mover walking onto it.
+// The listener is handed the character and sends it back to the start, over
+// and over. Listening to a world brush is refused, which is an error raised
+// out of a host function, and every printed line runs the collector.
 internal static class TouchCase
 {
     private const int Rounds = 10;
