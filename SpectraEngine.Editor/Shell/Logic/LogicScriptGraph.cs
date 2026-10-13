@@ -70,8 +70,9 @@ internal sealed class LogicScriptGraph
             if (!linked[i])
                 continue;
 
-            _cardOfScript[i] = new LogicCard(cards.Count, _links.Scripts[i]);
-            cards.Add(_cardOfScript[i]);
+            var card = new LogicCard(cards.Count, _links.Scripts[i]);
+            _cardOfScript[i] = card;
+            cards.Add(card);
             CardCount++;
         }
     }
