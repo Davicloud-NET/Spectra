@@ -18,7 +18,7 @@ internal static partial class BasePartApi
     [ScriptProperty(Sets = SettableMemberId.CanQuery)]
     public static partial bool CanQuery(SceneNode node);
 
-    /// <summary>Whether the part notices what touches it. A trigger with it off stops firing.</summary>
+    /// <summary>Whether the part notices what touches it. A trigger with it off stops firing. Only a part an entity senses touch with reads it: on any other part and on a mesh it changes nothing yet.</summary>
     [ScriptProperty(Sets = SettableMemberId.CanTouch)]
     public static partial bool CanTouch(SceneNode node);
 

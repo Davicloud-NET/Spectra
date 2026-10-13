@@ -72,12 +72,12 @@ private int Wait(LuauStack stack) => tasks.OldWait(stack);
 
 `Extends = "Instance"` on `[ScriptClass]` gives a class every member of another. Its switches hand a name the class does not declare to the class it extends, so a script finds there what the description promises. Both must be static classes whose members take the same object, such as a `SceneNode`. Anything else is an error. A class with `TypeParameters` extends nothing and has no operators.
 
-A class may declare no member at all, as `Part` and `SpotLight` do today:
+A class may declare no member at all, as `Part` and `DirectionalLight` do today:
 
 ```csharp
-/// <summary>A light that shines in a cone.</summary>
-[ScriptClass("SpotLight", Extends = "Light")]
-internal static partial class SpotLightApi;
+/// <summary>A light that shines one way everywhere, like the sun.</summary>
+[ScriptClass("DirectionalLight", Extends = "Light")]
+internal static partial class DirectionalLightApi;
 ```
 
 It still has the three switches. The catalogue writes them, since only it knows the type of the object, and each hands the name to the class it extends. Its first member moves the switches into its own file, and nothing else has to change.
@@ -126,9 +126,13 @@ The generator writes the body, which reads the same member of the door. So what 
 
 The door takes a string, a number, a boolean, a `Vector3`, a `CFrame` or a `Color3`, and `ScriptContext` has a writer for each. A new kind is a `MemberValueKind`, a writer there, and a case in the two switches of `ScriptClassEmitter`.
 
-A member not every node has says so in its row: `Classes` names the script classes that have it, as `Range` names the four lights with a range. `Read` then gives no value for a node of another class, and the property is declared on each class the row names. A write the node cannot take is refused in the door, with words that say what to do: a switch of a world brush says to convert the brush to a part. A write of the value the member already has records nothing.
+A member not every node has says so in its row: `Classes` names the script classes that have it, as `Range` names the four lights with a range. `Read` then gives no value for a node of another class, and the property is declared on each class the row names. The class is the one `NodeClass.KindOf` gives, so a part that carries a light has the members of a part and none of a light. A write the node cannot take is refused in the door, with words that say what to do: a switch of a world brush says to convert the brush to a part. A write of the value the member already has records nothing.
 
-What is changed in place has to be seen by whoever draws or simulates it. A light raises no signal: the renderer reads every light again on each frame. The mover, the touch tracker and a ray read a part's switches when they run.
+What is changed in place has to be seen by whoever draws or simulates it. A light raises no signal: the renderer reads every light again on each frame. The mover, the touch tracker and a ray read a part's switches when they run. The touch tracker reads `CanTouch` only on a brush an entity senses with.
+
+A write a script can make every tick must not build anything each time. A part that is not drawn holds no GPU mesh, so a write of `Visible` first tells the scene to keep the part's mesh (`Scene.KeepMeshWhileHidden`), and the journal lets go of it at Stop. A part that blinks then builds its mesh once.
+
+A value that is a number can make one that is none further on. The renderer gets a light's colour times its brightness, so the door refuses a write that takes that past a float.
 
 A property that cannot be set answers "Property is read only". `CannotSet` gives it other words. The definitions file marks it `read`, so the type checker refuses the write the binding would refuse.
 
@@ -242,7 +246,7 @@ One more file, `ScriptApiCatalog.g.cs`, numbers every member name (`ScriptAtoms`
 
 The catalogue also holds the switches of every class that declares no member, as above.
 
-The metatables are still set up by hand, in `ObjectMembers`, `CFrameMembers` and `Vector3Members`. Each finds the object, calls the generated switch, and puts a name that means nothing into the words a script reads. For a node, `ObjectMembers` goes through `NodeMembers`, which picks the class.
+The metatables are still set up by hand, in `ObjectMembers`, `CFrameMembers`, `Vector3Members` and `Color3Members`. Each finds the object, calls the generated switch, and puts a name that means nothing into the words a script reads. For a node, `ObjectMembers` goes through `NodeMembers`, which picks the class.
 
 A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Generator/AnalyzerReleases.Unshipped.md` lists them. One about what an attribute says points at the attribute. One about the member itself points at the member: no summary, a type that cannot cross, a missing object parameter, a shape that cannot be called. A parameter Luau cannot name is marked at the parameter, and a class that extends what it cannot is marked at the class.
 
