@@ -39,6 +39,9 @@ internal sealed class MoverFrame
 
     public CharacterTuning? Tuning { get; private set; }
 
+    // Where the player was when the tick the mover runs in began.
+    public Vector3 StartedAt => _start.Position;
+
     public void Open(in CharacterState state, in CharacterCommand command, ICharacterCollisionSource source, CharacterTuning tuning)
     {
         _state = state;

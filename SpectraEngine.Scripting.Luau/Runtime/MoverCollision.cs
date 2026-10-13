@@ -6,7 +6,7 @@ using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-/// <summary>What the player collides with, as a mover is handed it: the world and every solid part. It sweeps the player's capsule, finds the planes that touch it, and keeps a list of planes to solve and to clip a velocity against. A place is where the capsule's feet are.</summary>
+/// <summary>What the player collides with, as a mover is handed it: the world and every solid part. It sweeps the player's capsule, finds the planes that touch it, and keeps a list of planes to solve and to clip a velocity against. A place is where the capsule's feet are. A sweep or a gather reaches no further than 1000 units, from a place no further than that from where the player began the tick.</summary>
 // The engine's own pieces, so a mover in Luau is a page and collides as the
 // built-in one does. The list is the engine's: a plane crosses as a normal
 // and a number, and a tick makes no table.
@@ -95,8 +95,8 @@ internal sealed partial class MoverCollision : ScriptObject
     public Vector3 Clip(Vector3 velocity)
     {
         ICharacterCollisionSource source = Source;
-        if (!MoverLimits.IsWithin(velocity, MoverLimits.MaxReach))
-            throw new InvalidOperationException(MoverLimits.TooLong("A vector to clip", velocity, MoverLimits.MaxReach, "in length"));
+        if (!MoverLimits.IsWithin(velocity, MoverLimits.MaxSpeed))
+            throw new InvalidOperationException(MoverLimits.TooLong("A vector to clip", velocity, MoverLimits.MaxSpeed, "in length"));
 
         return source.ClipVelocity(velocity, _planes.AsSpan(0, _count));
     }
@@ -144,6 +144,8 @@ internal sealed partial class MoverCollision : ScriptObject
     {
         if (!MoverLimits.IsPlace(feet))
             throw new InvalidOperationException(MoverLimits.NotAPlace("A place", feet));
+        if (!MoverLimits.IsInReach(feet, _frame.StartedAt))
+            throw new InvalidOperationException(MoverLimits.OutOfReach("A place", feet));
 
         CharacterTuning tuning = _frame.TuningNow();
         return CharacterCapsule.FromFeet(feet, tuning.StandHeight, tuning.Radius);
@@ -151,6 +153,7 @@ internal sealed partial class MoverCollision : ScriptObject
 
     // A mover can go where the tick's volume does not reach, as a dash does.
     // The volume then grows, or the sweep would find nothing in its way.
+    // MoverLimits.MaxReach bounds how far.
     private void Cover(ICharacterCollisionSource source, in CharacterCapsule capsule, Vector3 travel, float reach)
     {
         var pad = new Vector3(capsule.Radius + reach + _frame.TuningNow().SkinWidth);

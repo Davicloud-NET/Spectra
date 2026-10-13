@@ -33,15 +33,30 @@ public sealed class LuauMoverFailureTests
         "The mover failed: Position cannot be (0, 1E+30, 0): it takes three numbers, each within a billion units of the origin.")]
     [InlineData(
         "state.Velocity = Vector3.new(0, 0, math.huge)",
-        "The mover failed: Velocity cannot be (0, 0, Infinity): it takes three numbers and no more than 10000 units a second.")]
+        "The mover failed: Velocity cannot be (0, 0, Infinity): it takes three numbers and no more than 40000 units a second.")]
     [InlineData(
         "state.Velocity = Vector3.new(2e19, 0, 0)",
-        "The mover failed: Velocity cannot be (2E+19, 0, 0): it takes three numbers and no more than 10000 units a second.")]
+        "The mover failed: Velocity cannot be (2E+19, 0, 0): it takes three numbers and no more than 40000 units a second.")]
+    [InlineData(
+        "collision:Clip(Vector3.new(0, 50000, 0))",
+        "The mover failed: A vector to clip cannot be (0, 50000, 0): it takes three numbers and no more than 40000 in length.")]
     [InlineData("state.AirTicks = 300", "The mover failed: AirTicks cannot be 300: it takes a whole number from 0 to 255.")]
     [InlineData("state.Position = 'here'", "The mover failed: Unable to assign property Position. Vector3 expected, got string.")]
     [InlineData(
         "collision:Sweep(state.Position, Vector3.new(0 / 0, 0, 0))",
-        "The mover failed: A sweep cannot be (NaN, 0, 0): it takes three numbers and no more than 10000 units.")]
+        "The mover failed: A sweep cannot be (NaN, 0, 0): it takes three numbers and no more than 1000 units.")]
+    [InlineData(
+        "collision:Sweep(state.Position, Vector3.new(2000, 0, 0))",
+        "The mover failed: A sweep cannot be (2000, 0, 0): it takes three numbers and no more than 1000 units.")]
+    [InlineData(
+        "collision:Gather(state.Position, 2000)",
+        "The mover failed: The distance of a gather cannot be 2000: it takes a number from 0 to 1000.")]
+    [InlineData(
+        "collision:Sweep(Vector3.new(0, 5000, 0), Vector3.yAxis)",
+        "The mover failed: A place cannot be (0, 5000, 0): it is more than 1000 units from where the player began the tick.")]
+    [InlineData(
+        "collision:Gather(Vector3.new(0, 5000, 0), 0)",
+        "The mover failed: A place cannot be (0, 5000, 0): it is more than 1000 units from where the player began the tick.")]
     [InlineData(
         "collision:Gather(Vector3.new(0, 3e38, 0), 0)",
         "The mover failed: A place cannot be (0, 3E+38, 0): it takes three numbers, each within a billion units of the origin.")]

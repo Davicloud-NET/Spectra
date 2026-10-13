@@ -635,7 +635,11 @@ What the engine keeps to itself runs around the mover, in `CharacterSimulation.T
 
 **Touch reads the state.** A mover says what it stands on with `StandOn(normal, part)` and what its slide stopped at with `AddSlideContact(part)`. Left out, a part is touched only by where the tick ends.
 
-**What a mover may hand the engine** is bounded in `MoverLimits`: a place within a billion units of the origin, a velocity of no more than 10000 units a second (the cap `PlayerWrites` has), a sweep of no more than 10000 units. A value past that, or one that is no number, is an error at the line that wrote it. A sweep that leaves the volume the tick picked, as a dash does, picks a larger one.
+**What a mover may hand the engine** is bounded in `MoverLimits`: a place within a billion units of the origin, a velocity of no more than 40000 units a second, a sweep of no more than 1000 units and a gather that looks no further. A sweep or a gather starts no further than 1000 units from where the player began the tick. A value past that, or one that is no number, is an error at the line that wrote it.
+
+The speed is four times the cap `PlayerWrites` has. The fastest walk a script can set, with a sprint, a throw and a fall, stays under it, so `walk.luau` does not fail where the built-in mover, which has no cap, goes on. Past it a mover in Luau fails, and only a host that changes the tuning in C# gets there.
+
+A sweep that leaves the volume the tick picked, as a dash does, picks a larger one. The collision then builds the planes of all the mover reached, and keeps that stretch of the level for as long as the player is in it, also for the built-in mover and on the next Play. That is why the reach is 1000 units and no more: a tick at the fastest speed is 667.
 
 #### Coming and going
 
