@@ -38,7 +38,7 @@ Tests are xUnit v3 on Microsoft.Testing.Platform. Run a suite with `dotnet run`,
 | `SpectraEngine.Editor.Render.Tests` | shell controls rendered headless with real Skia |
 | `SpectraEngine.Entities.Tests` | the entity generator, `.sentdef`, the built-in classes, a no-code level played end to end |
 | `SpectraEngine.Physics.Tests` | Box3D binding and the character mover |
-| `SpectraEngine.Scripting.Tests` | the Luau shim and its binding, and the crash cases of a published console |
+| `SpectraEngine.Scripting.Tests` | the Luau shim and its binding, the crash cases of a published console, the files a project gets for luau-lsp, and the sample scripts luau-lsp checks |
 | `Spectra.Kitchen.Tests` | the cook, pack formats, determinism |
 | `SpectraEngine.Graphics.Tests` | pixel tests on a real GL driver |
 
@@ -188,6 +188,8 @@ Scripting
 - A node is asked through the class of what it carries. `NodeClass.KindOf` in Core picks it and `NodeMembers` calls that class's switches.
 - `Players.LocalPlayer.Character` is no node. One `ScriptPlayer` and one `ScriptCharacter` live for a play session, so two reads of either are equal in Luau.
 - A module runs inside the `require` that first asks for it, on the asker's native stack (`ModuleRunner`). It cannot wait: one that yields before it returns is ended there and fails for everyone.
+- An entity class reaches a script through its schema: an input is a method and an output is a signal. `EntityClassApi` in Core reads a schema that way, and the binding answers from it (`EntityMembers`). A member of the node's own class wins, then an input, then an output, then a child.
+- `door:Open()` and a listener's call are events in the scripts' share of the queue (`EntityWorld.QueueScriptInput`, `EntityWorld.Listeners`). Neither runs inside the call that made it. A listener is numbered on from the output's own wires.
 - A level's scripts run in a `LuauScriptRuntime`, one for each play session. A host sets `SceneManager.Scripts.RuntimeFactory`, `StartEntityWorld` makes the runtime and `StopEntityWorld` closes it. A thread that waits is an event in the entity queue (`EntityWorld.QueueScriptWake`).
 
 ## Things that fail quietly
@@ -226,6 +228,7 @@ Host
 - The entity world has one trace slot. `ent_watch` and the Logic view share it through `EntityTracePair.Join`. Set `SceneManager.EntityTrace` to one of them and the other goes quiet.
 - The scene tree learns what a node is, its entity class, its kind of light and whether it carries a script from a `SceneChange` and nowhere else. A part that carries a script is still a part in its kind, and only `SceneChange.HasScript` tells a UI. The node's setters raise `Scene.NodeKindChanged`. A light edited in place raises nothing, so whoever changes its kind calls `Scene.NotifyNodeKindChanged`, or the row keeps its old icon.
 - The engine publishes a level's wiring (`FrameSnapshot.LogicGraph`) only while a view asks for it through `EngineHost.RequestLogicView`. A new session has been asked for nothing.
+- The window sets `EditorDocument.Project` again after every save, with a new `ProjectLayout` for the same folder. What should happen once for a project compares `Root`, as `ScriptCommands` does, or it happens on every Ctrl+S.
 - A member or namespace named `Console` hides `System.Console` for the whole file.
 
 Span query
@@ -267,6 +270,10 @@ Entities and play
 - An input that reads `context.Parameter` says its type in `[EntityInput(Parameter = ...)]`, and an output that sends a value says it in `[EntityOutput(Parameter = ...)]`. Left out, the schema says it carries nothing, and the editor warns under every wire that gives it a parameter. `BuiltinParameterTypeTests` holds the list.
 - A typed output's `Fire` method handed a value no wire can carry, like a float that is not finite, fires nothing and warns once. It does not throw.
 - A `.sentdef` from before the types reads every input and output as `ParameterType.NotSaid`, which is not `None`. Judge nothing against it.
+- A part a script hides keeps its GPU mesh until Stop: `PartMembers` calls `Scene.KeepMeshWhileHidden` before it writes `IsRendered`. Anything else that writes `IsRendered` while a level plays builds the mesh again on every show, and only `PartVisibleMeshTests` sees that.
+- `AuthoredAttributes` reads a declared keyvalue as `EntityWorld.ParseKeyvalues` leaves the entity: the last pair its type can read, else the class's default. The editor's Properties shows the first pair, so a name written twice shows one value and runs with another.
+- Scripts start on the first tick, so none hears what fired while the level spawned, as `logic_auto` fires `OnMapSpawn`. A wire carries it. The first script that listens for such an output is warned once.
+- A listener is kept by node and name, not by entity. It outlives a despawn and a node that leaves the level. Whatever destroys a node for good has to end its connections in `NodeSignals`.
 - The character and its `CharacterTuning` outlive a play session. What a level changes on the tuning records in the play journal with a `TuningJournalKind`, or it is still there on the next Play. `PlayerSettingTests` catches a settable member of the character that records nothing.
 - The player's frame looks along `LookVector` (`CharacterFacing`). A player start and a teleport destination face along their node's +Z, so `character:Teleport(start.CFrame)` turns the player round.
 - The facing is `CharacterState.Yaw`, written by `CharacterSimulation` and not by the mover. A facing a teleport named holds until `TryTakeTeleport` is called. A host with no view calls it itself, or the facing never follows its commands again.
@@ -290,7 +297,7 @@ Luau
 - `LuauHost.PushFunction` keeps its delegate until the host closes. Make a method once and hand it out from a `MethodTable`, never on a read.
 - Scripts print at most `PrintCap.MaxPrintsPerTick` lines a tick, all scripts of a level together. Warnings and errors always pass. A test that prints more in one tick gets the rest as one warning.
 - A level with scripts and no `RuntimeFactory` plays without them and warns once.
-- A member a metatable answers by hand (`ObjectMembers`, `CFrameMembers`, `Vector3Members`) with no attribute works, and is missing from the definitions file and the reference.
+- A member a metatable answers by hand (`ObjectMembers`, `CFrameMembers`, `Vector3Members`, `Color3Members`) with no attribute works, and is missing from the definitions file and the reference.
 - Luau keeps a string's atom once it has asked. `LuauHost.SetAtoms` runs once, before anything reads an atom. A name that is not in the list reads as -1.
 - A class with `[ScriptLibrary]` or `[ScriptGlobals]` does nothing until `LuauScriptRuntime` calls its generated `ScriptInstall`. The description has it either way.
 - A script API summary is read from the `///` lines. A `/** */` comment is not read, and the member fails with `SPS002`.
@@ -301,12 +308,25 @@ Luau
 - `ChildWaits` answers `Wake` and `Drop` before `TaskLibrary`. A new kind of wait with a table of its own does the same, or `TaskLibrary.Drop` cancels its thread.
 - A module node and its file asked for by path are two modules. The one asked for by path has no `script`: the global is nil there, and the definitions file still types it `Instance`.
 - `require` is described and left out of `spectra.d.luau` (`LuauDefinitions.IsTheCheckersOwn`). The type checker's own `require` gives a module its type, and a declared one would return `any`.
-- `@assets` is the content root. A project's `.luaurc` has to say `"assets": "./Assets"`, or `luau-lsp` and the engine read one path two ways.
+- `@assets` is the content root. The editor writes a project's `.luaurc` with `"assets": "./Assets"` (`ScriptProjectFiles`), and a test holds the alias to `ModulePath`. A `.luaurc` of the person's own that lacks it has `luau-lsp` and the engine read one path two ways.
+- The editor writes `spectra.d.luau`, `.luaurc` and two files under `.vscode` into a project when a script of it opens (`ScriptProjectSetup`, called by `ScriptLauncher`). Only the first is ever written again. A `ScriptLauncher` made with no `ScriptEditorSetup` writes nothing, which is right for a test and wrong for a new host.
+- `luau-lsp` does not read a definitions file that starts with a byte order mark, and then knows no global. `ScriptProjectSetup` writes such a file again.
+- `LuauDefinitions.Write(LuauScriptApi.Description)` writes a file with no entity class. A host hands it `Description.WithEntityClasses(schemas)`. The editor's `ScriptDefinitions` makes the text by the calls `--export-script-types` makes, and a test compares the two as text. Change both.
+- An input or output named as a member of any class of nodes cannot be reached on such a node: the member wins. `EntityClassGapsTests` catches it for the built-in classes, and for any other class the level's scripts get one warning.
+- An output fired with text its type cannot read calls a listener with nothing, and warns once for that output.
+- The sender of a script's input is looked up only while the world has a trace. One queued before a watch was turned on has no sender.
+- `WireActivityTrace` leaves out what a script sent, so the Logic view shows no script traffic yet.
+- A listener whose script was switched off or whose thread was cancelled stays in `EntityWorld.Listeners` until its output fires next or `NodeSignals` looks them over. `ent_watch` counts it until then.
+- The door gives a member to the class `NodeClass.KindOf` names and to no other. A part that carries a light is a Part, and no script reaches its light.
+- A light's colour or brightness that is a number is still refused when the linear colour times the brightness is none.
+- `Color3.ToHsv` gives a hue of 1 for a red with as much green as blue, as Roblox prints. The editor's `ColorMath.SrgbToHsv` gives 0 for the same colour.
+- A class or global added to the script API needs a line in a clean sample under `Test/SpectraEngine.Scripting.Tests/Samples`, outside a comment and a string, or `ScriptSampleTests` fails. A sample with no `--!strict` is checked as a new project is, and then almost nothing is reported.
 - `require` finds `./`, `../` and `@self` from the file of the script function that calls it. A thread that begins with `require`, as in `task.spawn(require, path)`, has none and takes only `@assets` and a node.
 - The path rules are stricter than Luau's, since a script source has no folders: no `..` after a name, no name that ends in a dot, `@self` only from an `init.luau` in small letters.
 - While a module's file runs, `NodeNamingSink` holds the error that came last, and `ModuleRunner` takes it as the module's own failure. A module that fails for one it asked for is known by the error's text (`Refusal`) and not reported again.
 - A failed module stays failed until the next Play. One the host stopped runs again on the next ask, unless half the call limit was its own time or half the memory budget was taken while it ran (`ScriptModule.IsKept`).
 - `luau-lsp` 1.70.1 takes the definitions file as it is. Only its new solver (`--flag:LuauSolverV2=true`) refuses a write to a `read` property.
+- The tests that run luau-lsp (`-- -trait "Suite=LuauLsp"`) skip unless `SPECTRA_LUAU_LSP` holds the program's path. A green scripting suite without it says nothing about the definitions file. `luau-lsp analyze` exits 0 when it printed only lints, and 1 with no line named when it could not read a script.
 - Every class of nodes has `[string]: Instance` in the definitions file, so `workspace.Door` checks. The price: a name the checker does not know is a child, and `door:Open()` reads as `Cannot call a value of type Instance`.
 
 Tests and tools
@@ -320,8 +340,9 @@ Tests and tools
 - A Spectra.Kitchen test that needs the Luau library calls `RealScriptCheck.Require()` and carries `Suite=RealLuau`. It skips without the library and fails without the trait. A test file outside the binding with `spectra_luau` in a string fails `BindingSourceTests`.
 - `Data/cframe-studio.json` in the Bsp tests holds what Roblox Studio answered to `cframe-probe.luau`. A new case in `CFrameProbeCases` fails both comparisons until Studio has been asked again. An answer the engine keeps against Studio's goes in `KeptOurs` with its reason.
 - Studio's log file cuts a printed message at about 1000 characters. What a probe prints is copied from the Output window, or printed one case a line.
+- The scripts and quoted lines of the site's `write-your-first-script.mdx` are held by the two `FirstScriptGuideTests`. A code block added there has to be a sample file.
 - `ScriptCostTests` fails on an allocation. Its table of times is explicit and runs only with `-- -explicit only`, so a normal run reports one test as not run.
-- Everything that opens a script goes through `ScriptLauncher`, and it starts a program only for a `.luau` file (`ScriptOpenPlan.IsScriptFile`), since a level can name any file as its script. No test starts a program: `FakeProgramStarter` keeps what was asked.
+- Everything that opens a script goes through `ScriptLauncher`, and it starts a program only for a `.luau` file (`ScriptOpenPlan.IsScriptFile`), since a level can name any file as its script. No test starts a program, except `LuauLspTests`, which starts luau-lsp where the variable names it: `FakeProgramStarter` keeps what was asked.
 - An agent's worktree keeps about 4.6 GB of build output. Delete `bin` and `obj` in a worktree once its branch is merged, or the drive fills.
 - A build that runs out of disk leaves truncated files in `obj` that the next build takes for up to date. Delete `bin` and `obj`.
 - A save stamps `spectramap` with `EngineInfo.MapFormatVersion`. Raise it and every fixture that compares saved bytes has to name the new number.
