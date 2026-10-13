@@ -345,6 +345,10 @@ internal sealed class SceneBvh
         int newParent = AllocateNode();
         _nodes[newParent].Parent = oldParent;
         _nodes[newParent].FatBox = Union(leafBox, _nodes[sibling].FatBox);
+
+        // Before the walk up, or the turn passes over a parent that was
+        // made on top of a tall side.
+        _nodes[newParent].Height = _nodes[sibling].Height + 1;
         _nodes[newParent].Child1 = sibling;
         _nodes[newParent].Child2 = leaf;
         _nodes[sibling].Parent = newParent;
