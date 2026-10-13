@@ -3,10 +3,9 @@ using SpectraEngine.Core.Entities;
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // The calls of listeners that wait for their turn in the level's queue. A
-// signal fired here calls nobody where it stands: each listener it has at
-// that moment gets a wake of its own, in the one order of wires, thinks and
-// waiting threads. The queue hands wakes back in the order they were made,
-// so the calls are kept in a line and the first is the one that is due.
+// signal fired here calls nobody where it stands: each listener it has then
+// gets a wake of its own, in the one order of wires, thinks and threads.
+// Wakes come back in the order they were made, so the calls stand in a line.
 internal sealed class DeferredCalls
 {
     // The low half of a waiting thread's token is its slot, which is never

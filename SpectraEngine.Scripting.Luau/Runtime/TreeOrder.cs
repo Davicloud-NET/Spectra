@@ -3,11 +3,10 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// Puts nodes into the order of the tree they are in: a node before what is
-// below it, and children in their parent's order. It walks up from each
-// node and then down again along those paths only, so it is paid by the
-// nodes handed in and by the children of the nodes where their paths part,
-// never by the rest of the level.
+// Puts nodes into the order of their tree: a node before what is below it,
+// and children in their parent's order. It walks up from each node and down
+// again along those paths only. So it is paid by the nodes handed in and by
+// the children of the nodes where their paths part, not by the level.
 internal sealed class TreeOrder
 {
     private readonly Dictionary<SceneNode, Mark> _marks = [];

@@ -5,10 +5,9 @@ using SpectraEngine.Core.Scripting;
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // The tags of a level's nodes while it plays. They live here and on no
-// node, so Stop leaves none behind. This tells the table who has what and
-// fires the signals of CollectionService: when a node in the level's tree
-// gets or loses a tag, and when a tagged node comes into the tree or
-// leaves it.
+// node, so Stop leaves none behind. This fires the signals of
+// CollectionService: when a node in the level's tree gets or loses a tag,
+// and when a tagged node comes into the tree or leaves it.
 internal sealed class LevelTags
 {
     private readonly LuauHost _host;
