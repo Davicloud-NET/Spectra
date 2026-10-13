@@ -65,6 +65,7 @@ public sealed class ScriptCostTests
         ("read a member a class two above declares", "local _ = lamp.Name"),
         ("read a number attribute of an entity", "local _ = sign:GetAttribute('speed')"),
         ("read a Color3 attribute of an entity", "local _ = sign:GetAttribute('tint')"),
+        ("show and hide a part", "part.Visible = i % 2 == 0"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
