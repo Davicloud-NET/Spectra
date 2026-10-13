@@ -43,6 +43,13 @@ public static class LuauDefinitions
                 WriteExternType(text, described, api.ChildTypeOf(described.Name));
         }
 
+        // After every class: an entity class extends one of them.
+        foreach (ScriptClassDescription entity in api.EntityClasses)
+        {
+            text.Append('\n');
+            WriteExternType(text, entity, api.ChildTypeOf(entity.Extends));
+        }
+
         foreach (ScriptLibraryDescription library in api.Libraries)
         {
             text.Append('\n');
@@ -257,6 +264,7 @@ public static class LuauDefinitions
         signature.Returns.Length == 0 ? "()" : signature.Returns;
 
     // A signal that hands over nothing takes the empty pack, which is "()".
+    // One that hands over any values at all takes "...any".
     private static string SignalOf(ScriptSignalDescription signal)
     {
         if (signal.Parameters.Count == 0)
@@ -267,6 +275,8 @@ public static class LuauDefinitions
         {
             if (i > 0)
                 type.Append(", ");
+            if (signal.Parameters[i].Name == "...")
+                type.Append("...");
             type.Append(signal.Parameters[i].Type);
         }
 

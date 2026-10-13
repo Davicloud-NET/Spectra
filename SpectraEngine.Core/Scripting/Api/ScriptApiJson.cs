@@ -28,6 +28,7 @@ public static class ScriptApiJson
             WriteArray(writer, "libraries", api.Libraries, WriteLibrary);
             WriteArray(writer, "globals", api.Globals, WriteProperty);
             WriteArray(writer, "functions", api.Functions, WriteFunction);
+            WriteArray(writer, "entityClasses", api.EntityClasses, WriteClass);
             writer.WriteEndObject();
         });
     }

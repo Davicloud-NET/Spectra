@@ -141,7 +141,8 @@ public sealed class LuauDefinitionsTests
           ],
           "libraries": [],
           "globals": [],
-          "functions": []
+          "functions": [],
+          "entityClasses": []
         }
 
         """;

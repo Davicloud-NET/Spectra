@@ -22,6 +22,22 @@ public sealed record ScriptApiDescription
     /// <summary>The global functions, such as <c>wait</c>.</summary>
     public IReadOnlyList<ScriptFunctionDescription> Functions { get; init; } = [];
 
+    /// <summary>
+    /// The entity classes a level can use, in the order of their names: each
+    /// input a method and each output a signal. Empty until
+    /// <see cref="WithEntityClasses"/> has read them from schemas, since a
+    /// build's own description knows no level.
+    /// </summary>
+    public IReadOnlyList<ScriptClassDescription> EntityClasses { get; init; } = [];
+
+    /// <summary>
+    /// This description with the classes of the schemas as its
+    /// <see cref="EntityClasses"/>. The definitions file and the reference
+    /// then have them.
+    /// </summary>
+    public ScriptApiDescription WithEntityClasses(IEnumerable<Entities.EntitySchema> schemas) =>
+        this with { EntityClasses = EntityClassApi.Describe(schemas, this) };
+
     /// <summary>The class or value type of that name, or null.</summary>
     public ScriptClassDescription? FindClass(string name)
     {

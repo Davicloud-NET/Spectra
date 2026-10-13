@@ -23,6 +23,11 @@
     <Compile Include="..\SpectraEngine.Bsp.Tests\CapturingLogger.cs" Link="CapturingLogger.cs" />
   </ItemGroup>
 
+  <!-- The built-in entity classes: a script presses a real button and opens a real door. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\SpectraEngine.Entities\SpectraEngine.Entities.csproj" />
+  </ItemGroup>
+
   <!-- Puts the shared library beside the tests when it has been built. -->
   <Import Project="..\..\native\Luau.targets" />
 
