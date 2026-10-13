@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using SpectraEngine.Core.Scripting.Api;
 using SpectraEngine.Scripting.Luau;
 using SpectraEngine.Scripting.Luau.Runtime;
@@ -82,12 +81,31 @@ public sealed class ScriptSampleTests
             print(a + a) --> old: 'Vector3' --> new: Operator '+'
             """.ReplaceLineEndings("\n"));
 
-        sample.Expected(newSolver: false).ShouldBe(
+        sample.Expected(isNewSolver: false).ShouldBe(
             new Dictionary<int, string> { [2] = "both say this", [4] = "'Vector3'" });
-        sample.Expected(newSolver: true).ShouldBe(
+        sample.Expected(isNewSolver: true).ShouldBe(
             new Dictionary<int, string> { [2] = "both say this", [3] = "read-only", [4] = "Operator '+'" });
         sample.MarkedLines.ShouldBe([2, 3, 4]);
         sample.Code.ShouldBe("local a = 1\na.b = 2\na.c = 3\nprint(a + a)\n");
+    }
+
+    [Fact]
+    public void A_name_in_a_string_or_in_a_comment_is_no_use_of_it()
+    {
+        var sample = new ScriptSample("Scripts/x.luau", """
+            local lamp = workspace:FindFirstChildOfClass("SpotLight") -- or a PointLight
+            if lamp and lamp:IsA('Light') then
+            	print(`{lamp.Name} is a Folder`)
+            	local part: Part = lamp.Parent
+            end
+            """.ReplaceLineEndings("\n"));
+
+        sample.Uses("SpotLight").ShouldBeFalse();
+        sample.Uses("PointLight").ShouldBeFalse();
+        sample.Uses("Light").ShouldBeFalse();
+        sample.Uses("Folder").ShouldBeFalse();
+        sample.Uses("Part").ShouldBeTrue();
+        sample.Uses("workspace").ShouldBeTrue();
     }
 
     [Fact]
@@ -123,9 +141,5 @@ public sealed class ScriptSampleTests
         new LuauSyntaxCheck().Check(Encoding.UTF8.GetBytes(sample.Text)).ShouldBeNull();
     }
 
-    private static bool IsUsedCleanly(string name)
-    {
-        var word = new Regex($@"\b{Regex.Escape(name)}\b");
-        return ScriptSamples.Clean.Any(sample => word.IsMatch(sample.CodeWithoutComments));
-    }
+    private static bool IsUsedCleanly(string name) => ScriptSamples.Clean.Any(sample => sample.Uses(name));
 }

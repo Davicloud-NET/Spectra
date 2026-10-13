@@ -35,9 +35,9 @@ internal static partial class LuauLsp
     }
 
     // Runs "luau-lsp analyze" in the project's folder on the scripts named,
-    // and hands back everything it said of them.
-    public static async Task<LuauLspDiagnostic[]> Analyze(
-        string program, SampleProject project, IEnumerable<ScriptSample> samples, bool newSolver)
+    // and hands back how it ended and everything it said of them.
+    public static async Task<LuauLspRun> Analyze(
+        string program, SampleProject project, IEnumerable<ScriptSample> samples, bool isNewSolver)
     {
         var start = new ProcessStartInfo(program)
         {
@@ -53,7 +53,7 @@ internal static partial class LuauLsp
             start.ArgumentList.Add(argument);
 
         // Said for the old solver too, so a new default cannot make both runs the same.
-        start.ArgumentList.Add("--flag:LuauSolverV2=" + (newSolver ? "true" : "false"));
+        start.ArgumentList.Add("--flag:LuauSolverV2=" + (isNewSolver ? "true" : "false"));
         foreach (ScriptSample sample in samples)
             start.ArgumentList.Add(SampleProject.AssetsFolder + "/" + sample.ContentPath);
 
@@ -72,7 +72,8 @@ internal static partial class LuauLsp
             Assert.Fail($"luau-lsp did not end within {Patience.TotalMinutes} minutes.");
         }
 
-        return Parse(await output + "\n" + await errors);
+        string said = await output + "\n" + await errors;
+        return new LuauLspRun(process.ExitCode, Parse(said), said);
     }
 
     // A message can run over several lines. Those that follow its first
