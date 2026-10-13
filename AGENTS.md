@@ -190,6 +190,8 @@ Scripting
 - A module runs inside the `require` that first asks for it, on the asker's native stack (`ModuleRunner`). It cannot wait: one that yields before it returns is ended there and fails for everyone.
 - An entity class reaches a script through its schema: an input is a method and an output is a signal. `EntityClassApi` in Core reads a schema that way, and the binding answers from it (`EntityMembers`). A member of the node's own class wins, then an input, then an output, then a child.
 - `door:Open()` and a listener's call are events in the scripts' share of the queue (`EntityWorld.QueueScriptInput`, `EntityWorld.Listeners`). Neither runs inside the call that made it. A listener is numbered on from the output's own wires.
+- `Touched` and `TouchEnded` of a part are found by the pass that tells trigger entities (`TouchTracker`, with `PartTouches`). A script's listener sits in `EntityWorld.Listeners` under the node and a name of `TouchSignal`, and only a node with one is measured.
+- Tags and the attributes scripts set live in the runtime (`TagTable`, `AttributeTable`) and on no node. Nothing of them is saved or journalled, and an entity never sees them: a keyvalue's name a script sets is hidden from scripts only.
 - A level's scripts run in a `LuauScriptRuntime`, one for each play session. A host sets `SceneManager.Scripts.RuntimeFactory`, `StartEntityWorld` makes the runtime and `StopEntityWorld` closes it. A thread that waits is an event in the entity queue (`EntityWorld.QueueScriptWake`).
 
 ## Things that fail quietly
@@ -229,6 +231,9 @@ Host
 - The scene tree learns what a node is, its entity class, its kind of light and whether it carries a script from a `SceneChange` and nowhere else. A part that carries a script is still a part in its kind, and only `SceneChange.HasScript` tells a UI. The node's setters raise `Scene.NodeKindChanged`. A light edited in place raises nothing, so whoever changes its kind calls `Scene.NotifyNodeKindChanged`, or the row keeps its old icon.
 - The engine publishes a level's wiring (`FrameSnapshot.LogicGraph`) only while a view asks for it through `EngineHost.RequestLogicView`. A new session has been asked for nothing.
 - The window sets `EditorDocument.Project` again after every save, with a new `ProjectLayout` for the same folder. What should happen once for a project compares `Root`, as `ScriptCommands` does, or it happens on every Ctrl+S.
+- `LogicPlayInfo.Recent` is two rings merged by number, wires and scripts. Add a wire's event with `LogicRecentEvents.Add` and a script's with `AddOfScript`, or script traffic pushes the wires out.
+- A card in the Logic view that is no stub is not always an entity: a script's card is neither, and a node can have one of each. Ask `LogicCard.IsEntity`. A script's edge has no `WireIndices`, and code that reads `WireIndices[0]` of any edge throws on one.
+- A Logic layout that only scripts caused carries `LogicArrangementChange.ByScripts` and must not ask for a fit, or the view jumps each time a script connects.
 - A member or namespace named `Console` hides `System.Console` for the whole file.
 
 Span query
@@ -273,7 +278,12 @@ Entities and play
 - A part a script hides keeps its GPU mesh until Stop: `PartMembers` calls `Scene.KeepMeshWhileHidden` before it writes `IsRendered`. Anything else that writes `IsRendered` while a level plays builds the mesh again on every show, and only `PartVisibleMeshTests` sees that.
 - `AuthoredAttributes` reads a declared keyvalue as `EntityWorld.ParseKeyvalues` leaves the entity: the last pair its type can read, else the class's default. The editor's Properties shows the first pair, so a name written twice shows one value and runs with another.
 - Scripts start on the first tick, so none hears what fired while the level spawned, as `logic_auto` fires `OnMapSpawn`. A wire carries it. The first script that listens for such an output is warned once.
-- A listener is kept by node and name, not by entity. It outlives a despawn and a node that leaves the level. Whatever destroys a node for good has to end its connections in `NodeSignals`.
+- A listener is kept by node and name, not by entity. It outlives a despawn and a node that leaves the level. So do a node's tags and the attributes scripts set. Whatever destroys a node for good has to end its connections in `NodeSignals` and take it out of `TagTable` and `AttributeTable`.
+- A solid part is touched within two of the skins the player says (`IPlayerPresence.SkinWidth`). What the mover leaves in the state is touched whatever the gap: `GroundNodeId` while grounded, and `SlideContacts`, the parts its slide stopped at. A mover that leaves both empty misses a corner the player glances off at speed.
+- `CharacterSimulation.Tick` clears `SlideContacts` before the mover runs, so a mover writes them on every tick.
+- A world brush fires no touch, loose or baked, and listening to one is an error (`TouchSignal.WhyNone`). A subtractive part fires none either. A mesh is touched by the box around it, and under a baked map it is not loaded and nothing touches it: the log warns once.
+- A touch tells a trace nothing, so `ent_watch` and the Logic view do not show it.
+- The mover builds the planes of every solid part near the player on each tick, which allocates. An allocation test of touch uses parts with `CanCollide` off, or a fake player.
 - The character and its `CharacterTuning` outlive a play session. What a level changes on the tuning records in the play journal with a `TuningJournalKind`, or it is still there on the next Play. `PlayerSettingTests` catches a settable member of the character that records nothing.
 - The player's frame looks along `LookVector` (`CharacterFacing`). A player start and a teleport destination face along their node's +Z, so `character:Teleport(start.CFrame)` turns the player round.
 - The facing is `CharacterState.Yaw`, written by `CharacterSimulation` and not by the mover. A facing a teleport named holds until `TryTakeTeleport` is called. A host with no view calls it itself, or the facing never follows its commands again.
@@ -315,7 +325,16 @@ Luau
 - An input or output named as a member of any class of nodes cannot be reached on such a node: the member wins. `EntityClassGapsTests` catches it for the built-in classes, and for any other class the level's scripts get one warning.
 - An output fired with text its type cannot read calls a listener with nothing, and warns once for that output.
 - The sender of a script's input is looked up only while the world has a trace. One queued before a watch was turned on has no sender.
-- `WireActivityTrace` leaves out what a script sent, so the Logic view shows no script traffic yet.
+- `WireActivityTrace` leaves out what a script sent, so the wires' recent events stay the wires'. `ScriptWireActivity` keeps what scripts send and hear for the Logic view, only while a view asks.
+- A signal and a connection have userdata tags of their own, so `typeof` names them as Roblox does. What reads an object off the stack by `ScriptTags.Object` alone finds neither: use `ScriptTags.TryGet` or `ScriptContext.TryGetObject`.
+- A listener carries who it is: `ScriptListeners.Add(node, name, listener, by)`. Added without `by`, it is called as before and the Logic view draws no wire for it.
+- A script's node is `LuauScript.Owner`. `ScriptStarter` sets it, and it is what tells the level a script stopped. A script started any other way, such as one under a clone, sets it and is added there too, or it has no card and its sent wires stay after it is switched off. A module's `LuauScript` has the owner of whoever asked first.
+- What scripts hear is read from the listeners at each capture. What they sent is counted from when a view asks.
+- While a level is watched, `LuauScriptRuntime.AfterSimulation` hides every listener nothing can call (`ScriptListeners.Hide`). It removes none: a watched level must queue what an unwatched one does.
+- A signal a script sets off (`AttributeChanged`, a tag's two) is fired through `DeferredCalls`. Each listener's call is queued with `EntityWorld.QueueScriptCall` and comes back through `IScriptRuntime.Wake` and `Drop`, in the order they were made.
+- Tags and the attributes scripts set are outside `MemoryBudget`. `AttributeLimits` and `TagLimits` bound them, and `AttributeMethods` and `TagMethods` do the refusing. What is put into the tables directly goes past the checks.
+- A tag's list keeps a node that lost the tag until `TagTable.InOrder` is asked, and is put in order only after a node joined or `NodeReparented` fired. Read a tag's nodes through `InOrder`.
+- A property or signal of a static script class may take the `ScriptContext` in front of the object. One with `Sets` may not.
 - A listener whose script was switched off or whose thread was cancelled stays in `EntityWorld.Listeners` until its output fires next or `NodeSignals` looks them over. `ent_watch` counts it until then.
 - The door gives a member to the class `NodeClass.KindOf` names and to no other. A part that carries a light is a Part, and no script reaches its light.
 - A light's colour or brightness that is a number is still refused when the linear colour times the brightness is none.
