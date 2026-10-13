@@ -61,9 +61,12 @@ internal sealed class ScriptCommands
 
             // Another project is another folder, with refusals of its own.
             _refusalSaid = null;
-            _ = RefreshProjectAsync();
+            ProjectRefresh = RefreshProjectAsync();
         };
     }
+
+    /// <summary>The refresh the project that was opened last started. Done when its line is in Output.</summary>
+    internal Task ProjectRefresh { get; private set; } = Task.CompletedTask;
 
     /// <summary>
     /// Brings the open project's definitions file up to this build, when the

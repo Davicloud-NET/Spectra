@@ -46,10 +46,17 @@ public sealed class ScriptCommandsProjectTests : IDisposable
 
     private string DefinitionsPath => _project.Layout.Resolve(ScriptProjectFiles.Definitions);
 
+    // Opens the project and waits for what that starts off this thread.
+    private Task OpenProject()
+    {
+        _document.SetProject(_project.Layout);
+        return _commands.ProjectRefresh.WaitAsync(Patience, TestContext.Current.CancellationToken);
+    }
+
     [Fact]
     public async Task The_first_script_opened_sets_the_project_up_and_output_says_so_once()
     {
-        _document.SetProject(_project.Layout);
+        await OpenProject();
 
         await _commands.OpenAsync("Scripts/Spin.luau");
         await _commands.OpenAsync("Scripts/Spin.luau", line: 1);
@@ -66,7 +73,7 @@ public sealed class ScriptCommandsProjectTests : IDisposable
     {
         Directory.CreateDirectory(DefinitionsPath);
         File.WriteAllText(_project.Layout.Resolve(".vscode"), "not a folder");
-        _document.SetProject(_project.Layout);
+        await OpenProject();
 
         await _commands.OpenAsync("Scripts/Spin.luau");
         await _commands.OpenAsync("Scripts/Spin.luau", line: 1);
@@ -87,7 +94,7 @@ public sealed class ScriptCommandsProjectTests : IDisposable
     public async Task A_refusal_that_was_put_right_and_comes_back_is_said_again()
     {
         Directory.CreateDirectory(DefinitionsPath);
-        _document.SetProject(_project.Layout);
+        await OpenProject();
         await _commands.OpenAsync("Scripts/Spin.luau");
 
         Directory.Delete(DefinitionsPath);
@@ -117,13 +124,10 @@ public sealed class ScriptCommandsProjectTests : IDisposable
     public async Task Opening_a_project_brings_its_old_definitions_file_up_and_says_so()
     {
         File.WriteAllText(DefinitionsPath, "-- an older script API\n");
-        var said = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _shell.Output.Appended += _ => said.TrySetResult();
 
-        _document.SetProject(_project.Layout);
+        // Nobody asks for it: opening the project is what brings the file up.
+        await OpenProject();
 
-        // The write is off this thread. A file that is never brought up fails here.
-        await said.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
         Said.ShouldBe(
             [(OutputSeverity.Info, "Wrote spectra.d.luau again. It did not hold this engine's script API.")]);
         File.ReadAllText(DefinitionsPath).ShouldBe(Api);
@@ -133,9 +137,7 @@ public sealed class ScriptCommandsProjectTests : IDisposable
     [Fact]
     public async Task Opening_a_project_that_was_never_set_up_writes_nothing()
     {
-        _document.SetProject(_project.Layout);
-
-        await _commands.RefreshProjectAsync();
+        await OpenProject();
 
         Said.ShouldBeEmpty();
         File.Exists(DefinitionsPath).ShouldBeFalse();
