@@ -68,6 +68,13 @@ internal static class TreeCase
             "task.wait() return 'ended'", true, "ended"),
         ("local kept = {} for i = 1, 20000 do local made = Instance.new('Folder') made:Destroy() kept[i] = made end",
             false, "still there or still held"),
+
+        // Destroyed parts that keep enough to have Luau's collector step
+        // and end cycles from inside Destroy and SetAttribute.
+        ("local blob = string.rep('x', 65536) for i = 1, 200 do local made = Instance.new('Part') " +
+            "made:SetAttribute('Blob', blob) made:Destroy() end return 'weighed'", true, "weighed"),
+        ("local kept = {} for i = 1, 8 do kept[i] = Instance.new('Folder') kept[i]:Destroy() " +
+            "kept[i]:SetAttribute('Blob', string.rep('y', 65536)) end return #kept[8]:GetAttribute('Blob')", true, "65536"),
     ];
 
     internal static int Run()
