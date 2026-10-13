@@ -14,6 +14,7 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 internal sealed partial class ScriptCharacter : ScriptObject
 {
     private readonly PlayerWrites _door;
+    private MoverSlot? _movers;
 
     public ScriptCharacter(PlayerWrites door) => _door = door;
 
@@ -71,8 +72,6 @@ internal sealed partial class ScriptCharacter : ScriptObject
     private string? SetWalkSpeed(float value) => _door.TrySetWalkSpeed(value, out string? refused) ? null : refused;
 
     private string? SetJumpHeight(float value) => _door.TrySetJumpHeight(value, out string? refused) ? null : refused;
-
-    private MoverSlot? _movers;
 
     /// <summary>Has a function move the player in place of the built-in mover. It is called on every tick with the player's state, what the player asks for, the collision, the tuning and the step in seconds, and where it leaves the state is where the player is. Nil puts the built-in mover back, and so does Stop. A mover that fails or waits is taken out, and the built-in mover moves the player for the rest of the level.</summary>
     [ScriptMethod(Parameters = MoverSlot.Signature)]
