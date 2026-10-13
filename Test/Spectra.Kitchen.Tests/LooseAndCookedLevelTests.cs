@@ -456,6 +456,18 @@ public class LooseAndCookedLevelTests
         played.Cooked.Where(line => line.Contains(TaggingScript.Mark)).ShouldBe(TaggingScript.Lines);
     }
 
+    // A made node, a clone of a part, a mesh, a light, a door and a script,
+    // another parent and Destroy. A baked level has no brush on a world
+    // brush's node and binds no mesh, and still answers each as the loose one.
+    [Fact]
+    public void What_a_script_makes_clones_moves_and_destroys_comes_out_the_same_from_loose_files_and_from_the_pack()
+    {
+        Played played = Play();
+
+        played.Loose.Where(line => line.Contains(MakingScript.Mark)).ShouldBe(MakingScript.Lines);
+        played.Cooked.Where(line => line.Contains(MakingScript.Mark)).ShouldBe(MakingScript.Lines);
+    }
+
     // Skips where Luau is not built. The level is cooked and played once for
     // the whole class.
     private static Played Play()

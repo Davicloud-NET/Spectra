@@ -47,6 +47,7 @@ internal static class AskedLevel
         project.WriteAsset(TaggingScript.Path, TaggingScript.Text);
 
         project.WriteAsset(TouchingScript.Path, TouchingScript.Text);
+        project.WriteAsset(MakingScript.Path, MakingScript.Text);
 
         // The prop's model, with what it wears.
         foreach (string path in new[]
@@ -119,6 +120,9 @@ internal static class AskedLevel
 
         // Last under the root, so it starts after every other script.
         root.CreateChild(TaggingScript.Node).Script = new Script(TaggingScript.Path);
+
+        // After it, and it waits before it makes anything.
+        root.CreateChild(MakingScript.Node).Script = new Script(MakingScript.Path);
         return scene;
     }
 

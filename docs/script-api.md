@@ -135,7 +135,7 @@ public static partial Vector3 Position(SceneNode node);
 
 The generator writes the body, which reads the same member of the door. So what a script reads is what it wrote. The member itself is added to `ScriptWrites` first: a `SettableMemberId`, a row in its list, a case in `Read` and in `TryWrite`, and a `JournalKind`.
 
-The door takes a string, a number, a boolean, a `Vector3`, a `CFrame` or a `Color3`, and `ScriptContext` has a writer for each. A new kind is a `MemberValueKind`, a writer there, and a case in the two switches of `ScriptClassEmitter`.
+The door takes a string, a number, a boolean, a `Vector3`, a `CFrame` or a `Color3`, and `ScriptContext` has a writer for each. It also takes a node that may be none, which is what `Parent` is: such a property is declared as `SceneNode?`. A new kind is a `MemberValueKind`, a writer there, and a case in the two switches of `ScriptClassEmitter`.
 
 A member not every node has says so in its row: `Classes` names the script classes that have it, as `Range` names the four lights with a range. `Read` then gives no value for a node of another class, and the property is declared on each class the row names. The class is the one `NodeClass.KindOf` gives, so a part that carries a light has the members of a part and none of a light. A write the node cannot take is refused in the door, with words that say what to do: a switch of a world brush says to convert the brush to a part. A write of the value the member already has records nothing.
 
@@ -215,6 +215,25 @@ A tag's list holds the nodes that are in the level's tree. It is put into the tr
 Neither table is in the memory Luau counts for the scripts, so `MemoryBudget` does not see them. They have bounds of their own, `AttributeLimits` and `TagLimits` in Core: an attribute's string is at most 65536 bytes long, a node holds at most 256 attributes and keeps the signals of at most 256 names, a tag is at most 256 bytes long and a node has at most 256 tags. A script that passes one gets an error that names it. Whoever puts a level's own tags and attributes into the tables goes past these checks, and has to hold them to the same numbers.
 
 Nothing is kept for what cannot be: `GetAttributeChangedSignal` hands out one signal that never fires for every name no attribute can have. A name whose last attribute is gone and a tag no node has stay for a while, so that one which comes and goes is made once. They are let go when there are twice as many as were left the last time (`AttributeTable.NameOf`, `LevelTags.LookOver`). A tag stays past that while a node has it, a listener waits on one of its signals, or a script still holds one. Luau says which signals are held, after a full collection, which the look-over runs when it has to ask.
+
+### What a script makes, clones, moves and destroys
+
+A script changes the level's tree through `TreeWrites` in Core, which `ScriptWrites.Tree` hands out, and through nothing else. `Instance.new` is `TryMake`, `Clone` is `TryClone` and `Destroy` is `TryDestroy`. `Parent` is a member of the door like any other, and its write comes to `TrySetParent`.
+
+- Before a parent's list of children changes, the play journal keeps the list as it is, once (`TreeJournal`). Stop puts every kept list back and moves only a node that is out of place. So a world brush never leaves the scene, and nothing recompiles.
+- A node a script made carries a mark (`TreeWrites.IsMade`). What a level changes on it records nothing, since the node is gone at Stop. A destroyed node carries another (`TreeWrites.IsDestroyed`) until Stop.
+- A node keeps its place in the world when its parent changes, as a Roblox part does. A light does too: here it is a node with a place of its own, where a Roblox light is wherever its part is.
+- `MadeNodes` says which classes `Instance.new` makes and what a new node of each is. `TreeLimits` bounds how many made nodes there are at a time and how deep a tree goes.
+- An entity at or below a node that comes into the level is queued for the end of the tick (`EntityWorld.QueueSpawn`), and one whose node leaves is queued for its removal. Entities that come together are all built, named and wired before the first of them spawns, as those of the level are.
+
+`NodeLifetime` in the binding does what the runtime owes a node:
+
+- A script at or below a node that comes into the level starts at the end of the tick, after the entities (`IScriptRuntime.StartEntered`). One whose node leaves is switched off, for a while or for good, and starts afresh when the node comes back.
+- For a destroyed node, `Forget` ends the connections to what it fires (`NodeSignals.Forget`), ends the waits on it (`ChildWaits.Destroyed`) and takes its tags and attributes away. Whatever else the runtime comes to keep by node needs a line there, or it is kept for every part a level ever spawned.
+- A made node that is in no level is listed in `LooseNodes`. When there are twice as many as were left the last time, and when the bound on made nodes is reached, Luau collects in full, and a tree none of whose nodes a script still holds stops counting.
+- A clone gets the tags and attributes of its source from the two tables (`TagTable.Copy`, `AttributeTable.Copy`). What seeds a level's own into the tables is copied with them.
+
+Ending a thread can run a script, which can come back into `NodeLifetime`. So a call there takes a list of its own and never walks one that another call may change.
 
 Two more things stay by hand:
 
@@ -331,7 +350,8 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `NodeClassScriptTests` reads `NodeMembers` and fails when a class of nodes is sent to another script class than the one of its name.
 - `SettableListTests` holds the settable properties of the description equal to the list of `ScriptWrites`, by class, name, type and member.
 - `SettableMemberClassTests` in `SpectraEngine.Bsp.Tests` holds the classes a row names equal to the nodes the member reads a value on.
-- `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop.
+- `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop. Between the writes it makes, clones, moves and destroys nodes, from C# (`RandomTree`) and from scripts (`WritingScript`). A new kind of value needs a case in `RandomWrites`.
+- `SpawnCostTests` fails when a level that spawns and destroys a part on every tick still holds one of the destroyed parts, anywhere in the engine or the runtime. Its table of times runs when asked for, like the ones below.
 - `PlayerSettingTests` sets every settable property of the character from a script and compares what outlives a play session after Stop. It also tries every name on the player's objects: what takes a value must be what the description says a script can set.
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global, and that it has no `require`.
 - `ScriptSampleTests` fails when no clean sample script names a class or uses a global. See [Checked by luau-lsp](#checked-by-luau-lsp).
