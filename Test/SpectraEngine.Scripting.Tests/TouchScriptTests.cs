@@ -36,6 +36,24 @@ public sealed class TouchScriptTests
     }
 
     [Fact]
+    public void A_jump_off_a_part_ends_the_touch_and_landing_on_it_again_starts_another()
+    {
+        using var level = new ScriptLevel();
+        level.AddScript(TouchParts.Pad(level, "Pad", x: 0f), TouchParts.Reporter);
+        level.Play().Tick(120);
+
+        Tick(level, new CharacterCommand { Buttons = CharacterButtons.Jump });
+        level.Tick(10);
+        level.Printed.ShouldBe(["Pad touched true", "Pad left true"]);
+        Walker(level).State.Grounded.ShouldBeFalse();
+
+        level.Tick(110);
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["Pad touched true", "Pad left true", "Pad touched true"]);
+    }
+
+    [Fact]
     public void A_wall_the_player_pushes_against_is_touched_once_for_as_long_as_the_player_pushes()
     {
         using var level = new ScriptLevel();

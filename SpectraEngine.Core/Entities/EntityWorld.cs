@@ -111,8 +111,9 @@ public sealed class EntityWorld
     public IPlayerPresence? Player { get; set; }
 
     /// <summary>
-    /// Which sensing entities the player is inside. An entity registers its
-    /// brushes here to hear touches start and end.
+    /// Which sensing entities the player is inside, and which parts scripts
+    /// listen to the player touches. An entity registers its brushes here to
+    /// hear touches start and end.
     /// </summary>
     public TouchTracker Touches { get; }
 
@@ -155,8 +156,9 @@ public sealed class EntityWorld
 
     /// <summary>
     /// The functions scripts connected to what nodes fire. An output looks
-    /// here when it fires, and <see cref="Scripts"/> is handed each listener
-    /// when its turn in the queue comes. <see cref="Deactivate"/> empties it.
+    /// here when it fires, and so does the touch pass for a part the player
+    /// touches. <see cref="Scripts"/> is handed each listener when its turn
+    /// in the queue comes. <see cref="Deactivate"/> empties it.
     /// </summary>
     public ScriptListeners Listeners { get; } = new();
 
