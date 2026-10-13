@@ -6,9 +6,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // Puts the tags and attributes a level was built with into the tables of a
 // play session: for every node when the scripts start, and for a node that
-// comes into the level later. A node is read once. From then on the tables
-// hold a copy that scripts change, and nothing here writes to a node, so
-// Stop leaves every node as it was built.
+// comes into the level later. A node is read once. Scripts then change the
+// tables' copy and nothing writes to a node, so Stop has nothing to put back.
 internal sealed class LevelSeed(LuauHost host, EntityWorld world, TagTable tags, AttributeTable attributes)
 {
     // The nodes that were read. Only one with a tag or an attribute is kept.

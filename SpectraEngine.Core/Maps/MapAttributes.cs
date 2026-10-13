@@ -8,10 +8,9 @@ using System.Text.Json;
 namespace SpectraEngine.Core.Maps;
 
 // A node's 'attributes' member: one object on one line, a value under each
-// name, in the order they were added. Text, true or false and a number are
-// JSON's own. The three JSON has no value for are an object with one member
-// that says the kind: {"vector3":[x,y,z]}, {"color3":[r,g,b]} and
-// {"cframe":[x,y,z,qx,qy,qz,qw]}. A closed record, as the tags are.
+// name, in the order they were added. A value JSON has no kind for is an
+// object with one member that names it: {"vector3":[x,y,z]},
+// {"color3":[r,g,b]}, {"cframe":[x,y,z,qx,qy,qz,qw]}. A closed record.
 internal static class MapAttributes
 {
     private const int FrameNumbers = 7;

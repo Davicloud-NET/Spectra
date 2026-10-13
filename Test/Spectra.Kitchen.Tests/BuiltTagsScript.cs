@@ -7,9 +7,8 @@ namespace Spectra.Kitchen.Tests;
 
 // Tags and attributes the level is built with, on a part, a world brush, a
 // light, a folder, an entity and a script, and the script that reads them
-// back. It asks in its first tick, before the tagging script has tagged
-// anything and before any script renames a node, and prints later. It uses
-// no tag and no attribute name another script of the level asks after.
+// back. It asks in its first tick, before any script tags or renames a node,
+// and prints later. No other script of the level asks after its names.
 internal static class BuiltTagsScript
 {
     public const string Path = "Scripts/built.luau";
