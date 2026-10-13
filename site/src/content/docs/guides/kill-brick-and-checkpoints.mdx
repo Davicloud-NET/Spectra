@@ -1,0 +1,198 @@
+---
+title: Make a kill brick and checkpoints
+description: Hear the player touch a part, send them back, and find parts by the tags you gave them in the editor.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+A kill brick is the first thing most people script in Roblox. Here it is a few lines, and they are not the ones you know: there is no `Humanoid`, and a touch hands you the player.
+
+Start with a level that has a floor and a player start. [Write your first script](/guides/write-your-first-script/) covers the editor's side of a script.
+
+## A kill brick
+
+<Steps>
+
+1. Insert a part, name it `Lava` and size it into a low slab on the floor, on the way the player walks.
+
+2. With it selected, press Script. In `Assets/Scripts/Lava.luau`, write:
+
+   ```luau
+   -- Sends the player back to the start when they touch this part.
+   local lava = script.Parent
+
+   lava.Touched:Connect(function(character)
+   	character:Respawn()
+   end)
+   ```
+
+3. Press Play and walk onto the slab.
+
+</Steps>
+
+You are back at the player start.
+
+`Touched` fires once when the player starts to touch the part: stands on it, pushes against it, or walks into it when it is not solid. `TouchEnded` fires once when the player is clear of it again.
+
+The function is handed the player's character. `Respawn` sends it back to where it started, the way falling out of the level does.
+
+## The line that does not port
+
+This is the kill brick of every Roblox tutorial:
+
+```luau
+--!strict
+-- A kill brick the way a Roblox script writes one.
+local lava = script.Parent :: Part
+
+lava.Touched:Connect(function(hit)
+	local humanoid = hit.Parent:FindFirstChild("Humanoid")
+	if humanoid then
+		humanoid.Health = 0
+	end
+end)
+```
+
+Visual Studio Code puts a red line under `hit.Parent`. Played, the touch puts a red line in Output, `Parent is not a valid member of Character "Character"`, with `Lava.luau:6` at its right end.
+
+In Roblox the function gets the part that touched, a foot or a leg, and the script climbs from it to the character model and looks for its `Humanoid`. Here:
+
+- Only the player touches. A part that slides into another part fires nothing.
+- What the function gets is the character itself, the same object as `Players.LocalPlayer.Character`.
+- The character is not in the scene tree. It has no `Parent`, no children and no `Humanoid`.
+- There is no health. A script sends the player back with `Respawn` or puts them somewhere with `Teleport`.
+
+## Tag the parts in the editor
+
+One script on every lava part does not scale. Give the parts a tag, and let one script find them.
+
+<Steps>
+
+1. Delete the script under `Lava`.
+
+2. Select the part. In the Properties panel, find Tags, type `Lava` into Add a tag and press <kbd>Enter</kbd>. The tag shows as a chip.
+
+3. Build more lava and tag it the same way. Select several parts and the tag goes on all of them.
+
+4. Insert a part for a checkpoint: as wide as the path and tall enough to walk through. Under Behavior, switch Collides off, so the player walks through it. Tag it `Checkpoint`.
+
+5. Duplicate the checkpoint along the course. A copy keeps its tags.
+
+</Steps>
+
+A tag is a word on a node. It is saved with the level, and a script finds every node that has it through `CollectionService`, as in Roblox.
+
+## Checkpoints
+
+Press Script with nothing selected. That makes a script for the whole level, `Assets/Scripts/Script.luau`. Write:
+
+```luau
+-- Remembers the last checkpoint the player walked through. A player who
+-- touches lava is put back there.
+local CollectionService = game:GetService("CollectionService")
+
+local saved
+
+for _, checkpoint in CollectionService:GetTagged("Checkpoint") do
+	checkpoint.Touched:Connect(function()
+		saved = checkpoint.Position
+		print("reached", checkpoint.Name)
+	end)
+end
+
+for _, lava in CollectionService:GetTagged("Lava") do
+	lava.Touched:Connect(function(character)
+		if saved then
+			character:Teleport(saved)
+		else
+			character:Respawn()
+		end
+	end)
+end
+```
+
+Press Play. Walk through a checkpoint and then onto lava: you are back in the checkpoint. Touch lava before any checkpoint and you are back at the start.
+
+`Teleport` takes a position and puts the player's feet there, at rest. Here that is the middle of the checkpoint, and the player drops to the floor from it. It also takes a `CFrame`, and the player then faces the way the frame looks.
+
+A place inside something solid is taken too. The player is pushed out of it over the next ticks.
+
+## A pad that makes you faster
+
+A tag says what a part is. An attribute says how much.
+
+<Steps>
+
+1. Insert a part, size it into a slab on the floor and tag it `SpeedPad`.
+
+2. Under Attributes, type `Speed` into Add an attribute, pick Number in the list below it and press Add. Type 9 into the row that appears.
+
+3. Put this in a second level script:
+
+   ```luau
+   -- Makes the player faster while they stand on a part tagged SpeedPad.
+   -- A pad says how fast in its attribute Speed.
+   local CollectionService = game:GetService("CollectionService")
+   local Players = game:GetService("Players")
+
+   local character = Players.LocalPlayer.Character
+   local walk = character.WalkSpeed
+
+   for _, pad in CollectionService:GetTagged("SpeedPad") do
+   	pad.Touched:Connect(function()
+   		character.WalkSpeed = pad:GetAttribute("Speed") or walk * 2
+   	end)
+
+   	pad.TouchEnded:Connect(function()
+   		character.WalkSpeed = walk
+   	end)
+   end
+   ```
+
+4. Press Play and walk over the pad.
+
+</Steps>
+
+A player walks 4.5 units a second. On the pad it is 9, and past it 4.5 again. A pad with no `Speed` doubles the speed.
+
+`Players.LocalPlayer.Character` is the player. It is there from a script's first line, so nothing has to wait for `CharacterAdded`.
+
+| Member | What it is |
+|---|---|
+| `Position`, `CFrame` | Where the player's feet are, and which way the player faces. Read only: move the player with `Teleport`. |
+| `Velocity` | How fast the player moves and which way. Set it to push or throw the player. |
+| `WalkSpeed` | Units a second. |
+| `JumpHeight` | Units. A player jumps 1.2 units high. |
+| `IsGrounded` | Whether the player stands on ground. |
+| `Teleport`, `Respawn` | As above. |
+
+A unit is a metre, so Roblox's numbers are too big here. A `WalkSpeed` of 16 is 16 metres a second, more than three times the walk.
+
+Stop puts back the speed and the jump height the player had, and every tag and attribute a script set or took away. What you gave a node in the Properties panel is what it has again.
+
+## Tags and attributes from a script
+
+A script sets them too, while the level plays:
+
+- `part:AddTag("Lava")`, `part:RemoveTag("Lava")` and `part:HasTag("Lava")`.
+- `CollectionService:GetInstanceAddedSignal("Lava")` fires when a node gets the tag or a node with it comes into the level, and `GetInstanceRemovedSignal` when one loses it or leaves.
+- `part:SetAttribute("Heat", 900)`, `part:GetAttribute("Heat")` and `part:GetAttributes()`. An attribute holds a string, a number, a boolean, a `Vector3`, a `CFrame` or a `Color3`.
+- `part.AttributeChanged` and `part:GetAttributeChangedSignal("Heat")` fire when a script sets another value.
+
+What a script sets is for the scripts of that play. It is never saved into the level.
+
+## If nothing happens
+
+- A block cannot be listened to. `Touched` on one is an error that says to convert it to a part: select it and press Convert on the Build tab.
+- A part with Touch events off under Behavior notices nothing.
+- A tag is case sensitive. `lava` is not `Lava`.
+- Open the Output panel. A script that failed says why there, with its file and line.
+
+## What differs from Roblox
+
+- `Touched` hands over the character, not a part of it. Only the player touches.
+- The player is `Players.LocalPlayer.Character`. It has no `Humanoid`, no `HumanoidRootPart` and no health, and it is not in `workspace`.
+- `WalkSpeed` and `JumpHeight` are in metres.
+- There is one player. `Players.PlayerAdded` and `CharacterAdded` do not exist.
+
+[Coming from Roblox](/start/coming-from-roblox/) has the whole list.

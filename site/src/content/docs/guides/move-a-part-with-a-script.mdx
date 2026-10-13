@@ -1,0 +1,167 @@
+---
+title: Move a part with a script
+description: Slide a part on the level's tick, turn it, wait between moves, and see what Stop puts back.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+[Write your first script](/guides/write-your-first-script/) ends with a part that spins. This page moves one: up and down on every tick, then in steps with a wait between them.
+
+Start as that page does: a part with a script under it. Its file is `Assets/Scripts/Part.luau`.
+
+## Slide it on every tick
+
+Replace the text of the file with this, save it and press Play:
+
+```luau
+-- Slides the part up and down, one unit each way.
+local RunService = game:GetService("RunService")
+local part = script.Parent
+local home = part.Position
+local seconds = 0
+
+RunService.Heartbeat:Connect(function(step)
+	seconds += step
+	part.Position = home + Vector3.new(0, math.sin(seconds), 0)
+end)
+```
+
+The part rises a unit, comes back, sinks a unit and comes back, once round in a little over six seconds.
+
+`Heartbeat` fires on the level's tick. A level runs 60 ticks a second whatever the frame rate is, and `step` is the length of one, always the same sixtieth of a second. So `seconds` counts the level's time, and the part is in the same place after the same number of ticks on every machine.
+
+A frame is not a tick. At 30 frames a second a frame holds two ticks, and at 144 most frames hold none. `Heartbeat` fires for each tick, so it can fire twice in one frame or not at all. In Roblox it fires once a frame with a step that changes.
+
+`Stepped` fires on the same ticks, before the level's physics. It hands over the level's time first and the step second, as in Roblox.
+
+Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop.
+
+## Turn it as it slides
+
+`Position` moves a node and leaves it turned the way it was. `CFrame` is the place and the turn together. Change the script to set both at once:
+
+```luau
+-- Slides the part up and down, and turns it as it goes.
+local RunService = game:GetService("RunService")
+local part = script.Parent
+local home = part.Position
+local seconds = 0
+
+RunService.Heartbeat:Connect(function(step)
+	seconds += step
+	local place = home + Vector3.new(0, math.sin(seconds), 0)
+	part.CFrame = CFrame.new(place) * CFrame.Angles(0, seconds, 0)
+end)
+```
+
+`CFrame` works as it does in Roblox. `CFrame.new(place)` is a frame at that place with no turn, `CFrame.Angles` takes radians, and `a * b` is `b` as seen from `a`.
+
+## The world and the parent
+
+`Position` and `CFrame` say where a node is in the world, as in Roblox. Here a node also moves with the node above it in the scene tree, which a Roblox part does not. `LocalPosition` and `LocalCFrame` say where a node is under its parent.
+
+<Steps>
+
+1. Insert a second part and move it a unit above the first.
+
+2. In the scene tree, drag the second part onto the first. It stays where it is, and from now on it moves when the first one moves.
+
+3. Select the second part and press Script. In its file, write:
+
+   ```luau
+   -- Says how high the part is, once a second.
+   local part = script.Parent
+
+   while true do
+   	print(string.format("in the world %.2f, under its parent %.2f", part.Position.Y, part.LocalPosition.Y))
+   	task.wait(1)
+   end
+   ```
+
+4. Open the Output panel and press Play.
+
+</Steps>
+
+Both parts slide and turn as one. With the first part built 2 units up, Output begins like this:
+
+```text
+in the world 3.00, under its parent 1.00
+in the world 3.84, under its parent 1.00
+```
+
+The second part never moved under its parent. Its parent moved, and took it along.
+
+So to move a group of things, put them under one node and move that node. There is no `Model`, no `PrimaryPart` and no `PivotTo`: any node moves what is under it.
+
+## Wait between moves
+
+A script does not need `Heartbeat` to move something. It can wait. Put this in the first part's file:
+
+```luau
+-- Rides the part up three units and down again, with a second of rest at each end.
+local part = script.Parent
+local low = part.Position
+local high = low + Vector3.new(0, 3, 0)
+
+local function ride(from, to)
+	for count = 1, 120 do
+		part.Position = from:Lerp(to, count / 120)
+		task.wait()
+	end
+end
+
+while true do
+	ride(low, high)
+	task.wait(1)
+	ride(high, low)
+	task.wait(1)
+end
+```
+
+The part takes two seconds to ride up, rests for one, rides down and rests again.
+
+`task.wait()` waits for the next tick. `task.wait(1)` waits 60 ticks. A wait is always a whole number of ticks, rounded up: `task.wait(0.04)` waits 3 ticks, which is 0.05 seconds. It returns the seconds that passed.
+
+`task.spawn`, `task.defer`, `task.delay` and `task.cancel` are there too. The old `wait()`, `spawn()` and `delay()` still work. Visual Studio Code marks each as deprecated and names what to write instead.
+
+## A loop with no wait
+
+Leave the wait out and the loop never lets the level go on:
+
+```luau
+-- A loop with no wait in it.
+local part = script.Parent
+
+while true do
+	part.Position += Vector3.new(0, 0.001, 0)
+end
+```
+
+Press Play. The view stands still for three seconds, and then the level plays. Output has a line in red, `the script ran for more than 3 s without a pause and was switched off`, and at its right end `Part.luau:4`, the line the loop starts on.
+
+A script that is switched off does not run again until you stop and play again. The level's other scripts run on.
+
+## Only parts move
+
+Put the sliding script on a block and it fails. Output has this line once for every tick, since `Heartbeat` calls the function again each time:
+
+`Block cannot be moved: a world brush sits at or below it, and only parts can move while a level plays. Convert the brush to a part.`
+
+A world brush is a block: it is merged into the level's geometry and cannot move while the level plays. Stop, select the block and press Convert in the Arrange group of the Build tab, or <kbd>Ctrl</kbd> + <kbd>T</kbd>. [Blocks, parts and cuts](/concepts/blocks-parts-and-cuts/) says what changes.
+
+## What Stop puts back
+
+Press <kbd>F8</kbd> or <kbd>Esc</kbd>. Both parts are where you built them, and turned the way you built them.
+
+Stop ends every script and every wait, and puts back everything a script changed: where a node is, what it is called, what is under what. The level you edit is the level you built.
+
+Nothing a script holds lives on to the next Play either. Every Play reads the files again and starts each script from its first line.
+
+## What differs from Roblox
+
+- `Heartbeat` and `Stepped` fire on the level's tick, 60 times a second with the same step, and not once a frame. There is no `RenderStepped` yet.
+- A node moves with its parent. `LocalPosition` and `LocalCFrame` are the place under the parent.
+- Nothing falls. A part stays where it was put until something moves it, so there is no `Anchored`.
+- A block cannot be moved by a script. A part can.
+
+[Coming from Roblox](/start/coming-from-roblox/) has the whole list.

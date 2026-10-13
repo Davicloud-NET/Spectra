@@ -21,7 +21,10 @@ export default defineConfig({
 			sidebar: [
 				{
 					label: 'Start here',
-					items: [{ label: 'Build from source', slug: 'start/build-from-source' }],
+					items: [
+						{ label: 'Build from source', slug: 'start/build-from-source' },
+						{ label: 'Coming from Roblox', slug: 'start/coming-from-roblox' },
+					],
 				},
 				{
 					label: 'Concepts',
@@ -41,6 +44,11 @@ export default defineConfig({
 						{ label: 'Cook and run a project', slug: 'guides/cook-and-run-a-project' },
 						{ label: 'Captions and subtitles', slug: 'guides/captions' },
 						{ label: 'Write your first script', slug: 'guides/write-your-first-script' },
+						{ label: 'Move a part with a script', slug: 'guides/move-a-part-with-a-script' },
+						{ label: 'Open a door three ways', slug: 'guides/talk-to-the-level' },
+						{ label: 'Make a kill brick and checkpoints', slug: 'guides/kill-brick-and-checkpoints' },
+						{ label: 'Make things while the level plays', slug: 'guides/make-things-while-the-level-plays' },
+						{ label: 'Change how the player moves', slug: 'guides/change-how-the-player-moves' },
 					],
 				},
 				{

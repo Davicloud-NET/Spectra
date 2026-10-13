@@ -1,0 +1,274 @@
+---
+title: Open a door three ways
+description: A wire, a counter and a script each open the same door. Then a script hears outputs, reads settings and makes a lamp flicker.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+A level here has two ways to make things happen. Entities are wired to each other with no code, and scripts do what wires cannot. They are one mechanism: an entity's input is a method a script calls, and its output is a signal a script connects to.
+
+This page opens one door three times, each time with a little more.
+
+Start with the door and the button of [Make a door that opens](/guides/make-a-door-that-opens/#with-a-button): a part made into a Door and named `Door`, and a Button on the wall beside it named `Button`.
+
+Set the door's Wait to -1 in the Properties panel. It then stays open once it is open, which makes it easy to see what opened it.
+
+## With a wire
+
+If you built the two with that page, the button has this wire already.
+
+<Steps>
+
+1. Select the button. Under Sends in the Properties panel, press Add.
+
+2. Pick `OnPressed`, type `Door` beside Target and `Open` beside Input.
+
+3. Press Play. Walk up to the button, look at it and press <kbd>E</kbd>.
+
+</Steps>
+
+The door opens on the first press. There is no file and nothing to read: the wire is the whole of it, and the [Logic view](/guides/see-and-wire-a-levels-logic/) draws it.
+
+## With a counter
+
+Now the door should open on the third press. A wire cannot count, and a counter entity can.
+
+<Steps>
+
+1. Stop. Remove the wire: select the button, open the Logic view with <kbd>Ctrl</kbd> + <kbd>L</kbd>, click the wire and press <kbd>Del</kbd>.
+
+2. Click the arrow beside Entity and pick Math Counter. Name it `Presses` and set its Maximum to 3.
+
+3. Select the button and add a wire: `OnPressed`, Target `Presses`, Input `Add`.
+
+4. Select the counter and add a wire: `OnHitMax`, Target `Door`, Input `Open`.
+
+5. Press Play and press the button three times. It has to come back out before it takes the next press.
+
+</Steps>
+
+The first two presses count, and the third opens the door. Still no code. [Logic entities](/reference/logic-entities/#math_counter) lists everything a counter does.
+
+## With a script
+
+The same in Luau.
+
+<Steps>
+
+1. Stop. Delete the counter. Its wire goes with it, and the button's wire now ends at a red card in the Logic view. Remove that wire too.
+
+2. Select the door and press Script on the Build tab. The file is `Assets/Scripts/Door.luau`.
+
+3. Replace the text of the file with this, and save it:
+
+   ```luau
+   -- Opens the door on the third press of the button.
+   local door = script.Parent
+   local button = workspace:WaitForChild("Button")
+
+   local presses = 0
+   button.OnPressed:Connect(function()
+   	presses += 1
+   	print("press", presses)
+   	if presses == 3 then
+   		door:Open()
+   	end
+   end)
+   ```
+
+4. Open the Output panel, press Play and press the button three times.
+
+</Steps>
+
+Output says `press 1`, `press 2` and `press 3`, and the door opens.
+
+`button.OnPressed` is the button's output, and it is a signal like any in Roblox: `Connect`, `Once` and `Wait`. `door:Open()` sends the door its `Open` input. Every input and output of every entity class works this way, and the [script reference](/reference/script/) lists them class by class.
+
+## Which one to reach for
+
+- A wire, when one thing that happens makes one named thing act. It needs no file and shows in the Logic view.
+- A logic entity, for one small fact between two wires: a count, a delay, a switch.
+- A script, as soon as one thought needs a second logic entity. Also for anything that happens on every tick, any loop over many things, any text, and anything with lights.
+
+They mix. A level can keep its wires and add one script, and a script can fire the inputs of a counter that wires listen to.
+
+## Have the checker read it
+
+Visual Studio Code cannot see your level. To it, `script.Parent` is some node, and it lets `door:Open()` pass without knowing whether a door has such an input. Say what the nodes are and it checks every call:
+
+```luau
+--!strict
+-- Opens the door on the third press of the button.
+local door = script.Parent :: func_door
+local button = workspace:WaitForChild("Button") :: func_button
+
+local presses = 0
+button.OnPressed:Connect(function()
+	presses += 1
+	print("press", presses)
+	if presses == 3 then
+		door:Open()
+	end
+end)
+```
+
+`func_door` and `func_button` are the classes of the two entities: the names on their cards in the Logic view, and the headings of the reference pages. `::` tells the checker that a node is of a class. `--!strict` on the first line makes it check everything.
+
+Now make a slip. Change `Open` to `Opn` and save:
+
+```luau
+--!strict
+-- Opens the door on the third press of the button.
+local door = script.Parent :: func_door
+local button = workspace:WaitForChild("Button") :: func_button
+
+local presses = 0
+button.OnPressed:Connect(function()
+	presses += 1
+	print("press", presses)
+	if presses == 3 then
+		door:Opn()
+	end
+end)
+```
+
+Visual Studio Code puts a red line under `door:Opn` at once. Press Play all the same, and press the button three times. On the third press Output has a line in red, `Opn is not a valid member of func_door "Door"`, and at its right end `Door.luau:11`. The door stays shut.
+
+A name an entity does not have is an error where it is used, and never a silent `nil`. Names are case sensitive: `door:open()` fails the same way.
+
+## A call does not happen on the spot
+
+`door:Open()` does not open the door before the next line runs. It puts the input in the level's queue, as a wire does, and the door gets it when its turn comes: later in the same tick, or in the next one. So the line after it still sees the door shut.
+
+A function connected to an output is called from the same queue. When the button is pressed, its wires go first in the order they are listed, and then the connected functions in the order they connected. Nothing runs in the middle of something else.
+
+Roblox calls this deferred, and is moving to it.
+
+## Hear what an entity does
+
+An output is a signal, so a script can hear a door as well as open it. Put this in the door's file:
+
+```luau
+-- Says what the door does, and how fast it was built to do it.
+local door = script.Parent
+
+print("the door moves", door:GetAttribute("speed"), "units a second")
+
+door.OnOpen:Connect(function()
+	print("opening")
+end)
+
+door.OnFullyOpen:Once(function()
+	print("open for the first time")
+end)
+
+while true do
+	door.OnFullyClosed:Wait()
+	print("closed again")
+end
+```
+
+Press Play, and open and close the door from the console: press <kbd>&#96;</kbd>, type `ent_fire Door Open`, and later `ent_fire Door Close`.
+
+The first line of Output is `the door moves 2 units a second`. `GetAttribute` reads a setting of the entity under the name a level file uses for it, which the [reference pages](/reference/mover-entities/#func_door) list in the first column. A number comes back as a number and not as text.
+
+A script cannot change a setting this way. `door:SetAttribute("speed", 9)` leaves a value for other scripts to read, and the door never sees it.
+
+Scripts start on the level's first tick. What fired while the level was starting is over by then, so no script hears the `OnMapSpawn` of a `logic_auto`. A script that connects to such an output gets a warning in Output.
+
+## Values that come with an output
+
+Some outputs send a value. A counter's `OutValue` sends its number, and a script gets it as a number.
+
+Build the counter again as it was under [With a counter](#with-a-counter), without the wire to the door. Then press Script with nothing selected, which makes a script for the whole level, and write:
+
+```luau
+-- Hears the counter count, and opens the door a second after it is full.
+local counter = workspace:WaitForChild("Presses")
+local door = workspace:WaitForChild("Door")
+
+counter.OutValue:Connect(function(count)
+	print("pressed", count, "of 3 times,", 3 - count, "to go")
+end)
+
+counter.OnHitMax:Connect(function()
+	task.wait(1)
+	door:Open()
+end)
+```
+
+The first press prints `pressed 1 of 3 times, 2 to go`. The button's wire still feeds the counter, the script hears the counter, and a second after the third press the door opens.
+
+What a value is to a script goes by what the reference pages say the output sends:
+
+| The output sends | A script gets |
+|---|---|
+| Nothing | nothing |
+| A number | a number |
+| `0` or `1` | a boolean |
+| Text | a string |
+| A vector, a colour or angles | a `Vector3` |
+
+An input takes the same kinds: `counter:Add(2)`, `counter:SetValue(0)`.
+
+## A lamp that flickers
+
+A light is a node, and a script sets what a light has: `Enabled`, `Brightness`, `Color` and `Range`.
+
+<Steps>
+
+1. Press Light on the Build tab and move the light near the door.
+
+2. With the light selected, press Script, and write:
+
+   ```luau
+   -- Makes the light this script sits under flicker until the door opens.
+   local lamp = script.Parent
+   local door = workspace:WaitForChild("Door")
+
+   local flickers = true
+   door.OnOpen:Once(function()
+   	flickers = false
+   	lamp.Enabled = true
+   end)
+
+   while flickers do
+   	lamp.Enabled = not lamp.Enabled
+   	task.wait(0.1)
+   end
+   ```
+
+3. Press Play. The lamp flickers. Open the door, and it stays on.
+
+</Steps>
+
+No wire could do this. A light is not an entity, so it has no inputs, and a flicker is a loop.
+
+Stop, and the lamp is as you built it, whatever a script last set.
+
+## Watch it happen
+
+The console and the Logic view show what a script sends and hears beside what the wires carry.
+
+Open the Console panel, type `ent_watch on` and press Play. With the script of [With a script](#with-a-script) on the door, the third press prints:
+
+```text
+ent 412 send game -> Button.Use
+ent 412 fire Button.OnPressed wires=0 listeners=1
+ent 412 send Scripts/Door.luau:10 -> Door.Open
+ent 412 fire Door.OnOpen wires=0
+```
+
+The player's use key sent the button `Use`. The button fired `OnPressed`, which has no wire and one function connected. That function, at line 10 of `Door.luau`, sent the door `Open`. The number after `ent` is the tick. [Console](/reference/console/#watch-lines) explains every word of a line.
+
+The Logic view draws the same while the level plays. Press <kbd>Ctrl</kbd> + <kbd>L</kbd> and then Play: the script gets a card of its own, with a dashed wire from `OnPressed` to it and, once it has sent the input, a dashed wire from it to the door's `Open`. Each lights up when it carries something. [See and wire a level's logic](/guides/see-and-wire-a-levels-logic/#scripts) has the rest.
+
+## What differs from Roblox
+
+- An entity has inputs and outputs, which Roblox has no word for. To a script they are methods and signals.
+- A connected function runs from the level's queue, never inside the call that fired the signal. `door:Open()` is queued the same way.
+- Functions connected to one signal run in the order they connected.
+- A light is a node of its own in the scene tree, with a place of its own. It is not a child that lights its part from wherever the part is.
+- `Brightness` and `Range` are not on Roblox's scale. A unit is a metre, so a range of 16 here is far more than 16 studs.
+
+[Coming from Roblox](/start/coming-from-roblox/) has the whole list.

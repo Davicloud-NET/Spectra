@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Text.RegularExpressions;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 using SpectraEngine.Core.Scripting.Tooling;
@@ -10,32 +9,16 @@ namespace SpectraEngine.Scripting.Tests;
 /// The site's page on a first script, held to the code: every script on it
 /// is a sample luau-lsp checks, and it quotes what the engine says.
 /// </summary>
-public sealed partial class FirstScriptGuideTests
+public sealed class FirstScriptGuideTests
 {
     // The file Insert Script makes for a part that is called Part.
     private const string PartScript = "Scripts/Part.luau";
 
-    private static readonly string Page = File.ReadAllText(Path.Combine(
-            BindingSourceTests.RepositoryRoot(), "site", "src", "content", "docs", "guides",
-            "write-your-first-script.mdx"))
-        .Replace("\r\n", "\n", StringComparison.Ordinal);
+    private static readonly SitePage Site = SitePage.At("guides/write-your-first-script.mdx");
 
-    // A fenced block with its language. Inside a list the fence is indented,
-    // and so is every line between.
-    [GeneratedRegex(
-        @"^(?<indent>[ \t]*)```(?<language>\w+)\n(?<body>.*?)\n\k<indent>```[ \t]*$",
-        RegexOptions.Multiline | RegexOptions.Singleline)]
-    private static partial Regex Fence();
+    private static string Page => Site.Text;
 
-    private static string[] Blocks(string language) =>
-    [
-        .. Fence().Matches(Page)
-            .Where(match => match.Groups["language"].Value == language)
-            .Select(match => string.Join('\n', match.Groups["body"].Value.Split('\n')
-                .Select(line => line.StartsWith(match.Groups["indent"].Value, StringComparison.Ordinal)
-                    ? line[match.Groups["indent"].Length..]
-                    : line)) + "\n"),
-    ];
+    private static string[] Blocks(string language) => Site.Blocks(language);
 
     private static string Code(string contentPath) => ScriptSamples.At(contentPath).Code;
 

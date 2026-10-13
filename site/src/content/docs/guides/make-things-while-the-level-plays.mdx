@@ -1,0 +1,222 @@
+---
+title: Make things while the level plays
+description: Make a part, clone a coin and destroy it, and share one module between two scripts.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+A script can put new nodes into a level while it plays and take them out again. This page makes a part, lays a row of coins that vanish when the player takes them, and keeps the score in a module that two scripts share.
+
+## Make a part
+
+Insert a part, select it and press Script. In its file, write:
+
+```luau
+-- Makes a part two units above the node this script sits under, and a light over it.
+local here = script.Parent
+
+local crate = Instance.new("Part")
+crate.Name = "Crate"
+crate.Position = here.Position + Vector3.new(0, 2, 0)
+crate.Parent = workspace
+
+local lamp = Instance.new("PointLight")
+lamp.Color = Color3.fromRGB(255, 180, 90)
+lamp.Position = crate.Position + Vector3.new(0, 1, 0)
+lamp.Parent = crate
+```
+
+Press Play. A small cube hangs above the part, with a warm light over it.
+
+`Instance.new` makes a node that is in no level yet. It is at the origin of the world, and it comes into the level when it gets a `Parent`. Set what you can first and the parent last, as in Roblox.
+
+A new `Part` is a solid cube, one unit to a side. A script cannot size or colour it yet. For any other shape, build the thing in the editor and [clone it](#clone-a-coin).
+
+A light is a node with a place of its own. Under a part it moves with the part, and it does not jump to the part when it gets it as its parent. So the script says where the lamp is before it gives it the crate as its parent.
+
+`Instance.new` makes a `Part`, a `Folder` and the five lights. Any other name is an error:
+
+`Unable to create an Instance of type "Model". Instance.new makes a Part, a Folder, a PointLight, a SpotLight, a SurfaceLight, a DirectionalLight or a DiscLight. Clone a node of the level for anything else`
+
+## Clone a coin
+
+<Steps>
+
+1. Build the coin. Insert a part, name it `Coin`, and size it to something a player can walk into. Under Behavior in the Properties panel, switch Collides off, so the player walks through it.
+
+2. Put the coin somewhere the player does not come. It is the one the others are copied from.
+
+3. Insert a group with Group on the Build tab, name it `Spawner` and move it to where the row of coins should start. A group draws nothing.
+
+4. With the group selected, press Script, and write:
+
+   ```luau
+   -- Lays a row of coins, one every two seconds. A coin the player walks into is gone.
+   local template = workspace:WaitForChild("Coin")
+   local spawner = script.Parent
+
+   for count = 1, 10 do
+   	task.wait(2)
+
+   	local coin = template:Clone()
+   	coin.Name = "Coin" .. count
+   	coin.Position = spawner.Position + Vector3.new(count * 2, 1, 0)
+   	coin.Touched:Connect(function()
+   		print("took", coin.Name)
+   		coin:Destroy()
+   	end)
+   	coin.Parent = workspace
+   end
+   ```
+
+5. Open the Output panel and press Play. Wait for a few coins and walk along the row.
+
+</Steps>
+
+A coin appears every two seconds, two units apart along X. Each one you walk into is gone, and Output says which: `took Coin1`.
+
+`Clone` copies a node with everything under it: its shape, its materials, its tags and attributes, its lights, its entities and its scripts. The copy is in no level until it gets a `Parent`. A script under the copy starts when the copy comes into the level.
+
+`Destroy` takes a node and everything under it out of the level for good. Its scripts stop and every connection to it ends. To ask whether something is gone, read its parent: `coin.Parent == nil`.
+
+`node.Parent = nil` takes a node out without destroying it, and a parent brings it back. That hides a template: take the coin out of the level in the script's first lines and clone it all the same.
+
+There is no `ReplicatedStorage` and no `ServerStorage` to keep a template in. It sits in the level, out of the way or taken out by a script.
+
+## What Stop does
+
+Stop takes away every node a script made and brings back every node a script destroyed. A node a script moved under another parent is back under the one it was built with.
+
+So a level can spawn and destroy all it likes. The level you edit is the one you built.
+
+## What a script cannot make
+
+- A block. A block is merged into the level's geometry, and that does not change while a level plays. A script cannot clone one, move one, give one another parent or destroy one. Each is an error that says to convert the block to a part.
+- More than 16384 nodes at a time. A destroyed node stops counting once no variable holds it.
+
+## Share a module
+
+The row of coins should count, and something else should hear the count. Two scripts that share state need a module.
+
+<Steps>
+
+1. Make a new file, `Assets/Scripts/lib/score.luau`, in Visual Studio Code:
+
+   ```luau
+   -- A module: the score of the level, for every script that asks for it.
+   local Score = {}
+
+   local points = 0
+   local listeners = {}
+
+   -- Adds to the score and tells everyone who asked to hear of it.
+   function Score.add(amount: number)
+   	points += amount
+   	for _, listener in listeners do
+   		listener(points)
+   	end
+   end
+
+   -- Calls a function with the new score every time it changes.
+   function Score.changed(listener: (number) -> ())
+   	table.insert(listeners, listener)
+   end
+
+   return Score
+   ```
+
+2. Change the spawner's script to ask for it:
+
+   ```luau
+   -- Lays a row of coins, one every two seconds. A coin the player walks into
+   -- is gone and counts a point.
+   local Score = require("./lib/score")
+
+   local template = workspace:WaitForChild("Coin")
+   local spawner = script.Parent
+
+   for count = 1, 10 do
+   	task.wait(2)
+
+   	local coin = template:Clone()
+   	coin.Name = "Coin" .. count
+   	coin.Position = spawner.Position + Vector3.new(count * 2, 1, 0)
+   	coin.Touched:Connect(function()
+   		Score.add(1)
+   		coin:Destroy()
+   	end)
+   	coin.Parent = workspace
+   end
+   ```
+
+3. Build a door named `Exit`, as in [Make a door that opens](/guides/make-a-door-that-opens/), with no wire to it.
+
+4. Press Script with nothing selected, for a script of the whole level, and write:
+
+   ```luau
+   -- Says the score when it changes, and opens the exit at five points.
+   local Score = require("@assets/Scripts/lib/score")
+
+   local exit = workspace:WaitForChild("Exit")
+
+   Score.changed(function(points)
+   	print("score:", points)
+   	if points == 5 then
+   		exit:Open()
+   	end
+   end)
+   ```
+
+5. Press Play and take five coins.
+
+</Steps>
+
+Output counts `score: 1` to `score: 5`, and the exit opens.
+
+A module runs once while the level plays, the first time a script asks for it. Every script that asks gets the same value, so the two scripts hold one `Score`. The next Play runs it again from its first line.
+
+## Paths
+
+`require` takes a path to a file, without the `.luau`.
+
+| The path starts with | It is found from |
+|---|---|
+| `./` | The folder of the file that asks. |
+| `../` | The folder above that one. |
+| `@assets/` | The project's `Assets` folder, wherever the asking file is. |
+| `@self/` | The folder of an `init.luau`, for that file alone. |
+
+A folder with an `init.luau` in it is a module too, asked for by the folder's name.
+
+The spawner's file is `Assets/Scripts/Spawner.luau`, so its `./lib/score` is `Assets/Scripts/lib/score.luau`. The level script reaches the same file from the top with `@assets`.
+
+Anything else is refused. Leave the start off:
+
+```luau
+-- Says the score when it changes.
+local Score = require("Scripts/lib/score")
+
+Score.changed(function(points)
+	print("score:", points)
+end)
+```
+
+The script stops at that line, and Output says why:
+
+`'Scripts/lib/score' is no path to a module. A path starts with ./ or ../, from the file that asks, or with @self or @assets`
+
+Visual Studio Code marks the path as well, as an unknown require. With the extension's new type solver switched on it says nothing of a script that does not start with `--!strict`. It goes by the same rules as the engine, and by the `.luaurc` in the project's folder for `@assets`.
+
+One thing it lets pass that the engine refuses is a path that ends in `.luau`. And a path in another case than the file's works on Windows and fails on Linux, so write the path as the file is spelled.
+
+A module can also be a node. A script with Module switched on in the Properties panel does not run by itself, and another script asks for it by the node: `require(workspace.Rules)`. A file asked for by its node and the same file asked for by its path are two modules, each run once. Pick one way for a file.
+
+## What differs from Roblox
+
+- `require` takes a path to a file. A module that is a node works too, and a path is the usual way.
+- `Instance.new` makes parts, folders and lights. Everything else is cloned from the level.
+- A new part is a cube of one unit, and has no `Size`, `Color` or `Material` a script can set yet.
+- A light keeps its own place. Parenting it to a part does not move it there.
+- There are no storage services. A template is a node of the level.
+
+[Coming from Roblox](/start/coming-from-roblox/) has the whole list.

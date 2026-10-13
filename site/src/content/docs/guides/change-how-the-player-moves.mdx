@@ -1,0 +1,181 @@
+---
+title: Change how the player moves
+description: Swap the player's mover for one written in Luau, add a double jump, write a mover of your own, and see what happens when one fails.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+How the player walks, jumps, slides along a wall and steps up a stair is decided by one function, the mover. The engine has one built in. A script can put another in its place, and the engine ships its own walk as a Luau file to start from.
+
+There is no `Humanoid` to configure. You change how the player moves by editing code.
+
+## Get the shipped movers
+
+The files are in the engine's repository, not in a new project. Copy two of them into your project, keeping the folder:
+
+| From the engine's repository | To your project |
+|---|---|
+| `Assets/Scripts/movers/walk.luau` | `Assets/Scripts/movers/walk.luau` |
+| `Assets/Scripts/movers/double_jump.luau` | `Assets/Scripts/movers/double_jump.luau` |
+
+`walk.luau` is the whole walk in about 300 lines: steer, jump, slide, step up, land. It does what the built-in mover does.
+
+## Install one
+
+<Steps>
+
+1. Press Script with nothing selected, which makes a script for the whole level in `Assets/Scripts`.
+
+2. Replace the text of its file with this, and save it:
+
+   ```luau
+   --!strict
+   -- Has movers/walk.luau move the player, in place of the engine's built-in mover.
+   -- A mover that fails is taken out, and the built-in one moves the player again.
+   local Players = game:GetService("Players")
+   local walk = require("./movers/walk")
+
+   local player = Players.LocalPlayer
+   local character = player and player.Character
+   if character then
+   	character:SetMover(walk)
+   	print("The player moves by a mover in Luau")
+   end
+   ```
+
+3. Open the Output panel and press Play.
+
+</Steps>
+
+Output says `The player moves by a mover in Luau`, and the player walks as before. Every step is now made by `walk.luau`.
+
+`character:SetMover` takes a function. From then on the level calls it once a tick in place of the built-in mover. `character:SetMover(nil)` puts the built-in mover back, and so does Stop.
+
+## A second jump
+
+In the level script, change the path `./movers/walk` to `./movers/double_jump`, save and press Play. Jump, and press <kbd>Space</kbd> again in the air.
+
+This is all of `double_jump.luau`:
+
+```luau
+--!strict
+-- The walk of walk.luau, with a second jump in the air.
+local walk = require("./walk")
+
+-- Where the state keeps how many jumps were made in the air. A mover keeps
+-- no count of its own, or the same ticks played again would not jump alike.
+local AIR_JUMPS = 1
+
+return function(
+	state: CharacterState,
+	command: CharacterCommand,
+	collision: CharacterCollision,
+	tuning: CharacterTuning,
+	dt: number
+)
+	if state.IsGrounded then
+		state:SetMemory(AIR_JUMPS, 0)
+	end
+
+	-- In the air for longer than a late jump still counts, with a jump left.
+	local jumpsAgain = command.JumpPressed
+		and not state.IsGrounded
+		and state.AirTicks > tuning.CoyoteTicks
+		and state:GetMemory(AIR_JUMPS) < 1
+
+	if jumpsAgain then
+		local velocity = state.Velocity
+		state.Velocity = Vector3.new(velocity.X, tuning.JumpVelocity, velocity.Z)
+		state:SetMemory(AIR_JUMPS, 1)
+	end
+
+	walk(state, command, collision, tuning, dt)
+
+	-- The press was this jump. Kept, it would jump again on landing.
+	if jumpsAgain then
+		state.JumpBufferTicks = 0
+	end
+end
+```
+
+A mover is a module that returns a function. This one changes the state a little and then calls the walk, so it does not have to know how to slide along a wall.
+
+## What a mover is handed
+
+| Argument | What it is |
+|---|---|
+| `state` | Where the player is and how it moves: `Position`, `Velocity`, whether it stands on ground. The mover changes it, and where it leaves it is where the player is after the tick. |
+| `command` | What the player asks for on this tick: which way to walk, where it looks, and whether jump, sprint, crouch and use are held. Read only. |
+| `collision` | What the player can bump into. It sweeps the player's capsule along a move and says what stopped it. |
+| `tuning` | The numbers the built-in mover goes by: speeds, gravity, jump height, step height. Read only. `WalkSpeed` and `JumpHeight` are the character's, which any script can set. |
+| `dt` | The length of the tick in seconds. Always a sixtieth. |
+
+The [script reference](/reference/script/) lists every member of the four: `CharacterState`, `CharacterCommand`, `CharacterCollision` and `CharacterTuning`.
+
+## Write your own
+
+A mover of your own can start as small as the double jump. This one is the walk under a third of the gravity. Make the file `Assets/Scripts/movers/moon.luau`:
+
+```luau
+--!strict
+-- The walk of walk.luau under a third of the gravity.
+local walk = require("./walk")
+
+return function(
+	state: CharacterState,
+	command: CharacterCommand,
+	collision: CharacterCollision,
+	tuning: CharacterTuning,
+	dt: number
+)
+	walk(state, command, collision, tuning, dt)
+
+	-- The walk pulled the player down by the whole gravity. Two thirds go back.
+	if not state.IsGrounded then
+		state.Velocity -= tuning.Gravity * dt * (2 / 3)
+	end
+end
+```
+
+Change the path in the level script to `./movers/moon` and press Play. A jump goes about three times as high and takes its time coming down.
+
+For a change that is not an addition, edit `walk.luau` itself. It is yours once it is in your project. Each rule of the walk is a function there with a comment that says what it is for.
+
+## The rules a mover keeps
+
+- It finishes in the tick that calls it. A mover cannot wait.
+- It returns nothing. It changes the state it was handed.
+- What it needs on a later tick it keeps in the state: `state:SetMemory` and `state:GetMemory` hold eight numbers, and the state has counters such as `AirTicks` of its own. A local outside the function is not put back when the player is placed again, as after a respawn.
+- A sweep reaches at most 1000 units, and a velocity is at most 40000 units a second.
+
+## When a mover fails
+
+Make a slip in `moon.luau`. Change `tuning.Gravity` to `tuning.Gravty` and save.
+
+Visual Studio Code puts a red line under the name at once. Press Play all the same, and jump.
+
+The jump is an ordinary one. Output has one line in red:
+
+`The mover failed: Gravty is not a valid member of CharacterTuning "CharacterTuning". The built-in mover took over.`
+
+At its right end is `moon.luau:16`. Click the line to go there.
+
+A mover that fails is taken out on that tick. The built-in mover moves the player on the same tick and for the rest of the level, so the player never stands frozen because of a mistake. Put the name right and press Play again.
+
+Other ways to fail read the same way. A mover that waits:
+
+`The mover waited, and a mover has to finish in the tick that calls it. The built-in mover took over.`
+
+And a script that tries to install a mover after one has failed:
+
+`A mover failed in this level, so the built-in mover moves the player until the level is played again.`
+
+A mover with a loop that never ends is stopped after three seconds, like any script, and its script is switched off.
+
+## What differs from Roblox
+
+- There is no `Humanoid` and no `ControllerManager`. The mover is a function you can read and replace.
+- A mover runs on the level's tick, 60 times a second, and is handed what the player asks for. It does not read keys.
+- The view is not the mover's. It follows the state the mover leaves.
+
+[Coming from Roblox](/start/coming-from-roblox/) has the whole list.
