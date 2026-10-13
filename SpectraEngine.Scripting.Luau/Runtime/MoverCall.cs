@@ -11,6 +11,8 @@ internal sealed unsafe class MoverCall
 {
     public const string Waited = "The mover waited, and a mover has to finish in the tick that calls it";
 
+    public const string Returned = "The mover returned a value. A mover changes the state it is handed and returns nothing";
+
     private readonly LuauHost _host;
     private readonly LuauFunction _function;
     private nint _thread;
@@ -78,14 +80,16 @@ internal sealed unsafe class MoverCall
         if (_host.IsClosed)
             return false;
 
-        if (status == LuaStatus.Ok)
+        if (status == LuaStatus.Ok && results == 0)
         {
             if (_isLetGo)
                 End();
             return true;
         }
 
-        failure = WhyNot(status, stage.State);
+        // A state handed back would be dropped, and the player would stand
+        // where it stood with nothing said.
+        failure = status == LuaStatus.Ok ? Message(Returned) : WhyNot(status, stage.State);
         End();
         return false;
     }

@@ -57,8 +57,7 @@ internal sealed class MoverLevel : IDisposable
         if (hasCourse)
             BuildCourse(renderer);
 
-        foreach (string path in new[] { Walk, DoubleJump, Installer })
-            Files.Add(path, File.ReadAllText(Path.Combine(BindingSourceTests.RepositoryRoot(), "Assets", path)));
+        AddShippedMovers(Files);
 
         Character = new CharacterSimulation(Scene) { FallOutHeight = DemoPlayArea.FallOutHeight };
         Session = new PlaySession(Manager, Character);
@@ -84,6 +83,13 @@ internal sealed class MoverLevel : IDisposable
     public string[] Printed => Sink.Texts(ScriptSeverity.Print);
 
     public string[] Errors => Sink.Texts(ScriptSeverity.Error);
+
+    // The movers the engine ships, as its own Assets folder has them.
+    public static void AddShippedMovers(TextScriptSource files)
+    {
+        foreach (string path in new[] { Walk, DoubleJump, Installer })
+            files.Add(path, File.ReadAllText(Path.Combine(BindingSourceTests.RepositoryRoot(), "Assets", path)));
+    }
 
     // The course alone. The baseplate was only there to give the manager a scene.
     private void BuildCourse(FakeRenderer renderer)
