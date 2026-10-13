@@ -29,6 +29,13 @@ public sealed unsafe class LuauObjects
     public Action<object>? Reached { get; set; }
 
     /// <summary>
+    /// Is told of an object each time no script holds it any more: Luau collected its
+    /// userdata, or it was released. It runs inside a push or a collection: it pushes
+    /// nothing and runs no script.
+    /// </summary>
+    public Action<object>? Released { get; set; }
+
+    /// <summary>
     /// Takes the table on top of the stack and makes it the metatable of every object
     /// pushed with this tag. The table is frozen with all it holds, since all scripts share it. Do this
     /// before the host is sealed. A tag takes one metatable, once.
@@ -160,13 +167,17 @@ public sealed unsafe class LuauObjects
     private void Free(int index)
     {
         ref Slot slot = ref _slots[index];
-        if (slot.Value is { } value)
+        object? value = slot.Value;
+        if (value is not null)
             _slotOf.Remove(value);
 
         slot.Value = null;
         slot.Generation++;
         slot.NextFree = _firstFree;
         _firstFree = index;
+
+        if (value is not null)
+            Released?.Invoke(value);
     }
 
     private struct Slot

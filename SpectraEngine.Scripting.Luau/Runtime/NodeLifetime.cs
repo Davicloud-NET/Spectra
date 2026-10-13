@@ -5,9 +5,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // What it means to the level's scripts that a node is made, cloned, moved
 // in or out of the level, or destroyed. TreeWrites changes the tree. This
-// does the rest: a script below a node that leaves ends and one below a node
-// that comes in starts. Of a node that was destroyed only its tags and
-// attributes are kept, and nothing of one no script can reach any more.
+// does the rest: a script below a node that leaves ends, one below a node
+// that comes in starts, and a destroyed node keeps its tags and attributes.
 internal sealed class NodeLifetime
 {
     // What a script reads when it changes the tree before the runtime is whole.
@@ -56,7 +55,7 @@ internal sealed class NodeLifetime
     {
         // A node scripts made and let go of counts until it is found. So
         // when there is no room, they are looked for and it is tried again.
-        LookOver();
+        _loose.LookOver();
         if (!_tree.TryMake(className, out SceneNode? made, out refusal) && _tree.IsOutOfRoom && MakeRoom())
             _tree.TryMake(className, out made, out refusal);
 
@@ -70,7 +69,7 @@ internal sealed class NodeLifetime
     // and attributes scripts left on each.
     public SceneNode? Clone(SceneNode source, out string? refusal)
     {
-        LookOver();
+        _loose.LookOver();
         List<NodeCopy> copies = _spareCopies.Count > 0 ? _spareCopies.Pop() : [];
         if (!_tree.TryClone(source, copies, out SceneNode? copy, out refusal) && _tree.IsOutOfRoom && MakeRoom())
             _tree.TryClone(source, copies, out copy, out refusal);
@@ -140,25 +139,26 @@ internal sealed class NodeLifetime
             _loose.Add(TopOf(node));
     }
 
-    // Stops counting every made node no script holds any more, so the count
-    // says what is held now. For a test, which need not wait for a look-over.
-    public void LetGoOfUnheld()
+    // No script holds the object any more. A destroyed node a script made
+    // stops counting, and the runtime keeps it no longer.
+    public void Released(object released)
     {
-        _loose.Sweep();
-        _held.LetGo();
+        if (released is SceneNode node)
+            _held.Released(node);
     }
 
-    private void LookOver()
-    {
-        _loose.LookOver();
-        _held.LookOver();
-    }
+    // Stops counting every loose tree no script holds a node of any more.
+    // For a test, after a collection, which need not wait for a look-over.
+    public void LetGoOfUnheld() => _loose.Sweep();
 
     // Both ask Luau which nodes scripts still hold, by a full collection.
+    // True when a made node stopped counting.
     private bool MakeRoom()
     {
-        bool isFound = _loose.Sweep();
-        return _held.Sweep() || isFound;
+        int counted = _tree.MadeCount;
+        _loose.Sweep();
+        _held.Sweep();
+        return _tree.MadeCount < counted;
     }
 
     private static SceneNode TopOf(SceneNode node)

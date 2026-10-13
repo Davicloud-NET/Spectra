@@ -83,6 +83,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             context.Lifetime = _lifetime;
             new InstanceLibrary(_lifetime).ScriptInstall(context);
             _host.Objects.Reached = _lifetime.Reached;
+            _host.Objects.Released = _lifetime.Released;
 
             _host.Seal();
 

@@ -205,6 +205,43 @@ public sealed class HeldNodeLimitTests
         runtime.Collect();
         new ScriptWrites(level.Entities).Tree.MadeCount.ShouldBe(0);
         runtime.HeldDestroyedCount.ShouldBe(0);
-        runtime.TaggedNodeCount.ShouldBe(0);
+
+        // What a destroyed part kept goes when the part does.
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        runtime.DestroyedTaggedCount.ShouldBe(0);
+        runtime.DestroyedAttributeCount.ShouldBe(0);
+    }
+
+    // The loose folders are held, so looking them over finds none to let go.
+    // The destroyed parts are found by the same collection.
+    [Fact]
+    public void Destroyed_parts_a_script_let_go_of_make_room_while_it_keeps_loose_nodes_too()
+    {
+        using ScriptLevel level = House.With($$"""
+            local loose = {}
+            for i = 1, 10 do
+                loose[i] = Instance.new("Folder")
+            end
+
+            local kept = {}
+            local function fill()
+                for i = 1, {{TreeLimits.MaxMadeNodes - 10}} do
+                    local part = Instance.new("Part")
+                    part:Destroy()
+                    kept[i] = part
+                end
+            end
+            fill()
+            print((pcall(Instance.new, "Part")))
+            kept = nil
+            print(Instance.new("Part").Name, #loose)
+            """);
+
+        level.Play().Tick();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["false", "Part 10"]);
     }
 }

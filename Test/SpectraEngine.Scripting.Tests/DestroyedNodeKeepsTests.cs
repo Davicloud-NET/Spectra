@@ -138,6 +138,95 @@ public sealed class DestroyedNodeKeepsTests
         runtime.DestroyedAttributeCount.ShouldBe(0);
     }
 
+    // Nothing here asks Luau to collect, and the script makes no node after
+    // the last Destroy, so nothing asks the runtime to look for room either.
+    [Fact]
+    public void What_a_destroyed_node_holds_goes_once_Luau_has_collected_the_node_in_its_own_time()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.AddScript(level.Scene.Root, """
+            -- Litter, so that Luau's collector has work.
+            game:GetService("RunService").Heartbeat:Connect(function()
+                for index = 1, 500 do
+                    local litter = { index }
+                end
+            end)
+
+            local kept = {}
+            for index = 1, 50 do
+                local part = Instance.new("Part")
+                part:AddTag("Spare")
+                part:SetAttribute("Index", index)
+                part.Parent = workspace
+                kept[index] = part
+            end
+            task.wait(0.1)
+            for _, part in kept do
+                part:Destroy()
+                part:AddTag("Gone")
+            end
+            print("destroyed")
+            """, "Main");
+        LuauScriptRuntime runtime = level.Play().Tick(2).Runtime.ShouldNotBeNull();
+        WeakReference<SceneNode>[] spares = MadeNow(level);
+        spares.Length.ShouldBe(50);
+
+        // The script ended, and with it went all that held a part.
+        level.Tick(8);
+        level.Printed.ShouldBe(["destroyed"]);
+        for (int tick = 0; tick < 2000 && runtime.HeldDestroyedCount > 0; tick++)
+            level.Tick();
+
+        CollectAll();
+
+        level.Errors.ShouldBeEmpty();
+        runtime.HeldDestroyedCount.ShouldBe(0, "a destroyed part still counts after Luau collected it");
+        spares.Count(IsThere).ShouldBe(0, "a destroyed part is still held, with what it kept");
+        runtime.DestroyedTaggedCount.ShouldBe(0);
+        runtime.DestroyedAttributeCount.ShouldBe(0);
+    }
+
+    // A tag's list names a node that left it until the tag is asked for
+    // again. The keeper has the tag all along, so the list is never emptied.
+    [Fact]
+    public void A_destroyed_part_a_tags_list_still_names_is_let_go_when_the_tag_is_asked_for_again()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.Part("Keeper", new Vector3(2f, 1f, 3f)).Tags = TagSet.Of("Spare");
+        level.AddScript(level.Scene.Root, """
+            local CollectionService = game:GetService("CollectionService")
+            local made = {}
+            for index = 1, 20 do
+                local part = Instance.new("Part")
+                part:AddTag("Spare")
+                part:SetAttribute("Index", index)
+                part.Parent = workspace
+                made[index] = part
+            end
+            print(#CollectionService:GetTagged("Spare"))
+            task.wait(0.1)
+            for _, part in made do
+                part:Destroy()
+            end
+            made = nil
+            task.wait(0.1)
+            print(#CollectionService:GetTagged("Spare"))
+            """, "Main");
+        LuauScriptRuntime runtime = level.Play().Tick(2).Runtime.ShouldNotBeNull();
+        WeakReference<SceneNode>[] spares = MadeNow(level);
+        spares.Length.ShouldBe(20);
+
+        level.Tick(20);
+        runtime.Collect();
+        CollectAll();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["21", "1"]);
+        spares.Count(IsThere).ShouldBe(0, "a destroyed part is still held, with what it kept");
+        runtime.DestroyedTaggedCount.ShouldBe(0);
+        runtime.DestroyedAttributeCount.ShouldBe(0);
+    }
+
     [Fact]
     public void Stop_takes_away_what_a_destroyed_node_held_and_the_next_play_finds_the_level_as_it_was_built()
     {
