@@ -5,41 +5,55 @@ using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// GetAttribute of a node: a keyvalue of the entity it carries, pushed as the
-// value its type is to a script. The name is the second value on the stack.
+// A keyvalue of the entity a node carries, as the value its type is to a
+// script. That is what GetAttribute gives for a name no script has set.
 internal static class AttributeRead
 {
-    public static int Push(ScriptContext context, LuauStack stack, SceneNode node)
+    // False when the node has no keyvalue of that name. A reference to a
+    // node comes back in `reference`, since no value a script sets is one.
+    // No value and no reference is nil: an empty reference, or one to a node
+    // that is not in the level.
+    public static bool TryRead(
+        ScriptContext context, SceneNode node, ReadOnlySpan<char> name, out MemberValue value, out SceneNode? reference)
     {
-        if (!stack.TryGetUtf8(2, out ReadOnlySpan<byte> name))
-            return ScriptArguments.Wrong(stack, 2, "GetAttribute", "string", isMethod: true);
+        value = MemberValue.None;
+        reference = null;
 
-        // The name is compared where it lies, so asking makes no string.
-        Span<char> room = stackalloc char[NameChars.Room];
         EntityWorld world = context.World;
-        if (!NameChars.TryRead(name, room, out ReadOnlySpan<char> wanted) ||
-            !AuthoredAttributes.TryRead(node, world.Catalog, wanted, out KeyvalueType type, out ParameterValue value))
-        {
-            return ScriptResult.Of(stack.PushNil());
-        }
+        if (!AuthoredAttributes.TryRead(node, world.Catalog, name, out KeyvalueType type, out ParameterValue built))
+            return false;
 
-        return ScriptResult.Of(value.Kind switch
+        switch (built.Kind)
         {
-            ParameterValueKind.Boolean => stack.Push(value.Boolean),
-            ParameterValueKind.Number => stack.Push(value.Number),
-            ParameterValueKind.Text => stack.Push(value.Text),
+            case ParameterValueKind.Boolean:
+                value = MemberValue.Of(built.Boolean);
+                break;
+            case ParameterValueKind.Number:
+                value = MemberValue.Of(built.Number);
+                break;
+            case ParameterValueKind.Text:
+                value = MemberValue.Of(built.Text);
+                break;
 
             // A keyvalue holds a colour as the engine lights with it.
-            ParameterValueKind.Vector when type == KeyvalueType.Color =>
-                ColorValue.Push(stack, Color3.FromLinear(ThreeOf(in value))),
-            ParameterValueKind.Vector => stack.Push(ThreeOf(in value)),
+            case ParameterValueKind.Vector when type == KeyvalueType.Color:
+                value = MemberValue.Of(Color3.FromLinear(ThreeOf(in built)));
+                break;
+            case ParameterValueKind.Vector:
+                value = MemberValue.Of(ThreeOf(in built));
+                break;
+            case ParameterValueKind.NodeId:
+                world.Scene.TryFindById(built.NodeId, out reference);
+                break;
+        }
 
-            // A node that is not in the level is nil, as an empty reference is.
-            ParameterValueKind.NodeId => context.PushObject(
-                stack, world.Scene.TryFindById(value.NodeId, out SceneNode? found) ? found : null),
-            _ => stack.PushNil(),
-        });
+        return true;
     }
+
+    // Pushes what TryRead gave. False: it could not be pushed, and an error
+    // value is on top instead.
+    public static bool Push(ScriptContext context, LuauStack stack, in MemberValue value, SceneNode? reference) =>
+        reference is null ? AttributeValues.Push(stack, in value) : context.PushObject(stack, reference);
 
     private static Vector3 ThreeOf(in ParameterValue value) => new(value.Vector.X, value.Vector.Y, value.Vector.Z);
 }

@@ -39,6 +39,7 @@ public sealed partial class ScriptApiDescriptionTests
             Player = game:GetService("Players").LocalPlayer,
             Character = game:GetService("Players").LocalPlayer.Character,
             Color3 = Color3.new(1, 0.5, 0),
+            CollectionService = game:GetService("CollectionService"),
         }
         """;
 

@@ -10,11 +10,15 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 [ScriptClass(LuauDefinitions.SignalType, TypeParameters = "T... = ...any")]
 internal sealed partial class ScriptSignal : ScriptObject
 {
+    // With fewer listeners than this none is looked over.
+    private const int FirstLookOver = 64;
+
     private readonly List<ScriptConnection> _connections = [];
     private readonly SignalHub _hub;
     private readonly QueuedSignal? _queued;
     private int _fireDepth;
     private bool _hasDisconnected;
+    private int _lookOverAt = FirstLookOver;
 
     // With `queued` the level's queue calls each listener, and Fire is not used.
     public ScriptSignal(string name, SignalHub hub, QueuedSignal? queued = null)
@@ -28,6 +32,10 @@ internal sealed partial class ScriptSignal : ScriptObject
     public override string Name { get; }
 
     public int ListenerCount => _connections.Count;
+
+    // One listener, for a host that queues a call of each in place of
+    // calling them where it stands.
+    public ScriptConnection ListenerAt(int index) => _connections[index];
 
     // What a queued signal's fire carries, as a wire's text. Not said for a
     // signal the host fires where it stands.
@@ -110,8 +118,30 @@ internal sealed partial class ScriptSignal : ScriptObject
 
     private void Add(ScriptConnection connection)
     {
+        // A queued signal's listeners are looked over with the level's own.
+        if (_queued is null && _connections.Count >= _lookOverAt)
+            LetTheDeadGo();
+
         _connections.Add(connection);
         _queued?.Listen(connection);
+    }
+
+    // A listener whose thread was cancelled, or whose script was switched
+    // off, is let go when the signal fires next. On a signal that never
+    // fires again it would stay, so all are looked over each time there are
+    // twice as many as were left the last time.
+    private void LetTheDeadGo()
+    {
+        _fireDepth++;
+        for (int i = 0; i < _connections.Count; i++)
+        {
+            if (!_connections[i].CanRun)
+                _connections[i].Disconnect();
+        }
+
+        _fireDepth--;
+        DropDisconnected();
+        _lookOverAt = Math.Max(FirstLookOver, _connections.Count * 2);
     }
 
     private int Listen(LuauStack stack, string method, bool isOnce)

@@ -24,6 +24,9 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     private readonly ChildWaits _childWaits;
     private readonly NodeSignals _signals;
     private readonly ScriptCharacter _character;
+    private readonly DeferredCalls _deferred;
+    private readonly LevelTags _tags;
+    private readonly AttributeMethods _attributes;
     private volatile bool _isClosed;
 
     /// <summary>Opens a Luau state and gives it everything a script of this level can reach.</summary>
@@ -41,9 +44,16 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         _host = new LuauHost(_prints);
         _childWaits = new ChildWaits(_host, _world, _waiting);
 
+        // What scripts leave on nodes for each other: tags and attributes.
+        var hub = new SignalHub(_host, _waiting);
+        _deferred = new DeferredCalls(_world);
+        _tags = new LevelTags(_host, _world, hub, _deferred);
+        _attributes = new AttributeMethods(hub, _deferred);
+        var tagMethods = new TagMethods(_tags);
+
         try
         {
-            var context = new ScriptContext(_host, new ScriptWrites(_world), _childWaits);
+            var context = new ScriptContext(_host, new ScriptWrites(_world), _childWaits, tagMethods, _attributes);
             Vector3Members.Install(context);
             Vector3Library.ScriptInstall(context);
 
@@ -63,7 +73,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             SceneNode workspace = _world.Scene.Root;
             var players = new Players(new PlayerWrites(_world));
             _character = players.Body;
-            new LevelGlobals(new DataModel(_host, workspace, _runService, players), workspace).ScriptInstall(context);
+            var game = new DataModel(_host, workspace, _runService, players, new CollectionService(tagMethods));
+            new LevelGlobals(game, workspace).ScriptInstall(context);
             new ModuleLoader(_host, setup.Source, _sink, _waiting).ScriptInstall(context);
 
             // No library: an entity class is data, and its members are found by name.
@@ -76,6 +87,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
             // Last, so a runtime that was not made listens to nothing.
             _childWaits.Listen();
+            _tags.Listen();
         }
         catch
         {
@@ -106,6 +118,12 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
     /// <summary>How many threads wait, for a tick or for a signal.</summary>
     public int WaitingThreadCount => _waiting.Count;
+
+    /// <summary>How many nodes have a tag a script put on them. None once the level has stopped.</summary>
+    public int TaggedNodeCount => _tags.Table.NodeCount;
+
+    /// <summary>How many nodes hold an attribute a script set, or a signal of one a script asked for. None once the level has stopped.</summary>
+    public int AttributeNodeCount => _attributes.Table.NodeCount;
 
     /// <summary>
     /// Whether the Luau state is gone, and every thread with it. After
@@ -141,7 +159,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
         try
         {
-            if (!_childWaits.TryWake(token))
+            if (!_deferred.TryRun(token) && !_childWaits.TryWake(token))
                 _tasks.Wake(token);
         }
         catch (Exception e) // boundary: nothing of a script may throw into the tick
@@ -158,6 +176,10 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
         try
         {
+            // A listener's call is gone with its wake.
+            if (_deferred.TryDrop(token))
+                return true;
+
             // A thread that waits for a child waits on. Any other is ended.
             if (_childWaits.TryDrop(token))
                 return false;
@@ -253,7 +275,16 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     {
         _isClosed = true;
         _childWaits.StopListening();
+        _tags.StopListening();
         _host.Close();
+
+        // Not under a call that has not returned, which may be reading them.
+        if (_host.IsClosed)
+        {
+            _deferred.Clear();
+            _tags.Table.Clear();
+            _attributes.Table.Clear();
+        }
     }
 
     private void ReportFault(Exception fault) =>

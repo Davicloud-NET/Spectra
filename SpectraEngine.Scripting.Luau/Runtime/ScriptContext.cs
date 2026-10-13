@@ -22,10 +22,13 @@ internal sealed class ScriptContext
 
     // Gives the host the atoms and makes the method tables, so it comes
     // before anything else of the script API is set up.
-    public ScriptContext(LuauHost host, ScriptWrites writes, ChildWaits childWaits)
+    public ScriptContext(
+        LuauHost host, ScriptWrites writes, ChildWaits childWaits, TagMethods tags, AttributeMethods attributes)
     {
         Host = host;
         ChildWaits = childWaits;
+        Tags = tags;
+        Attributes = attributes;
         _writes = writes;
 
         if (ScriptApiCatalog.AtomCount > 0)
@@ -38,6 +41,12 @@ internal sealed class ScriptContext
 
     // The threads that wait for a child, which WaitForChild adds to.
     public ChildWaits ChildWaits { get; }
+
+    // The tags scripts put on nodes and the attributes they set, which a
+    // node's own methods reach.
+    public TagMethods Tags { get; }
+
+    public AttributeMethods Attributes { get; }
 
     // The inputs and outputs a node has from its entity class. The runtime
     // sets it once the signals behind it are made. Null until then.
@@ -133,7 +142,7 @@ internal sealed class ScriptContext
 
     // The text the member holds is handed back as it is. A script that
     // writes the same name on every tick then makes no string.
-    private static string TextOf(ReadOnlySpan<byte> utf8, string held)
+    internal static string TextOf(ReadOnlySpan<byte> utf8, string held)
     {
         Span<byte> same = stackalloc byte[HeldTextLimit];
         bool isHeld = utf8.Length <= same.Length

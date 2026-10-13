@@ -69,6 +69,28 @@ public sealed class ScriptCostTests
         ("read the Touched of a part", "local _ = part.Touched"),
         ("read whether a connection is connected", "local _ = heard.Connected"),
         ("call a function of Color3, three numbers out", "local _ = Color3.toHSV(c)"),
+        ("ask a node for a tag it has", "local _ = part:HasTag('Lava')"),
+        ("ask a node for a tag it lacks", "local _ = part:HasTag('Water')"),
+        ("ask the service for a tag of a node", "local _ = tags:HasTag(part, 'Lava')"),
+        ("list the nodes of a tag no node has", "local _ = tags:GetTagged('Nobody')"),
+        ("list the nodes of a tag two nodes have", "local _ = tags:GetTagged('Lava')"),
+        ("read the tags of a node", "local _ = part:GetTags()"),
+        ("add a tag and take it off again", "part:AddTag('Hot') part:RemoveTag('Hot')"),
+        ("add a tag a script hears of and take it off", "part:AddTag('Heard') part:RemoveTag('Heard')"),
+        ("read an attribute a script set", "local _ = part:GetAttribute('Score')"),
+        ("read an attribute nobody set", "local _ = part:GetAttribute('Nothing')"),
+        ("read a Color3 attribute a script set", "local _ = part:GetAttribute('Glow')"),
+        ("read every attribute of a node", "local _ = part:GetAttributes()"),
+        ("read every attribute of an entity", "local _ = sign:GetAttributes()"),
+        ("set an attribute to the number it has", "part:SetAttribute('Score', 5)"),
+        ("set an attribute to the string it has", "part:SetAttribute('State', 'idle')"),
+        ("set an attribute to another number", "part:SetAttribute('Count', i)"),
+        ("set an attribute to another CFrame", "part:SetAttribute('Rest', if i % 2 == 0 then f else g)"),
+        ("set an attribute a script hears of", "part:SetAttribute('Heard', i)"),
+        ("set a keyvalue's name on an entity", "sign:SetAttribute('speed', i)"),
+        ("read the signal of a node's attributes", "local _ = part.AttributeChanged"),
+        ("ask for the signal of one attribute", "local _ = part:GetAttributeChangedSignal('Score')"),
+        ("ask for the signal of a tag", "local _ = tags:GetInstanceAddedSignal('Lava')"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
@@ -124,6 +146,14 @@ public sealed class ScriptCostTests
             local lamp = workspace.Lamp
             local sign = workspace.Sign
             local heard = part.Touched:Connect(function() end)
+            local tags = game:GetService("CollectionService")
+            part:AddTag("Lava")
+            lamp:AddTag("Lava")
+            part:SetAttribute("Score", 5)
+            part:SetAttribute("State", "idle")
+            part:SetAttribute("Glow", c)
+            part:GetAttributeChangedSignal("Heard"):Connect(function() end)
+            tags:GetInstanceAddedSignal("Heard"):Connect(function() end)
             run.Heartbeat:Connect(function()
                 for i = 1, {{Rounds}} do
                     {{statement}}

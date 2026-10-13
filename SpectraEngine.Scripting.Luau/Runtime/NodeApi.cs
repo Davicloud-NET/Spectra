@@ -146,10 +146,50 @@ internal static partial class NodeApi
         return NameChars.TryRead(className, room, out ReadOnlySpan<char> wanted) && NodeClass.IsA(node, wanted);
     }
 
-    /// <summary>A keyvalue of the entity the node carries, as the level was built with it: a number, a boolean, a string, a Vector3, a Color3 for a colour, or a node for a reference to one. One the builder left alone is what the entity's class gives it. Nil for a name the entity does not have, and for a node with no entity.</summary>
+    /// <summary>What a script set under that name with SetAttribute. On a node that carries an entity, a name no script has set is the entity's keyvalue, as the level was built with it: a number, a boolean, a string, a Vector3, a Color3 for a colour, or a node for a reference to one. A keyvalue the builder left alone is what the entity's class gives it. Nil for a name that has neither.</summary>
     [ScriptMethod(Parameters = "attribute: string", Returns = "any")]
     private static int GetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
-        AttributeRead.Push(context, stack, node);
+        context.Attributes.Get(context, stack, node);
+
+    /// <summary>Leaves a value on the node under a name, for every script to read: a string, a boolean, a number, a Vector3, a CFrame or a Color3. Nil takes the attribute away. A name is 1 to 100 letters, digits and underscores, and does not start with RBX. On a node that carries an entity, scripts read this in place of the keyvalue of that name, and the entity never sees it: a door does not follow SetAttribute("speed", 9). Stop takes away what scripts set.</summary>
+    [ScriptMethod(Parameters = "attribute: string, value: (string | boolean | number | Vector3 | CFrame | Color3)?")]
+    private static int SetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
+        context.Attributes.Set(context, stack, node);
+
+    /// <summary>Every attribute of the node by its name: what scripts set, and under that the keyvalues of the entity the node carries.</summary>
+    [ScriptMethod(Returns = "{ [string]: any }")]
+    private static int GetAttributes(ScriptContext context, LuauStack stack, SceneNode node) =>
+        context.Attributes.GetAll(context, stack, node);
+
+    /// <summary>Fires with the attribute's name when a script sets an attribute of the node to another value, or takes one away. Setting the value it has fires nothing.</summary>
+    [ScriptSignal("attribute: string")]
+    public static ScriptSignal AttributeChanged(ScriptContext context, SceneNode node) =>
+        context.Attributes.ChangedSignal(node);
+
+    /// <summary>The signal that fires when a script sets the attribute of that name to another value, or takes it away. A listener is handed nothing and reads the value with GetAttribute.</summary>
+    [ScriptMethod(Parameters = "attribute: string", Returns = "RBXScriptSignal<()>")]
+    private static int GetAttributeChangedSignal(ScriptContext context, LuauStack stack, SceneNode node) =>
+        context.Attributes.PushChangedSignalOf(context, stack, node);
+
+    /// <summary>Puts a tag on the node, by which every script finds it: CollectionService lists the nodes of a tag. Nothing happens when the node has it. Stop takes every tag away.</summary>
+    [ScriptMethod(Parameters = "tag: string")]
+    private static int AddTag(ScriptContext context, LuauStack stack, SceneNode node) =>
+        context.Tags.Add(stack, node, tagAt: 2);
+
+    /// <summary>Takes a tag off the node. Nothing happens when the node lacks it.</summary>
+    [ScriptMethod(Parameters = "tag: string")]
+    private static int RemoveTag(ScriptContext context, LuauStack stack, SceneNode node) =>
+        context.Tags.Remove(stack, node, tagAt: 2);
+
+    /// <summary>Whether the node has the tag.</summary>
+    [ScriptMethod(Parameters = "tag: string", Returns = "boolean")]
+    private static int HasTag(ScriptContext context, LuauStack stack, SceneNode node) =>
+        context.Tags.Has(stack, node, tagAt: 2);
+
+    /// <summary>The node's tags, in the order it got them.</summary>
+    [ScriptMethod(Returns = "{string}")]
+    private static int GetTags(ScriptContext context, LuauStack stack, SceneNode node) =>
+        context.Tags.PushTagsOf(stack, node);
 
     // The text comes as the bytes Luau keeps, so a search makes no string.
     private static SceneNode? Below(SceneNode node, NodeMatch by, ReadOnlySpan<byte> text, bool recursive)

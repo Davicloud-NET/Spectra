@@ -184,6 +184,16 @@ A member written by hand may take the `ScriptContext` in front of the stack. A s
 private static int GetChildren(ScriptContext context, LuauStack stack, SceneNode node)
 ```
 
+A property and a signal of a static class may take the context as well, in front of the object. That is how a signal of a node finds the object that stands for it:
+
+```csharp
+[ScriptSignal("attribute: string")]
+public static ScriptSignal AttributeChanged(ScriptContext context, SceneNode node) =>
+    context.Attributes.ChangedSignal(node);
+```
+
+A property with `Sets` takes the node and nothing else, since the generator writes its body.
+
 Two more things stay by hand:
 
 - An operator. `[ScriptOperator("*", "Vector3", "Vector3")]` goes on the method that implements it, and that method is put into the metatable by hand (`CFrameMembers`).

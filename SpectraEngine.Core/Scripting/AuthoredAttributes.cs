@@ -55,6 +55,37 @@ public static class AuthoredAttributes
         return false;
     }
 
+    /// <summary>
+    /// Adds the name of every keyvalue <see cref="TryRead"/> can have a value
+    /// for on the node: those its class declares, in the class's order, and
+    /// then those only the node has. Each name is added once. Nothing for a
+    /// node with no entity.
+    /// </summary>
+    public static void AddNames(SceneNode node, EntityCatalog classes, List<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentNullException.ThrowIfNull(classes);
+        ArgumentNullException.ThrowIfNull(names);
+
+        if (node.Entity is not { ClassName.Length: > 0 } entity)
+            return;
+
+        int first = names.Count;
+        if (classes.TryGetSchema(entity.ClassName, out EntitySchema? schema))
+        {
+            IReadOnlyList<KeyvalueDescriptor> declared = schema.Keyvalues;
+            for (int i = 0; i < declared.Count; i++)
+                names.Add(declared[i].Name);
+        }
+
+        List<KeyValuePair<string, string>> keyvalues = entity.Keyvalues;
+        for (int i = 0; i < keyvalues.Count; i++)
+        {
+            if (names.IndexOf(keyvalues[i].Key, first) < 0)
+                names.Add(keyvalues[i].Key);
+        }
+    }
+
     private static bool TryReadLast(
         EntityData entity, ReadOnlySpan<char> name, KeyvalueType type, out ParameterValue value)
     {
