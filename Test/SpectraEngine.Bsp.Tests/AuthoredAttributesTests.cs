@@ -112,16 +112,37 @@ public sealed class AuthoredAttributesTests
         value.ShouldBe(ParameterValue.None);
     }
 
-    [Fact]
-    public void Of_two_values_under_one_name_the_first_is_read()
+    // The entity is handed every pair in order and keeps what it could read
+    // last. A map and a pack both keep a name written twice.
+    [Theory]
+    [InlineData("1", "2", 2d)]
+    [InlineData("1", "two", 1d)]
+    [InlineData("one", "2", 2d)]
+    [InlineData("one", "two", 3d)]
+    public void Of_two_values_under_one_declared_name_the_last_its_type_can_read_is_read(
+        string first, string second, double value)
     {
         EntityData entity = _node.Entity.ShouldNotBeNull();
-        entity.Keyvalues.Add(new("count", "1"));
-        entity.Keyvalues.Add(new("count", "2"));
+        entity.Keyvalues.Add(new("count", first));
+        entity.Keyvalues.Add(new("label", "between"));
+        entity.Keyvalues.Add(new("count", second));
 
-        AuthoredAttributes.TryRead(_node, _classes, "count", out _, out ParameterValue value).ShouldBeTrue();
+        AuthoredAttributes.TryRead(_node, _classes, "count", out _, out ParameterValue read).ShouldBeTrue();
 
-        value.ShouldBe(ParameterValue.Of(1d));
+        read.ShouldBe(ParameterValue.Of(value));
+    }
+
+    // No entity reads such a name. EntityData.TryGetValue gives the first.
+    [Fact]
+    public void Of_two_values_under_a_name_the_class_does_not_declare_the_first_is_read()
+    {
+        EntityData entity = _node.Entity.ShouldNotBeNull();
+        entity.Keyvalues.Add(new("note", "first"));
+        entity.Keyvalues.Add(new("note", "second"));
+
+        AuthoredAttributes.TryRead(_node, _classes, "note", out _, out ParameterValue read).ShouldBeTrue();
+
+        read.ShouldBe(ParameterValue.Of("first"));
     }
 
     [Fact]

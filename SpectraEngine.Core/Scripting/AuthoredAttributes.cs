@@ -14,20 +14,15 @@ namespace SpectraEngine.Core.Scripting;
 public static class AuthoredAttributes
 {
     /// <summary>
-    /// Reads the keyvalue called <paramref name="name"/>. One the class
-    /// declares is the value on the node when its type can read that, and
-    /// the class's own value otherwise, which is what the entity runs with.
-    /// One only the node has is its text.
+    /// Reads the keyvalue called <paramref name="name"/> as the entity runs
+    /// with it. One only the node has is its text.
     /// </summary>
-    /// <param name="node">The node asked.</param>
-    /// <param name="classes">The entity classes of the level, whose schemas type a keyvalue.</param>
-    /// <param name="name">The keyvalue's name. Names are case sensitive.</param>
     /// <param name="type">What the value means. A colour is linear, and an angle is in degrees.</param>
     /// <param name="value">The value. None for a node reference that is empty.</param>
-    /// <returns>
-    /// False when the node carries no entity, or neither the node nor its
-    /// class has the name.
-    /// </returns>
+    /// <returns>False when the node carries no entity, or neither the node nor its class has the name.</returns>
+    // Names are case sensitive. An entity is handed every pair in order and
+    // keeps the last its type could read, or its class's own value when it
+    // could read none. A name the node has twice is read the same way here.
     public static bool TryRead(
         SceneNode node, EntityCatalog classes, ReadOnlySpan<char> name, out KeyvalueType type, out ParameterValue value)
     {
@@ -39,33 +34,39 @@ public static class AuthoredAttributes
         if (node.Entity is not { ClassName.Length: > 0 } entity)
             return false;
 
-        string? authored = Authored(entity, name);
         if (classes.TryGetSchema(entity.ClassName, out EntitySchema? schema) &&
             TryFindDeclared(schema, name, out KeyvalueDescriptor declared))
         {
             type = declared.Type;
-            return (authored is not null && TryParse(type, authored, out value))
-                || TryParse(type, declared.Default, out value);
+            return TryReadLast(entity, name, type, out value) || TryParse(type, declared.Default, out value);
         }
 
-        if (authored is null)
-            return false;
-
-        value = ParameterValue.Of(authored);
-        return true;
-    }
-
-    // The first match, as EntityData.TryGetValue reads it.
-    private static string? Authored(EntityData entity, ReadOnlySpan<char> name)
-    {
+        // No entity reads it, so the first counts, as for EntityData.TryGetValue.
         List<KeyValuePair<string, string>> keyvalues = entity.Keyvalues;
         for (int i = 0; i < keyvalues.Count; i++)
         {
             if (name.SequenceEqual(keyvalues[i].Key))
-                return keyvalues[i].Value;
+            {
+                value = ParameterValue.Of(keyvalues[i].Value);
+                return true;
+            }
         }
 
-        return null;
+        return false;
+    }
+
+    private static bool TryReadLast(
+        EntityData entity, ReadOnlySpan<char> name, KeyvalueType type, out ParameterValue value)
+    {
+        List<KeyValuePair<string, string>> keyvalues = entity.Keyvalues;
+        for (int i = keyvalues.Count - 1; i >= 0; i--)
+        {
+            if (name.SequenceEqual(keyvalues[i].Key) && TryParse(type, keyvalues[i].Value, out value))
+                return true;
+        }
+
+        value = ParameterValue.None;
+        return false;
     }
 
     private static bool TryFindDeclared(EntitySchema schema, ReadOnlySpan<char> name, out KeyvalueDescriptor declared)
