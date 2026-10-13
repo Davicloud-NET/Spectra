@@ -58,7 +58,8 @@ public sealed class PropertyFieldModel : ObservableObject
     public bool HasUnit => Unit.Length > 0;
 
     // When set, committing an empty box writes the empty value instead of
-    // reverting. For a wire's parameter, where empty means "no argument".
+    // reverting. For a wire's parameter, where empty means "no argument", and
+    // for an attribute's text. Not while the cell is mixed.
     internal bool AllowsEmpty { get; init; }
 
     /// <summary>What the box shows.</summary>
@@ -170,13 +171,17 @@ public sealed class PropertyFieldModel : ObservableObject
         string typed = Text.Trim();
 
         // Empty means "leave it alone" unless the cell allows an empty value.
-        if (typed.Length == 0 && !AllowsEmpty)
+        // A mixed cell is empty because the values differ, so it never does:
+        // a click in and out would empty every one of them.
+        if (typed.Length == 0 && (!AllowsEmpty || _isMixed))
         {
             Revert();
             return;
         }
 
-        if (string.Equals(typed, _live, StringComparison.Ordinal) && !_isMixed)
+        // The box as it was shown is no change, spaces at its ends and all.
+        if (!_isMixed && (string.Equals(typed, _live, StringComparison.Ordinal)
+            || string.Equals(Text, _live, StringComparison.Ordinal)))
         {
             Rejection = string.Empty;
             return;
