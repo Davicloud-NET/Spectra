@@ -357,6 +357,8 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `SettableMemberClassTests` in `SpectraEngine.Bsp.Tests` holds the classes a row names equal to the nodes the member reads a value on.
 - `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop. Between the writes it makes, clones, moves and destroys nodes, from C# (`RandomTree`) and from scripts (`WritingScript`). A new kind of value needs a case in `RandomWrites`.
 - `SpawnCostTests` fails when a level that spawns and destroys a part on every tick still holds one of the destroyed parts, anywhere in the engine or the runtime. Its table of times runs when asked for, like the ones below.
+- `SpawnKeepsNothingTests` holds the same for a clone that carries a script, a module its script asks for, and an entity. Whatever else a clone can carry that the runtime keeps something for gets a test there.
+- `HeldNodeLimitTests` holds the bound on made nodes against a script that destroys what it makes and keeps it.
 - `PlayerSettingTests` sets every settable property of the character from a script and compares what outlives a play session after Stop. It also tries every name on the player's objects: what takes a value must be what the description says a script can set.
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global, and that it has no `require`.
 - `ScriptSampleTests` fails when no clean sample script names a class or uses a global. See [Checked by luau-lsp](#checked-by-luau-lsp).
