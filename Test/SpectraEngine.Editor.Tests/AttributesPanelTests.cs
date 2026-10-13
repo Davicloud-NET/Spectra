@@ -103,8 +103,8 @@ public sealed class AttributesPanelTests
     }
 
     [Theory]
-    [InlineData("two words", "Not added: 'two words' is not a valid attribute name. An attribute's name is 1 to 100 letters, digits and underscores, and does not start with RBX.")]
-    [InlineData("RBXHidden", "Not added: 'RBXHidden' is not a valid attribute name. An attribute's name is 1 to 100 letters, digits and underscores, and does not start with RBX.")]
+    [InlineData("two words", "Not added: 'two words' is not a valid attribute name. An attribute's name is 1 to 100 letters, digits and any of _ . - /, and does not start with RBX.")]
+    [InlineData("RBXHidden", "Not added: 'RBXHidden' is not a valid attribute name. An attribute's name is 1 to 100 letters, digits and any of _ . - /, and does not start with RBX.")]
     [InlineData("Damage", "Not added: There is an attribute called 'Damage' already.")]
     public void A_name_the_rules_refuse_is_shown_as_wrong_where_it_was_typed_and_is_not_added(
         string name, string reason)
@@ -118,6 +118,41 @@ public sealed class AttributesPanelTests
         brick.Attributes.Count.ShouldBe(1);
         rig.Attributes.NewNameField.Rejection.ShouldBe(reason);
         rig.Attributes.NewNameField.Text.ShouldBe(name);
+    }
+
+    // Roblox takes these in a name, so the panel does. Nothing reads a name
+    // as a path: a row is found by the whole name.
+    [Theory]
+    [InlineData("a.b")]
+    [InlineData("a-b")]
+    [InlineData("a/b")]
+    [InlineData("ui/hud.title-2")]
+    [InlineData("9lives")]
+    public void A_name_with_a_period_a_hyphen_or_a_slash_is_added_shown_edited_and_renamed_like_any_other(string name)
+    {
+        SceneNode brick = Node("Brick", ("Damage", MemberValue.Of(1d)));
+        var rig = new TagPanelRig(null, brick);
+
+        rig.Attributes.NewKindLabel = "Number";
+        rig.Type(rig.Attributes.NewNameField, name);
+
+        rig.Attributes.NewNameField.Rejection.ShouldBeEmpty();
+        rig.Attributes.Rows.Select(row => row.Name).ShouldBe(["Damage", name]);
+        rig.Row(name).NameField.Text.ShouldBe(name);
+
+        rig.Type(rig.Row(name).Cells.Single(), "7");
+        ValueOf(brick, name).ShouldBe(MemberValue.Of(7d));
+
+        rig.Type(rig.Row("Damage").NameField, name);
+        rig.Row("Damage").NameField.Rejection.ShouldBe($"Not renamed: There is an attribute called '{name}' already.");
+
+        rig.Type(rig.Row(name).NameField, name + "/x.y-z");
+        brick.Attributes.Select(pair => pair.Key).ShouldBe(["Damage", name + "/x.y-z"]);
+        ValueOf(brick, name + "/x.y-z").ShouldBe(MemberValue.Of(7d));
+
+        rig.Attributes.Remove(rig.Row(name + "/x.y-z"));
+        rig.Publish();
+        brick.Attributes.Select(pair => pair.Key).ShouldBe(["Damage"]);
     }
 
     [Fact]

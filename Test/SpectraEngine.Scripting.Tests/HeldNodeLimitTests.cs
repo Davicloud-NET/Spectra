@@ -153,4 +153,58 @@ public sealed class HeldNodeLimitTests
         runtime.HeldDestroyedCount.ShouldBe(0);
         runtime.LooseTreeCount.ShouldBe(0);
     }
+
+    // A destroyed node keeps its tags and attributes while a script holds
+    // it. The bound on made nodes is what bounds them too.
+    [Fact]
+    public void A_loop_that_keeps_every_destroyed_part_with_a_tag_and_an_attribute_on_it_is_stopped_by_the_bound()
+    {
+        using ScriptLevel level = House.With("""
+            local kept = {}
+            while true do
+                local part = Instance.new("Part")
+                part:Destroy()
+                part:AddTag("Kept")
+                part:SetAttribute("Note", "kept after Destroy")
+                kept[#kept + 1] = part
+            end
+            """);
+
+        level.Play().Tick();
+
+        ScriptMessage error = level.Sink.Messages.Single(message => message.Severity == ScriptSeverity.Error);
+        error.Line.ShouldBe(3);
+        error.Text.ShouldStartWith(
+            $"Instance.new made nothing: scripts would have made more than {TreeLimits.MaxMadeNodes} nodes");
+
+        LuauScriptRuntime runtime = level.Runtime.ShouldNotBeNull();
+        runtime.Collect();
+        new ScriptWrites(level.Entities).Tree.MadeCount.ShouldBe(0);
+        runtime.HeldDestroyedCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_destroyed_part_no_script_holds_any_more_makes_room_whatever_it_was_left_holding()
+    {
+        using ScriptLevel level = House.With("""
+            for i = 1, 40000 do
+                local part = Instance.new("Part")
+                part:AddTag("Early")
+                part:Destroy()
+                part:AddTag("Late")
+                part:SetAttribute("Index", i)
+            end
+            print("done")
+            """);
+
+        level.Play().Tick();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["done"]);
+        LuauScriptRuntime runtime = level.Runtime.ShouldNotBeNull();
+        runtime.Collect();
+        new ScriptWrites(level.Entities).Tree.MadeCount.ShouldBe(0);
+        runtime.HeldDestroyedCount.ShouldBe(0);
+        runtime.TaggedNodeCount.ShouldBe(0);
+    }
 }

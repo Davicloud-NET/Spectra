@@ -27,9 +27,9 @@ public sealed class TagScriptTests
     }
 
     [Fact]
-    public void A_node_has_its_tags_in_the_order_it_got_them()
+    public void A_node_hands_its_tags_out_sorted_by_their_bytes_whatever_order_it_got_them_in()
     {
-        string[] printed = House.Ask("""
+        string[] printed = House.Ask(Service + """
             local door = workspace.House.Door
             print(#door:GetTags(), #workspace:GetTags())
             door:AddTag("Wooden")
@@ -39,14 +39,21 @@ public sealed class TagScriptTests
             print(table.concat(door:GetTags(), " | "))
             door:RemoveTag("Wooden")
             door:AddTag("Wooden")
+            door:AddTag("open")
+            door:AddTag("Op")
+            door:AddTag("9")
             print(table.concat(door:GetTags(), " | "))
+            print(table.concat(CollectionService:GetTags(door), " | "))
             """);
 
+        // A digit, then the capitals, then the small letters. The shorter
+        // of two that begin alike comes first.
         printed.ShouldBe(
         [
             "0 0",
-            "Wooden | Open | A tag with spaces, and more",
-            "Open | A tag with spaces, and more | Wooden",
+            "A tag with spaces, and more | Open | Wooden",
+            "9 | A tag with spaces, and more | Op | Open | Wooden | open",
+            "9 | A tag with spaces, and more | Op | Open | Wooden | open",
         ]);
     }
 

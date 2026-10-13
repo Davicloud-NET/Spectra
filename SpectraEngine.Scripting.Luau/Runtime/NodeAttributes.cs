@@ -15,4 +15,22 @@ internal sealed class NodeAttributes
 
     // GetAttributeChangedSignal, by the attribute's name.
     public Dictionary<string, ScriptSignal>? ChangedOf { get; set; }
+
+    // Ends every listener of the node's signals and lets the signals go, for
+    // a node that fires nothing more. The values stay.
+    public void EndSignals()
+    {
+        // Out first: ending a thread can run a script that asks for a signal.
+        ScriptSignal? changed = Changed;
+        Dictionary<string, ScriptSignal>? byName = ChangedOf;
+        Changed = null;
+        ChangedOf = null;
+
+        changed?.EndAll();
+        if (byName is null)
+            return;
+
+        foreach (ScriptSignal signal in byName.Values)
+            signal.EndAll();
+    }
 }

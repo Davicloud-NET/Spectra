@@ -29,7 +29,7 @@ public class TaggedMapDeterminismTests
         // What was compared holds the tags and the attributes.
         ScmapDocument document = ScmapReader.Read(first, "Maps/Room.scmap");
         document.NodeTags.Length.ShouldBe(8);
-        document.NodeAttributes.Length.ShouldBe(9);
+        document.NodeAttributes.Length.ShouldBe(10);
     }
 
     [Fact]

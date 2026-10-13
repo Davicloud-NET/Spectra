@@ -245,8 +245,32 @@ public sealed class TagAndAttributeEditTests
     }
 
     [Theory]
+    [InlineData("a.b")]
+    [InlineData("a-b")]
+    [InlineData("a/b")]
+    [InlineData("9lives")]
+    public void A_name_with_a_period_a_hyphen_or_a_slash_is_set_renamed_and_undone_like_any_other(string name)
+    {
+        var a = new SceneNode("A") { Attributes = AttributeSet.Empty.With("Damage", MemberValue.Of(10d)) };
+        var rig = new Rig(null, a);
+
+        rig.Apply(AttributeEdit.Set(name, MemberValue.Of(new Vector3(1f, 2f, 3f)))).ShouldBe(1);
+        rig.Apply(AttributeEdit.SetPart(name, MemberValue.Of(Vector3.Zero), 1, 9f)).ShouldBe(1);
+        rig.Apply(AttributeEdit.Rename("Damage", name + "/" + name)).ShouldBe(1);
+
+        a.Attributes.Select(pair => pair.Key).ShouldBe([name + "/" + name, name]);
+        ValueOf(a, name).ShouldBe(MemberValue.Of(new Vector3(1f, 9f, 3f)));
+
+        rig.Undo.Undo();
+        rig.Undo.Undo();
+        rig.Undo.Undo();
+        a.Attributes.Select(pair => pair.Key).ShouldBe(["Damage"]);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("two words")]
+    [InlineData("a:b")]
     [InlineData("RBXHidden")]
     public void A_name_the_rule_refuses_changes_nothing(string name)
     {

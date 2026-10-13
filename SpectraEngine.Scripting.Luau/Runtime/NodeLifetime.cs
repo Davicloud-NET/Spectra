@@ -6,7 +6,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // What it means to the level's scripts that a node is made, cloned, moved
 // in or out of the level, or destroyed. TreeWrites changes the tree. This
 // does the rest: a script below a node that leaves ends and one below a node
-// that comes in starts, and nothing is kept for a node that is gone for good.
+// that comes in starts. Of a node that was destroyed only its tags and
+// attributes are kept, and nothing of one no script can reach any more.
 internal sealed class NodeLifetime
 {
     // What a script reads when it changes the tree before the runtime is whole.
@@ -42,11 +43,6 @@ internal sealed class NodeLifetime
         _loose = new LooseNodes(_host, _tree, Forget);
         _held = new HeldNodes(_host, _tree);
     }
-
-    // What a script reads when it puts a tag or an attribute on a node that
-    // was destroyed. The runtime keeps nothing for such a node.
-    public static string HoldsNo(SceneNode node, string what) =>
-        $"\"{node.Name}\" was destroyed, and a destroyed node holds no {what}";
 
     // How many made trees are in no level and may still be reached.
     public int LooseCount => _loose.Count;
@@ -100,9 +96,9 @@ internal sealed class NodeLifetime
         if (_tree.TryDestroy(node, destroyed, out string? refusal))
         {
             for (int i = 0; i < destroyed.Count; i++)
-                Forget(destroyed[i]);
+                Destroyed(destroyed[i]);
 
-            // After the forgetting, which can run a script that lets go.
+            // After the ending, which can run a script that lets go.
             for (int i = 0; i < destroyed.Count; i++)
             {
                 if (_host.Objects.Holds(destroyed[i]))
@@ -198,26 +194,35 @@ internal sealed class NodeLifetime
         Return(nodes);
     }
 
-    // Lets go of all the runtime keeps for a node that is gone for good:
-    // its script, the module it is, the connections to what it fires, the
-    // waits on it, its tags and its attributes. What a script holds stays.
+    // Lets go of all the runtime keeps for a node of a tree no script can
+    // reach any more, its tags and attributes too.
     private void Forget(SceneNode node)
+    {
+        EndAllOf(node);
+        _tags.Table.Forget(node);
+        _attributes.Table.Take(node)?.EndSignals();
+    }
+
+    // A destroyed node keeps its tags and attributes, as in Roblox, for a
+    // script that still holds it. The tables hold it weakly from here on,
+    // so they are let go with the node. Nothing of it fires again.
+    private void Destroyed(SceneNode node)
+    {
+        EndAllOf(node);
+        _tags.Table.Destroyed(node);
+        _attributes.Table.Destroyed(node)?.EndSignals();
+    }
+
+    // Ends what runs for a node that is gone for good: its script, the
+    // module it is, the connections to what it fires and the waits on it.
+    // What a script holds stays.
+    private void EndAllOf(SceneNode node)
     {
         _loose.Remove(node);
         _starter.Left(node);
         _modules.Forget(node);
         _signals.Forget(node);
         _waits.Destroyed(node);
-        _tags.Table.Forget(node);
-        if (_attributes.Table.Take(node) is not { } left)
-            return;
-
-        left.Changed?.EndAll();
-        if (left.ChangedOf is { } byName)
-        {
-            foreach (ScriptSignal signal in byName.Values)
-                signal.EndAll();
-        }
     }
 
     private List<SceneNode> Rent() => _spareLists.Count > 0 ? _spareLists.Pop() : [];

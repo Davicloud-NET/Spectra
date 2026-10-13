@@ -135,14 +135,20 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     /// <summary>How many threads wait, for a tick or for a signal.</summary>
     public int WaitingThreadCount => _waiting.Count;
 
-    /// <summary>How many nodes have a tag, built with it or given it by a script. None once the level has stopped.</summary>
+    /// <summary>How many nodes have a tag, built with it or given it by a script. A destroyed node is not counted. None once the level has stopped.</summary>
     public int TaggedNodeCount => _tags.Table.NodeCount;
 
-    /// <summary>How many nodes hold an attribute, built with it or set by a script, or a signal of one a script asked for. None once the level has stopped.</summary>
+    /// <summary>How many nodes hold an attribute, built with it or set by a script, or a signal of one a script asked for. A destroyed node is not counted. None once the level has stopped.</summary>
     public int AttributeNodeCount => _attributes.Table.NodeCount;
 
     // How many tags are kept, with those nothing waits on until they are looked over.
     internal int KnownTagCount => _tags.Table.TagCount;
+
+    // How many destroyed nodes still keep a tag, and how many an attribute.
+    // Each walks them all. None once the level has stopped.
+    internal int DestroyedTaggedCount => _tags.Table.DestroyedCount;
+
+    internal int DestroyedAttributeCount => _attributes.Table.DestroyedCount;
 
     /// <summary>How many scripts run for a node of the level, with those their host switched off.</summary>
     public int RunningScriptCount => _starter.RunningCount;

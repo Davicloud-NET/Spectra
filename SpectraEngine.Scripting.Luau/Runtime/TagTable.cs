@@ -1,4 +1,6 @@
+using System.Runtime.CompilerServices;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
@@ -11,6 +13,11 @@ internal sealed class TagTable
     private static readonly IReadOnlyList<TagNodes> None = [];
 
     private readonly Dictionary<SceneNode, List<TagNodes>> _ofNode = [];
+
+    // A destroyed node keeps its tags and takes more, as in Roblox. It is
+    // held weakly: its tags last as long as anything can hand the node to a
+    // script, and go with the node.
+    private readonly ConditionalWeakTable<SceneNode, List<TagNodes>> _ofDestroyed = new();
     private readonly Dictionary<string, TagNodes> _tags = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TagNodes>.AlternateLookup<ReadOnlySpan<char>> _byChars;
 
@@ -21,8 +28,26 @@ internal sealed class TagTable
 
     public TagTable() => _byChars = _tags.GetAlternateLookup<ReadOnlySpan<char>>();
 
-    // How many nodes have a tag, in the level's tree or out of it.
+    // How many nodes have a tag, in the level's tree or out of it. A
+    // destroyed node is not counted.
     public int NodeCount => _ofNode.Count;
+
+    // How many destroyed nodes a tag is still kept for. It walks them all,
+    // so it is for a test to ask.
+    public int DestroyedCount
+    {
+        get
+        {
+            int count = 0;
+            foreach (KeyValuePair<SceneNode, List<TagNodes>> kept in _ofDestroyed)
+            {
+                if (kept.Value.Count > 0)
+                    count++;
+            }
+
+            return count;
+        }
+    }
 
     // How many tags are kept. One no node has stays until the tags are
     // looked over, so a node that gets a tag and loses it makes it once.
@@ -35,11 +60,9 @@ internal sealed class TagTable
     public int Tidyings { get; private set; }
 
     // The node's tags, in the order it got them.
-    public IReadOnlyList<TagNodes> Of(SceneNode node) =>
-        _ofNode.TryGetValue(node, out List<TagNodes>? tags) ? tags : None;
+    public IReadOnlyList<TagNodes> Of(SceneNode node) => ListOf(node) ?? None;
 
-    public bool Has(SceneNode node, ReadOnlySpan<char> tag) =>
-        _ofNode.TryGetValue(node, out List<TagNodes>? tags) && IndexOf(tags, tag) >= 0;
+    public bool Has(SceneNode node, ReadOnlySpan<char> tag) => ListOf(node) is { } tags && IndexOf(tags, tag) >= 0;
 
     // The tag, or null when it is not kept.
     public TagNodes? Find(ReadOnlySpan<char> tag) => _byChars.TryGetValue(tag, out TagNodes? found) ? found : null;
@@ -59,6 +82,9 @@ internal sealed class TagTable
     {
         if (!_ofNode.TryGetValue(node, out List<TagNodes>? tags))
         {
+            if (TreeWrites.IsDestroyed(node))
+                return AddToDestroyed(node, tag);
+
             tags = _spare.Count > 0 ? _spare.Pop() : [];
             _ofNode.Add(node, tags);
         }
@@ -81,7 +107,7 @@ internal sealed class TagTable
     {
         wasInLevel = false;
         if (!_ofNode.TryGetValue(node, out List<TagNodes>? tags))
-            return null;
+            return RemoveFromDestroyed(node, tag);
 
         int index = IndexOf(tags, tag);
         if (index < 0)
@@ -130,21 +156,27 @@ internal sealed class TagTable
             Add(copy, tags[i].Tag, isInLevel: false);
     }
 
-    // Takes every tag off a node that is gone for good. It has left the
-    // level's tree by then, and whoever fires the signals was told so.
+    // Takes every tag off a node no script can reach any more. It has left
+    // the level's tree by then, and whoever fires the signals was told so.
     public void Forget(SceneNode node)
     {
         if (!_ofNode.Remove(node, out List<TagNodes>? tags))
             return;
 
-        for (int i = 0; i < tags.Count; i++)
-        {
-            TakeOut(tags[i], node);
-            tags[i].Holders--;
-        }
-
+        Uncount(node, tags);
         tags.Clear();
         _spare.Push(tags);
+    }
+
+    // The node was destroyed. It keeps its tags. From here on it is in no
+    // tag's list and counts as no holder of one: nothing says when it is gone.
+    public void Destroyed(SceneNode node)
+    {
+        if (!_ofNode.Remove(node, out List<TagNodes>? tags))
+            return;
+
+        Uncount(node, tags);
+        _ofDestroyed.AddOrUpdate(node, tags);
     }
 
     // A node moved inside the tree, so every list may be out of order.
@@ -226,8 +258,53 @@ internal sealed class TagTable
         }
 
         _ofNode.Clear();
+        _ofDestroyed.Clear();
         _tags.Clear();
         _spare.Clear();
+    }
+
+    private List<TagNodes>? ListOf(SceneNode node)
+    {
+        if (_ofNode.TryGetValue(node, out List<TagNodes>? tags))
+            return tags;
+
+        return TreeWrites.IsDestroyed(node) && _ofDestroyed.TryGetValue(node, out tags) ? tags : null;
+    }
+
+    // The tag a destroyed node gets is the kept one when there is one, and
+    // one of its own otherwise, which no list and no signal knows.
+    private TagNodes? AddToDestroyed(SceneNode node, ReadOnlySpan<char> tag)
+    {
+        List<TagNodes> tags = _ofDestroyed.GetValue(node, static _ => []);
+        if (IndexOf(tags, tag) >= 0)
+            return null;
+
+        TagNodes added = Find(tag) ?? new TagNodes(tag.ToString());
+        tags.Add(added);
+        return added;
+    }
+
+    private TagNodes? RemoveFromDestroyed(SceneNode node, ReadOnlySpan<char> tag)
+    {
+        if (!TreeWrites.IsDestroyed(node) || !_ofDestroyed.TryGetValue(node, out List<TagNodes>? tags))
+            return null;
+
+        int index = IndexOf(tags, tag);
+        if (index < 0)
+            return null;
+
+        TagNodes removed = tags[index];
+        tags.RemoveAt(index);
+        return removed;
+    }
+
+    private static void Uncount(SceneNode node, List<TagNodes> tags)
+    {
+        for (int i = 0; i < tags.Count; i++)
+        {
+            TakeOut(tags[i], node);
+            tags[i].Holders--;
+        }
     }
 
     private static void Put(TagNodes tag, SceneNode node)

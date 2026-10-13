@@ -61,8 +61,11 @@ public sealed class AttributeSignalNameTests
     [InlineData("Score", true)]
     [InlineData("_private_9", true)]
     [InlineData("rbx_lower", true)]
+    [InlineData("a.b", true)]
+    [InlineData("a-b", true)]
+    [InlineData("a/b", true)]
     [InlineData("my score", false)]
-    [InlineData("a.b", false)]
+    [InlineData("a:b", false)]
     [InlineData("RBXScore", false)]
     [InlineData("", false)]
     public void A_signal_is_kept_for_the_names_SetAttribute_takes_and_for_no_other(string name, bool isKept)

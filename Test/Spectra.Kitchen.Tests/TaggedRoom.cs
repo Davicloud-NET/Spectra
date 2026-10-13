@@ -8,6 +8,7 @@ namespace Spectra.Kitchen.Tests;
 // The fixture's room with tags and attributes on a world brush, a part, an
 // entity, a light and a folder. Between them the attributes are of every
 // kind, and one tag is on several nodes in an order that is not the tree's.
+// One name has the period, the hyphen and the slash a name may have.
 internal static class TaggedRoom
 {
     public static readonly CFrame Rest = new(
@@ -15,6 +16,8 @@ internal static class TaggedRoom
 
     // A letter outside ASCII, by its code point.
     public static readonly string Heiss = $"hei{(char)0xDF}";
+
+    public const string Pathlike = "ui/hud.title-2";
 
     public static Scene Build(MapFixture fixture)
     {
@@ -35,7 +38,9 @@ internal static class TaggedRoom
             .With("Safe", MemberValue.Of(false));
 
         Named(scene, "Door").Tags = TagSet.Of("Lava");
-        Named(scene, "Door").Attributes = AttributeSet.Empty.With("Owner", MemberValue.Of(""));
+        Named(scene, "Door").Attributes = AttributeSet.Empty
+            .With("Owner", MemberValue.Of(""))
+            .With(Pathlike, MemberValue.Of(3d));
 
         Named(scene, "Sun").Tags = TagSet.Of("Sky");
 

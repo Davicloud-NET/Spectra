@@ -11,6 +11,11 @@ internal sealed class TagMethods(LevelTags tags)
 {
     private const string NotText = "was handed a tag that is not valid UTF-8, which no node can have";
 
+    // Kept, so sorting makes no delegate on each call.
+    private static readonly Comparison<string> ByBytes = TagName.CompareBytes;
+
+    private readonly List<string> _sorted = [];
+
     public int Add(LuauStack stack, SceneNode node, int tagAt)
     {
         if (!stack.TryGetUtf8(tagAt, out ReadOnlySpan<byte> utf8))
@@ -22,10 +27,6 @@ internal sealed class TagMethods(LevelTags tags)
         Span<char> room = stackalloc char[NameChars.Room];
         if (!NameChars.TryRead(utf8, room, out ReadOnlySpan<char> tag))
             return stack.Fail($"AddTag {NotText}");
-
-        // Nothing is kept for a node that is gone for good.
-        if (TreeWrites.IsDestroyed(node))
-            return stack.Fail(NodeLifetime.HoldsNo(node, "tag"));
 
         if (tags.Table.Of(node).Count >= TagLimits.MaxPerNode && !tags.Table.Has(node, tag))
         {
@@ -59,17 +60,25 @@ internal sealed class TagMethods(LevelTags tags)
         return ScriptResult.Of(stack.Push(has));
     }
 
-    // GetTags: the node's tags, in the order it got them.
+    // GetTags: the node's tags, sorted as TagName.CompareBytes says. Roblox
+    // hands them out sorted, and not in the order the node got them.
     public int PushTagsOf(LuauStack stack, SceneNode node)
     {
         IReadOnlyList<TagNodes> own = tags.Table.Of(node);
         if (!stack.NewTable(own.Count))
             return LuauStack.Raise;
 
-        int table = stack.Count;
+        // Pushing runs no script, so one list does for every call.
+        _sorted.Clear();
         for (int i = 0; i < own.Count; i++)
+            _sorted.Add(own[i].Tag);
+
+        _sorted.Sort(ByBytes);
+
+        int table = stack.Count;
+        for (int i = 0; i < _sorted.Count; i++)
         {
-            if (!stack.Push(own[i].Tag) || !stack.SetElement(table, i + 1))
+            if (!stack.Push(_sorted[i]) || !stack.SetElement(table, i + 1))
                 return LuauStack.Raise;
         }
 

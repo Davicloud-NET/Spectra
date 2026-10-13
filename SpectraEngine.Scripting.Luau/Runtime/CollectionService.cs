@@ -44,7 +44,7 @@ internal sealed partial class CollectionService : ScriptObject
     private int HasTag(ScriptContext context, LuauStack stack) =>
         context.TryGetObject(stack, 2, out SceneNode? node) ? _tags.Has(stack, node, tagAt: 3) : NoNode(stack, "HasTag");
 
-    /// <summary>The node's tags, in the order it got them.</summary>
+    /// <summary>The node's tags, sorted as the node's own GetTags sorts them: by the bytes of their text.</summary>
     [ScriptMethod(Parameters = "instance: Instance", Returns = "{string}")]
     private int GetTags(ScriptContext context, LuauStack stack) =>
         context.TryGetObject(stack, 2, out SceneNode? node) ? _tags.PushTagsOf(stack, node) : NoNode(stack, "GetTags");

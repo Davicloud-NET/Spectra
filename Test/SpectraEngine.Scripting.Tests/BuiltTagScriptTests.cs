@@ -36,12 +36,14 @@ public sealed class BuiltTagScriptTests
             print(brick:GetAttribute("Damage"), brick:GetAttribute("Missing"))
             """);
         level.Scene.Root.InsertChild(0, first);
-        Bricks(level);
+        (SceneNode brick, _, _) = Bricks(level);
 
         level.Play().Tick();
 
+        // A script reads a node's tags sorted. The node has them as it was built.
         level.Errors.ShouldBeEmpty();
-        level.Printed.ShouldBe(["3: Pool Brick Ember", "true false Lava | Hot stuff", "25 nil"]);
+        level.Printed.ShouldBe(["3: Pool Brick Ember", "true false Hot stuff | Lava", "25 nil"]);
+        brick.Tags.ShouldBe(["Lava", "Hot stuff"]);
     }
 
     [Fact]
@@ -96,6 +98,47 @@ public sealed class BuiltTagScriptTests
     }
 
     [Fact]
+    public void An_attribute_built_with_a_period_a_hyphen_or_a_slash_in_its_name_reads_like_any_other()
+    {
+        using var level = new ScriptLevel();
+        SceneNode sign = level.Part("Sign", new Vector3(0f, 2f, 0f));
+        sign.Attributes = AttributeSet.Empty
+            .With("ui/hud.title-2", MemberValue.Of("Exit"))
+            .With("a.b", MemberValue.Of(1d))
+            .With("a-b", MemberValue.Of(2d))
+            .With("a/b", MemberValue.Of(3d));
+        level.AddScript(level.Scene.Root, """
+            local sign = workspace.Sign
+            print(sign:GetAttribute("ui/hud.title-2"), sign:GetAttribute("a.b"), sign:GetAttribute("a-b"), sign:GetAttribute("a/b"))
+            sign:GetAttributeChangedSignal("a/b"):Connect(function() print("a/b is", sign:GetAttribute("a/b")) end)
+            sign.AttributeChanged:Connect(function(name) print("changed", name) end)
+            sign:SetAttribute("a/b", 4)
+            sign:SetAttribute("ui/hud.title-2", nil)
+            local names = {}
+            for name in sign:GetAttributes() do
+                table.insert(names, name)
+            end
+            table.sort(names)
+            print(table.concat(names, " "))
+            local copy = sign:Clone()
+            print(copy:GetAttribute("a.b"), copy:GetAttribute("a/b"), copy:GetAttribute("ui/hud.title-2"))
+            """);
+
+        level.Play().Tick(2);
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(
+        [
+            "Exit 1 2 3",
+            "a-b a.b a/b",
+            "1 4 nil",
+            "changed a/b",
+            "a/b is 4",
+            "changed ui/hud.title-2",
+        ]);
+    }
+
+    [Fact]
     public void No_signal_fires_for_what_the_level_was_built_with()
     {
         using var level = new ScriptLevel();
@@ -138,7 +181,7 @@ public sealed class BuiltTagScriptTests
             """);
         var before = new LevelState(level.Scene);
 
-        string[] expected = ["2: Pool Ember Hot stuff | Cooled", "99 nil true"];
+        string[] expected = ["2: Pool Ember Cooled | Hot stuff", "99 nil true"];
         for (int play = 1; play <= 2; play++)
         {
             level.Play().Tick();

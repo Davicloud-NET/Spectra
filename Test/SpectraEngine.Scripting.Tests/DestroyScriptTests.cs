@@ -164,7 +164,7 @@ public sealed class DestroyScriptTests
     }
 
     [Fact]
-    public void The_tags_and_attributes_of_a_destroyed_node_are_gone_and_it_takes_no_new_ones()
+    public void A_destroyed_node_keeps_its_tags_and_attributes_is_listed_under_no_tag_and_fires_nothing()
     {
         using ScriptLevel level = House.With("""
             local CollectionService = game:GetService("CollectionService")
@@ -172,22 +172,37 @@ public sealed class DestroyScriptTests
             lamp:AddTag("Bright")
             lamp.Shade:AddTag("Bright")
             lamp:SetAttribute("Watts", 60)
-            local changed = lamp.AttributeChanged:Connect(function() end)
+            local changed = lamp.AttributeChanged:Connect(function(name) print("changed", name) end)
+            lamp:GetAttributeChangedSignal("Watts"):Connect(function() print("watts changed") end)
             CollectionService:GetInstanceRemovedSignal("Bright"):Connect(function(node) print("removed", node.Name) end)
+            CollectionService:GetInstanceAddedSignal("Late"):Connect(function(node) print("added", node.Name) end)
+            CollectionService:GetInstanceRemovedSignal("Late"):Connect(function(node) print("removed", node.Name) end)
             lamp:Destroy()
             print(lamp:HasTag("Bright"), lamp:GetAttribute("Watts"), #lamp:GetTags(), #CollectionService:GetTagged("Bright"), changed.Connected)
-            print(pcall(function() lamp:AddTag("Late") end))
-            print(pcall(function() lamp:SetAttribute("Watts", 100) end))
+            lamp:AddTag("Late")
+            lamp:SetAttribute("Watts", 100)
+            print(lamp:HasTag("Late"), lamp:GetAttribute("Watts"), #CollectionService:GetTagged("Late"))
+            lamp:RemoveTag("Late")
             print(lamp.AttributeChanged == lamp:GetAttributeChangedSignal("Watts"))
+            task.wait()
+            print("waited")
             """);
 
-        level.Play().Tick();
+        level.Play().Tick(2);
 
         level.Errors.ShouldBeEmpty();
-        level.Printed[0].ShouldBe("false nil 0 0 false");
-        level.Printed[1].ShouldEndWith("\"Lamp\" was destroyed, and a destroyed node holds no tag");
-        level.Printed[2].ShouldEndWith("\"Lamp\" was destroyed, and a destroyed node holds no attribute");
-        level.Printed[3..].ShouldBe(["true", "removed Lamp", "removed Shade"]);
+        level.Printed.ShouldBe(
+        [
+            "true 60 1 0 false",
+            "true 100 0",
+            "true",
+            "removed Lamp",
+            "removed Shade",
+            "waited",
+        ]);
+
+        // The tables count the nodes of the level. A destroyed one is held
+        // apart, for as long as a script holds it.
         LuauScriptRuntime runtime = level.Runtime.ShouldNotBeNull();
         runtime.TaggedNodeCount.ShouldBe(0);
         runtime.AttributeNodeCount.ShouldBe(0);

@@ -155,6 +155,70 @@ public sealed class StudioAnswerTests
         printed[1].ShouldEndWith("invalid argument #1 to 'toHSV' (Color3 expected, got nil)");
     }
 
+    // Studio: SetAttribute takes a.b, a-b, a/b, rbxa, 9a, _ and a name of
+    // 100 characters. It refuses "a b", the empty name, RBXa and a name of
+    // 101 characters, and GetAttribute of a refused name is nil with no error.
+    [Fact]
+    public void An_attributes_name_takes_a_period_a_hyphen_a_slash_and_a_digit_in_front_as_Studio_takes_them()
+    {
+        string[] printed = ScriptLevel.Run("""
+            local part = script.Parent
+            local taken = { "a.b", "a-b", "a/b", "rbxa", "9a", "_", string.rep("n", 100) }
+            for index, name in taken do
+                part:SetAttribute(name, index)
+            end
+            local read = {}
+            for index, name in taken do
+                read[index] = tostring(part:GetAttribute(name))
+            end
+            print(table.concat(read, " "))
+            local all = part:GetAttributes()
+            print(all["a.b"], all["a-b"], all["a/b"])
+            for _, name in { "a b", "", "RBXa", string.rep("n", 101) } do
+                print((pcall(part.SetAttribute, part, name, 1)), part:GetAttribute(name))
+            end
+            """);
+
+        printed.ShouldBe(["1 2 3 4 5 6 7", "1 2 3", "false nil", "false nil", "false nil", "false nil"]);
+    }
+
+    // Studio: GetTags after AddTag of b, a and c gives a b c.
+    [Fact]
+    public void GetTags_hands_the_tags_back_sorted_and_not_in_the_order_they_were_added_as_Studio_does()
+    {
+        string[] printed = ScriptLevel.Run("""
+            local CollectionService = game:GetService("CollectionService")
+            local part = script.Parent
+            part:AddTag("b")
+            part:AddTag("a")
+            CollectionService:AddTag(part, "c")
+            print(table.concat(part:GetTags(), " "), table.concat(CollectionService:GetTags(part), " "))
+            """);
+
+        printed.ShouldBe(["a b c a b c"]);
+    }
+
+    // Studio: a destroyed part keeps its tags and attributes. HasTag is true
+    // and GetAttribute gives 1, and AddTag and SetAttribute are still taken.
+    [Fact]
+    public void A_destroyed_part_keeps_its_tags_and_attributes_and_takes_new_ones_with_no_error_as_in_Studio()
+    {
+        string[] printed = ScriptLevel.Run("""
+            local part = Instance.new("Part", workspace)
+            part:AddTag("T")
+            part:SetAttribute("N", 1)
+            part:Destroy()
+            print(part:HasTag("T"), part:GetAttribute("N"), table.concat(part:GetTags(), " "), part:GetAttributes().N)
+            print(pcall(function()
+                part:AddTag("U")
+                part:SetAttribute("M", 2)
+            end))
+            print(part:HasTag("U"), part:GetAttribute("M"), table.concat(part:GetTags(), " "))
+            """);
+
+        printed.ShouldBe(["true 1 T 1", "true", "true 2 T U"]);
+    }
+
     private static Light Lamp(ScriptLevel level) =>
         level.Scene.Root.CreateChild("Lamp").Light = new Light { Kind = LightKind.Point };
 

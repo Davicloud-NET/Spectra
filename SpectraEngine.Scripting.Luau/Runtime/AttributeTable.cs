@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 
@@ -14,6 +15,11 @@ internal sealed class AttributeTable
 
     private readonly Dictionary<SceneNode, NodeAttributes> _ofNode = [];
 
+    // A destroyed node keeps its attributes and takes more, as in Roblox. It
+    // is held weakly: they last as long as anything can hand the node to a
+    // script, and go with the node.
+    private readonly ConditionalWeakTable<SceneNode, NodeAttributes> _ofDestroyed = new();
+
     // One string for a name, however many nodes have an attribute of it.
     private readonly HashSet<string> _names = new(StringComparer.Ordinal);
     private readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> _namesByChars;
@@ -22,20 +28,47 @@ internal sealed class AttributeTable
     public AttributeTable() => _namesByChars = _names.GetAlternateLookup<ReadOnlySpan<char>>();
 
     // How many nodes a script set an attribute on, or asked for a signal of.
+    // A destroyed node is not counted.
     public int NodeCount => _ofNode.Count;
+
+    // How many destroyed nodes an attribute is still kept for. It walks
+    // them all, so it is for a test to ask.
+    public int DestroyedCount
+    {
+        get
+        {
+            int count = 0;
+            foreach (KeyValuePair<SceneNode, NodeAttributes> kept in _ofDestroyed)
+            {
+                if (kept.Value.Values.Count > 0)
+                    count++;
+            }
+
+            return count;
+        }
+    }
 
     // How many names are kept as the one string nodes share.
     public int NameCount => _names.Count;
 
-    public NodeAttributes? Of(SceneNode node) => _ofNode.GetValueOrDefault(node);
+    public NodeAttributes? Of(SceneNode node)
+    {
+        if (_ofNode.TryGetValue(node, out NodeAttributes? own))
+            return own;
+
+        return TreeWrites.IsDestroyed(node) && _ofDestroyed.TryGetValue(node, out own) ? own : null;
+    }
 
     public NodeAttributes OfOrMake(SceneNode node)
     {
-        if (!_ofNode.TryGetValue(node, out NodeAttributes? own))
-        {
-            own = new NodeAttributes();
+        if (Of(node) is { } own)
+            return own;
+
+        own = new NodeAttributes();
+        if (TreeWrites.IsDestroyed(node))
+            _ofDestroyed.Add(node, own);
+        else
             _ofNode.Add(node, own);
-        }
 
         return own;
     }
@@ -59,24 +92,21 @@ internal sealed class AttributeTable
     public bool TryGet(SceneNode node, ReadOnlySpan<char> name, out MemberValue value)
     {
         value = MemberValue.None;
-        return _ofNode.TryGetValue(node, out NodeAttributes? own)
+        return Of(node) is { } own
             && own.Values.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out value);
     }
 
     // No value keeps the name as one that was taken away.
     public void Set(SceneNode node, string name, in MemberValue value) => OfOrMake(node).Values[name] = value;
 
-    public void Forget(SceneNode node, ReadOnlySpan<char> name)
-    {
-        if (_ofNode.TryGetValue(node, out NodeAttributes? own))
-            own.Values.GetAlternateLookup<ReadOnlySpan<char>>().Remove(name);
-    }
+    public void Forget(SceneNode node, ReadOnlySpan<char> name) =>
+        Of(node)?.Values.GetAlternateLookup<ReadOnlySpan<char>>().Remove(name);
 
     // Gives a copy what scripts set on its source, with the names a script
     // took away. The signals stay the source's own.
     public void Copy(SceneNode source, SceneNode copy)
     {
-        if (!_ofNode.TryGetValue(source, out NodeAttributes? set) || set.Values.Count == 0)
+        if (Of(source) is not { Values.Count: > 0 } set)
             return;
 
         Dictionary<string, MemberValue> values = OfOrMake(copy).Values;
@@ -84,13 +114,28 @@ internal sealed class AttributeTable
             values[pair.Key] = pair.Value;
     }
 
-    // Takes everything scripts left on a node that is gone for good, and
-    // hands it over, for whoever ends its signals. Null when there is nothing.
+    // Takes everything scripts left on a node no script can reach any more,
+    // and hands it over, for whoever ends its signals. Null when there is
+    // nothing.
     public NodeAttributes? Take(SceneNode node) => _ofNode.Remove(node, out NodeAttributes? own) ? own : null;
+
+    // The node was destroyed. It keeps what scripts set on it. All it had is
+    // handed over, for whoever ends its signals. Null when there is nothing.
+    public NodeAttributes? Destroyed(SceneNode node)
+    {
+        if (!_ofNode.Remove(node, out NodeAttributes? own))
+            return null;
+
+        if (own.Values.Count > 0)
+            _ofDestroyed.AddOrUpdate(node, own);
+
+        return own;
+    }
 
     public void Clear()
     {
         _ofNode.Clear();
+        _ofDestroyed.Clear();
         _names.Clear();
     }
 

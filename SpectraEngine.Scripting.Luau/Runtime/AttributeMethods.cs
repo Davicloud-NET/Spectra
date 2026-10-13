@@ -46,10 +46,6 @@ internal sealed class AttributeMethods
         if (!AttributeName.IsValid(name))
             return stack.Fail(AttributeName.Refusal(name));
 
-        // Nothing is kept for a node that is gone for good.
-        if (TreeWrites.IsDestroyed(node))
-            return stack.Fail(NodeLifetime.HoldsNo(node, "attribute"));
-
         bool wasSet = Table.TryGet(node, name, out MemberValue held);
         if (!AttributeValues.TryRead(stack, 3, in held, out MemberValue value, out string? refusal))
             return stack.Fail(refusal);
@@ -139,7 +135,8 @@ internal sealed class AttributeMethods
 
     // AttributeChanged: one signal for a node, so a script reads the same
     // object every time.
-    // A node that was destroyed gets the signal that never fires.
+    // A node that was destroyed gets the signal that never fires: it still
+    // takes an attribute, and tells nobody.
     public ScriptSignal ChangedSignal(SceneNode node) =>
         TreeWrites.IsDestroyed(node)
             ? _neverFires ??= new ScriptSignal("Signal AttributeChanged", _hub)

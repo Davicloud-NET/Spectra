@@ -160,8 +160,8 @@ public sealed class AttributeSetTests
     [Theory]
     [InlineData("", "'' is not a valid attribute name")]
     [InlineData("my score", "'my score' is not a valid attribute name")]
-    [InlineData("score-2", "'score-2' is not a valid attribute name")]
-    [InlineData("a.b", "'a.b' is not a valid attribute name")]
+    [InlineData("score:2", "'score:2' is not a valid attribute name")]
+    [InlineData("a,b", "'a,b' is not a valid attribute name")]
     [InlineData("RBXScore", "'RBXScore' is not a valid attribute name")]
     [InlineData("\\255", "A name that is not valid UTF-8 is not a valid attribute name")]
     public void A_name_that_breaks_the_rule_is_refused_with_the_rule(string name, string words)
@@ -171,7 +171,7 @@ public sealed class AttributeSetTests
         level.Play().Tick();
 
         level.Errors.ShouldHaveSingleItem().ShouldBe(
-            $"{words}. An attribute's name is 1 to 100 letters, digits and underscores, and does not start with RBX");
+            $"{words}. An attribute's name is 1 to 100 letters, digits and any of _ . - /, and does not start with RBX");
     }
 
     // The letter by its code point: an escape in source does not survive every editing tool.
@@ -202,7 +202,7 @@ public sealed class AttributeSetTests
         level.Printed.ShouldBe(["1 2 3"]);
         level.Errors.ShouldHaveSingleItem().ShouldBe(
             "A name of 101 characters is not a valid attribute name. An attribute's name is 1 to 100 letters, " +
-            "digits and underscores, and does not start with RBX");
+            "digits and any of _ . - /, and does not start with RBX");
     }
 
     [Theory]

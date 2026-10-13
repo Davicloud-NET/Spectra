@@ -151,7 +151,7 @@ internal static partial class NodeApi
     private static int GetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.Get(context, stack, node);
 
-    /// <summary>Leaves a value on the node under a name, for every script to read: a string, a boolean, a number, a Vector3, a CFrame or a Color3. Nil takes the attribute away. A name is 1 to 100 letters, digits and underscores, and does not start with RBX. A string is at most 65536 bytes long, and a node holds at most 256 attributes. On a node that carries an entity, scripts read this in place of the keyvalue of that name, and the entity never sees it: a door does not follow SetAttribute("speed", 9). Stop takes away what scripts set, and the node has the attributes it was built with again.</summary>
+    /// <summary>Leaves a value on the node under a name, for every script to read: a string, a boolean, a number, a Vector3, a CFrame or a Color3. Nil takes the attribute away. A name is 1 to 100 letters, digits and any of _ . - /, and does not start with RBX. A string is at most 65536 bytes long, and a node holds at most 256 attributes. On a node that carries an entity, scripts read this in place of the keyvalue of that name, and the entity never sees it: a door does not follow SetAttribute("speed", 9). Stop takes away what scripts set, and the node has the attributes it was built with again.</summary>
     [ScriptMethod(Parameters = "attribute: string, value: (string | boolean | number | Vector3 | CFrame | Color3)?")]
     private static int SetAttribute(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Attributes.Set(context, stack, node);
@@ -186,7 +186,7 @@ internal static partial class NodeApi
     private static int HasTag(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Tags.Has(stack, node, tagAt: 2);
 
-    /// <summary>The node's tags, in the order it got them.</summary>
+    /// <summary>The node's tags, sorted by the bytes of their text, so a capital letter comes before every small one. Roblox hands them out sorted too, and not in the order the node got them.</summary>
     [ScriptMethod(Returns = "{string}")]
     private static int GetTags(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Tags.PushTagsOf(stack, node);
@@ -203,7 +203,7 @@ internal static partial class NodeApi
             : stack.Fail(refusal ?? NodeLifetime.NotSetUp);
     }
 
-    /// <summary>Takes the node and everything below it out of the level for good. Its Parent is nil from then on and cannot be set, its scripts and entities stop, every connection to what it fires ends, and its tags and attributes are gone. A world brush cannot be destroyed. Stop brings back a node the level was built with.</summary>
+    /// <summary>Takes the node and everything below it out of the level for good. Its Parent is nil from then on and cannot be set, its scripts and entities stop, and every connection to what it fires ends. It keeps its tags and attributes, as in Roblox: a script that still holds the node reads them and can change them. CollectionService lists it under no tag, and nothing it has fires a signal again. A world brush cannot be destroyed. Stop brings back a node the level was built with.</summary>
     [ScriptMethod]
     private static int Destroy(ScriptContext context, LuauStack stack, SceneNode node)
     {

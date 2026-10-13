@@ -7,7 +7,8 @@ namespace Spectra.Kitchen.Tests;
 
 // Tags and attributes the level is built with, on a part, a world brush, a
 // light, a folder, an entity and a script, and the script that reads them
-// back. It asks in its first tick, before any script tags or renames a node,
+// back. A script reads a node's tags sorted, whatever order it was built
+// with, and one attribute's name has a slash, a period and a hyphen. It asks in its first tick, before any script tags or renames a node,
 // and prints later. No other script of the level asks after its names.
 internal static class BuiltTagsScript
 {
@@ -93,15 +94,16 @@ internal static class BuiltTagsScript
     [
         Said("the lava in the order of the tree | 4: Wall Crate Shelf Built"),
         Said("a tag with a space | 1: Crate"),
-        Said("the crate's tags | Lava, Hot stuff"),
+        Said("the crate's tags | Hot stuff, Lava"),
         Said("the crate's attributes | Damage=number 25; Deadly=boolean true; Glow=Color3 1, 0.5, 0; " +
-            "Label=string hot; Push=Vector3 0, 12.5, -1; Rest=CFrame 1, 2, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1"),
+            "Label=string hot; Push=Vector3 0, 12.5, -1; Rest=CFrame 1, 2, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1; " +
+            "fx/glow.on-hit=boolean true"),
         Said("a world brush's tags | Lava"),
         Said($"a world brush's attributes | Heat=number 900.5; Open=boolean false; Sign=string {DoorInGerman}"),
-        Said("a light and a folder | true Lava, Empty"),
+        Said("a light and a folder | true Empty, Lava"),
         Said("an entity's attribute beside its keyvalue | nobody boolean"),
         Said("a tag no node was built with | 0: "),
-        Said("after a script changed its copy | 3: Wall Shelf Built, Hot stuff, Cooled, 99 nil nil"),
+        Said("after a script changed its copy | 3: Wall Shelf Built, Cooled, Hot stuff, 99 nil nil"),
     ];
 
     // Marks the level's nodes and adds the script under the root.
@@ -120,7 +122,8 @@ internal static class BuiltTagsScript
             .With("Deadly", MemberValue.Of(true))
             .With("Push", MemberValue.Of(new Vector3(0f, 12.5f, -1f)))
             .With("Glow", MemberValue.Of(new Color3(1f, 0.5f, 0f)))
-            .With("Rest", MemberValue.Of(new CFrame(1f, 2f, 3f)));
+            .With("Rest", MemberValue.Of(new CFrame(1f, 2f, 3f)))
+            .With("fx/glow.on-hit", MemberValue.Of(true));
 
         SceneNode wall = Named(scene, "Wall");
         wall.Tags = TagSet.Of("Lava");

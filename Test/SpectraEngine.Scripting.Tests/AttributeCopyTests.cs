@@ -45,7 +45,7 @@ public sealed class AttributeCopyTests
         level.Printed.ShouldBe(
         [
             "my note: 'my note' is not a valid attribute name. An attribute's name is 1 to 100 letters, digits and " +
-            "underscores, and does not start with RBX",
+            "any of _ . - /, and does not start with RBX",
             "partner: Instance is not a supported attribute type. An attribute holds a string, a boolean, a number, " +
             "a Vector3, a CFrame or a Color3, and nil takes it away",
             "Partner only the node has it Sign 1.5",

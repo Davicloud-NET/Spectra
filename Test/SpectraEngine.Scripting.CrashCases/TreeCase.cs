@@ -50,7 +50,8 @@ internal static class TreeCase
             "task.spawn(function() gone.Touched:Wait() end) task.spawn(function() gone:WaitForChild('Never') end) " +
             "gone:Destroy() return tostring(touched.Connected) .. tostring(gone.Parent)", true, "falsenil"),
         ("local gone = Instance.new('Folder', workspace) gone:Destroy() gone.Parent = workspace", false, "is locked: Folder was destroyed"),
-        ("local gone = Instance.new('Folder') gone:Destroy() gone:AddTag('late')", false, "a destroyed node holds no tag"),
+        ("local gone = Instance.new('Folder') gone:AddTag('early') gone:Destroy() gone:AddTag('late') gone:SetAttribute('Late', 1) " +
+            "return table.concat(gone:GetTags(), ' ') .. gone:GetAttribute('Late')", true, "early late1"),
         ("workspace.Copy:Destroy() return #workspace.Copy:GetChildren()", false, "Copy is not a valid member"),
 
         // Enough nodes nobody keeps to have them looked over, which runs a

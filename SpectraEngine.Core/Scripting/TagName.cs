@@ -33,4 +33,29 @@ public static class TagName
 
         return $"A tag of {Encoding.UTF8.GetByteCount(tag)} bytes is too long. {Rule}";
     }
+
+    /// <summary>
+    /// The order a script is handed a node's tags in, which is not the order
+    /// the node got them in: by the bytes of their UTF-8, and the shorter
+    /// first when one tag begins the other. Roblox hands them out sorted too.
+    /// </summary>
+    public static int CompareBytes(string a, string b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+
+        int shared = Math.Min(a.Length, b.Length);
+        for (int i = 0; i < shared; i++)
+        {
+            if (a[i] == b[i])
+                continue;
+
+            // UTF-16 puts half of a pair below U+E000 to U+FFFF, and UTF-8
+            // puts the character the pair stands for above them.
+            bool isPairInA = char.IsSurrogate(a[i]);
+            return isPairInA == char.IsSurrogate(b[i]) ? a[i].CompareTo(b[i]) : isPairInA ? 1 : -1;
+        }
+
+        return a.Length.CompareTo(b.Length);
+    }
 }

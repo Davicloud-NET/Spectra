@@ -51,6 +51,12 @@ public class ScmapNodeSetsTableTests
         rest.Frame.Rotation.ShouldBe(TaggedRoom.Rest.Rotation, "bit for bit");
         crate.Attributes.TryGet("Label", out MemberValue label).ShouldBeTrue();
         label.Text.ShouldBe(TaggedRoom.Heiss);
+
+        // A name with a period, a hyphen and a slash is a string of the table like any other.
+        SceneNode door = TaggedRoom.Named(level.Scene, "Door");
+        door.Attributes.Select(pair => pair.Key).ShouldBe(["Owner", TaggedRoom.Pathlike]);
+        door.Attributes.TryGet(TaggedRoom.Pathlike, out MemberValue pathlike).ShouldBeTrue();
+        pathlike.ShouldBe(MemberValue.Of(3d));
     }
 
     [Fact]

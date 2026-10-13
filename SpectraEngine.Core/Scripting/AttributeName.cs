@@ -4,7 +4,8 @@ namespace SpectraEngine.Core.Scripting;
 
 /// <summary>
 /// The rule for the name of an attribute, which is Roblox's: letters,
-/// digits and the underscore, at most a hundred, and no RBX in front.
+/// digits, the underscore, the period, the hyphen and the slash, at most a
+/// hundred, and no RBX in front.
 /// </summary>
 public static class AttributeName
 {
@@ -13,9 +14,12 @@ public static class AttributeName
 
     /// <summary>The rule as a sentence with no full stop, for whoever refuses a name.</summary>
     public const string Rule =
-        "An attribute's name is 1 to 100 letters, digits and underscores, and does not start with RBX";
+        "An attribute's name is 1 to 100 letters, digits and any of _ . - /, and does not start with RBX";
 
-    /// <summary>Whether an attribute can have this name. The letters are those of ASCII.</summary>
+    /// <summary>
+    /// Whether an attribute can have this name. The letters are those of
+    /// ASCII, and a name may start with a digit.
+    /// </summary>
     public static bool IsValid(ReadOnlySpan<char> name)
     {
         if (name.Length is 0 or > MaxLength || name.StartsWith("RBX", StringComparison.Ordinal))
@@ -23,7 +27,7 @@ public static class AttributeName
 
         foreach (char c in name)
         {
-            if (!char.IsAsciiLetterOrDigit(c) && c != '_')
+            if (!char.IsAsciiLetterOrDigit(c) && c is not ('_' or '.' or '-' or '/'))
                 return false;
         }
 

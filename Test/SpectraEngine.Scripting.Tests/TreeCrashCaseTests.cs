@@ -22,6 +22,6 @@ public sealed class TreeCrashCaseTests
 
         result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
         result.Output.ShouldContain("NativeAOT: True");
-        result.Output.ShouldContain("made, cloned and destroyed 580 times in a level, 320 refused");
+        result.Output.ShouldContain("made, cloned and destroyed 580 times in a level, 300 refused");
     }
 }

@@ -90,7 +90,7 @@ public sealed class TagsAndAttributesSheetTests(RibbonSession session)
                     "Not renamed: There is an attribute called 'Damage' already.",
                     "Not applied: expected a number.",
                     "Not added: 'two words' is not a valid attribute name. An attribute's name is 1 to 100 " +
-                    "letters, digits and underscores, and does not start with RBX.",
+                    "letters, digits and any of _ . - /, and does not start with RBX.",
                 ]);
             sheet.Shown<TextBlock>().Where(text => text.Classes.Contains("warn")).Select(text => text.Text).ShouldBe(
                 ["The entity has a setting called 'speed', and scripts read that. Give this attribute another name."]);

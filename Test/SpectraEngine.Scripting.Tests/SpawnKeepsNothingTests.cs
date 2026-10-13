@@ -84,10 +84,48 @@ public sealed class SpawnKeepsNothingTests
         level.Entities.Entities.Count.ShouldBe(Alive + 1, "the clones' doors and the template's");
     }
 
-    // Plays the level with the churn on it and holds it to keeping nothing.
-    private static void Churned(ScriptLevel level, int nodesInAClone)
+    // A destroyed node keeps its tags and attributes for the script that
+    // holds it, as in Roblox. They go when the node does.
+    [Fact]
+    public void A_clone_whose_tags_and_attributes_are_read_and_set_after_it_was_destroyed_is_let_go_of()
     {
-        level.AddScript(level.Scene.Root, Churn, "Churn");
+        using var level = new ScriptLevel(hasCharacter: false);
+        SceneNode template = level.Part("Template", new Vector3(0f, 5f, 30f));
+        template.Tags = TagSet.Of("Lava");
+        template.Attributes = AttributeSet.Empty.With("Damage", MemberValue.Of(25d));
+
+        Churned(level, nodesInAClone: 1, """
+            local template = workspace.Template
+            local alive = {}
+            game:GetService("RunService").Heartbeat:Connect(function()
+                local copy = template:Clone()
+                copy.Name = "Spawned"
+                copy:SetAttribute("Age", 0)
+                copy.Parent = workspace
+                table.insert(alive, copy)
+                if #alive > 10 then
+                    local old = table.remove(alive, 1)
+                    old:Destroy()
+                    old:AddTag("Gone")
+                    old:SetAttribute("Age", 10)
+                    if not (old:HasTag("Lava") and old:HasTag("Gone")
+                        and old:GetAttribute("Damage") == 25 and old:GetAttribute("Age") == 10) then
+                        print("a destroyed clone lost what it held")
+                    end
+                end
+            end)
+            """);
+
+        level.Printed.ShouldBeEmpty();
+        LuauScriptRuntime runtime = level.Runtime.ShouldNotBeNull();
+        runtime.TaggedNodeCount.ShouldBe(Alive + 1, "the clones in the level and the template");
+        runtime.AttributeNodeCount.ShouldBe(Alive + 1);
+    }
+
+    // Plays the level with the churn on it and holds it to keeping nothing.
+    private static void Churned(ScriptLevel level, int nodesInAClone, string churn = Churn)
+    {
+        level.AddScript(level.Scene.Root, churn, "Churn");
         int built = level.Scene.NodeCount;
 
         level.Play().Tick(WarmTicks);

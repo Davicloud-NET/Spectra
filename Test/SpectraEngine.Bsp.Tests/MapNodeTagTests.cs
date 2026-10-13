@@ -106,6 +106,38 @@ public sealed class MapNodeTagTests
         MapWriter.Write(MapSceneBinder.FromScene(loaded)).ShouldBe(source);
     }
 
+    // A name is a JSON member's name, and JSON writes these three as they are.
+    [Fact]
+    public void A_name_with_a_period_a_hyphen_or_a_slash_is_a_member_like_any_other_and_keeps_its_bytes()
+    {
+        const string members =
+            "\"attributes\": {\"a.b\":1,\"a-b\":\"x\",\"a/b\":true,\"ui/hud.title-2\":{\"vector3\":[1,2,3]},\"..\":2,\"9a\":3},";
+        byte[] source = Utf8(OneNode(members));
+
+        MapDocument document = MapReader.Read(source);
+
+        document.Nodes[0].Attributes.Select(pair => pair.Key).ShouldBe(
+            ["a.b", "a-b", "a/b", "ui/hud.title-2", "..", "9a"]);
+        MapWriter.Write(document).ShouldBe(source);
+
+        var loaded = new Scene("S");
+        MapSceneBinder.ApplyTo(document, loaded);
+        ValueOf(loaded.Root.Children[0], "a/b").ShouldBe(MemberValue.Of(true));
+        ValueOf(loaded.Root.Children[0], "ui/hud.title-2").ShouldBe(MemberValue.Of(new Vector3(1f, 2f, 3f)));
+        Encoding.UTF8.GetString(MapWriter.Write(MapSceneBinder.FromScene(loaded))).ShouldContain(members);
+    }
+
+    [Fact]
+    public void A_slash_escaped_by_hand_is_the_same_name_and_is_saved_as_a_plain_slash()
+    {
+        byte[] byHand = Utf8(OneNode("\"attributes\": {\"a\\/b\":1},"));
+
+        MapDocument document = MapReader.Read(byHand);
+
+        document.Nodes[0].Attributes[0].Key.ShouldBe("a/b");
+        Encoding.UTF8.GetString(MapWriter.Write(document)).ShouldContain("\"attributes\": {\"a/b\":1},");
+    }
+
     [Fact]
     public void Every_kind_of_value_comes_back_from_a_save_as_it_was()
     {
