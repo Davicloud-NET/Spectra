@@ -104,10 +104,13 @@ A name that is no member of a node is the name of a child: `workspace.Door`. `Ob
 | `ReadOnlySpan<byte>` | `string`, as a parameter only. It is read where Luau keeps it and makes nothing |
 | `Vector3` | `Vector3` |
 | `CFrame` | `CFrame` |
+| `Color3` | `Color3` |
 | `SceneNode` | `Instance` |
 | a class with `[ScriptClass]` | that class |
 
-A new kind of value is added in three places: `ScriptTypeMap` and `ScriptMarshalling` in the generator, and a reader in `ScriptArguments`.
+A new kind of value is added in three places: `ScriptTypeMap` and `ScriptMarshalling` in the generator, and a reader in `ScriptArguments`. One a script holds in a userdata of its own, as it holds a `CFrame` and a `Color3`, also gets a tag in `ScriptTags`, a class that pushes and reads it (`ColorValue`), and a metatable set up by hand (`Color3Members`).
+
+A `Color3` is a colour as a person picks one, and the engine lights in linear values. What stores a linear colour crosses at its own door: a light through `Light.DisplayColor`, a keyvalue through `Color3.FromLinear`.
 
 ### A property a script can set
 
@@ -120,6 +123,12 @@ public static partial Vector3 Position(SceneNode node);
 ```
 
 The generator writes the body, which reads the same member of the door. So what a script reads is what it wrote. The member itself is added to `ScriptWrites` first: a `SettableMemberId`, a row in its list, a case in `Read` and in `TryWrite`, and a `JournalKind`.
+
+The door takes a string, a number, a boolean, a `Vector3`, a `CFrame` or a `Color3`, and `ScriptContext` has a writer for each. A new kind is a `MemberValueKind`, a writer there, and a case in the two switches of `ScriptClassEmitter`.
+
+A member not every node has says so in its row: `Classes` names the script classes that have it, as `Range` names the four lights with a range. `Read` then gives no value for a node of another class, and the property is declared on each class the row names. A write the node cannot take is refused in the door, with words that say what to do: a switch of a world brush says to convert the brush to a part. A write of the value the member already has records nothing.
+
+What is changed in place has to be seen by whoever draws or simulates it. A light raises no signal: the renderer reads every light again on each frame. The mover, the touch tracker and a ray read a part's switches when they run.
 
 A property that cannot be set answers "Property is read only". `CannotSet` gives it other words. The definitions file marks it `read`, so the type checker refuses the write the binding would refuse.
 
@@ -135,7 +144,7 @@ public float WalkSpeed => _door.WalkSpeed ?? throw Left();
 private string? SetWalkSpeed(float value) => _door.TrySetWalkSpeed(value, out string? refused) ? null : refused;
 ```
 
-The value is a number, a boolean, a string, a `Vector3` or a `CFrame`. One of another kind is refused before the method is called, in the words the door uses.
+The value is a number, a boolean, a string, a `Vector3`, a `CFrame` or a `Color3`. One of another kind is refused before the method is called, in the words the door uses.
 
 What the method changes has to go back at Stop as well. The player's members go through `PlayerWrites` in Core, which records in the journal the door records in. A new one is a method there, and a `TuningJournalKind` when it changes the tuning, which outlives the level. The tuning is read through `PlayerWrites` too: `IPlayerPresence` does not hand it out, so no entity can write it past the journal.
 
@@ -241,7 +250,8 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 
 - `ScriptApiDescriptionTests` asks an object of every class for every name, and compares with the description in both directions. A new class needs an object in its `Holders`. The object has to be of that class and of none below it: a `Part` as the holder of `Instance` would answer the members of `Part` too. A member that a metatable answers by hand and no attribute declares fails here.
 - `NodeClassScriptTests` reads `NodeMembers` and fails when a class of nodes is sent to another script class than the one of its name.
-- `SettableListTests` holds the settable properties of the description equal to the list of `ScriptWrites`, by name, type and member.
+- `SettableListTests` holds the settable properties of the description equal to the list of `ScriptWrites`, by class, name, type and member.
+- `SettableMemberClassTests` in `SpectraEngine.Bsp.Tests` holds the classes a row names equal to the nodes the member reads a value on.
 - `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop.
 - `PlayerSettingTests` sets every settable property of the character from a script and compares what outlives a play session after Stop. It also tries every name on the player's objects: what takes a value must be what the description says a script can set.
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global, and that it has no `require`.
