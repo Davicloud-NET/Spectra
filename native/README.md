@@ -207,6 +207,12 @@ So managed code never calls anything in Luau that can raise.
   in a table with weak values, so two reads of one object are equal in a
   script. The collector's destructor may not touch the VM. It only notes
   which slot and generation went, and `sl_takereleased` hands the notes over.
+- what a managed object keeps outside the state. Luau counts the userdata
+  and nothing behind it. `sl_setobjectweight` says how many bytes the host
+  keeps while one userdata lives. The shim adds them up in a table beside the
+  state, takes one off when the collector frees its userdata, and counts the
+  sum against the memory budget. `sl_gcstep` has the collector work as for so
+  many kilobytes a script allocated, which is how it is told of them.
 - the metatable of vectors. Luau keeps one for the whole type, and its vector
   library sets one that knows `x`, `y` and `z` and nothing else.
   `sl_setvectormetatable` puts the host's table in its place and freezes it.

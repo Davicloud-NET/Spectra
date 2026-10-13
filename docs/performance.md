@@ -95,6 +95,45 @@ $env:SPECTRA_WALL_COST = "1"
 dotnet run -c Release --project Test/Spectra.Kitchen.Tests -- -trait "Suite=WallCost" -showLiveOutput
 ```
 
+## Destroyed parts and Luau's collector
+
+A destroyed node keeps its tags and attributes while a script holds it, and a script holds it until Luau has collected the handle. Luau counts 24 bytes for the handle, so by itself it is in no hurry over a part with a long string on it. `HeldNodes` tells the collector what each destroyed node weighs, and `docs/script-api.md` has the rule.
+
+Measure with the table `HeldBytesCostTests` writes:
+
+```bash
+dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.HeldBytesCostTests"
+```
+
+It writes `held-bytes.txt` beside the test binary. Each load makes parts in a level with no player, gives each one attribute and one tag, puts it in the level and destroys it. "Waiting" is the most destroyed parts that counted as held at one time. "Managed" is the most the managed heap held over where it started, after a collection of its own. On 14 October 2026, over 4000 ticks or 20000 parts, before and after the collector was told:
+
+| Load | Waiting before | Managed before | Waiting after | Managed after | Time before | Time after |
+|---|---|---|---|---|---|---|
+| 10 parts a tick, 64 KiB string | 3390 | 420 MiB | 11 | 0.1 MiB | 0.34 to 0.37 ms a tick | 0.88 to 1.0 ms a tick |
+| 1 part a tick, 64 KiB string | 181 | 21 MiB | 11 | 1.1 MiB | 17 to 22 us a tick | 17 to 21 us a tick |
+| 10 parts a tick, 16 byte string | 1931 | 2.2 MiB | 240 | 0.3 MiB | 21 to 29 us a tick | 22 to 23 us a tick |
+| nothing destroyed | 0 | 0 | 0 | 0 | 0.8 to 1.1 us a tick | 0.9 us a tick |
+| 20000 parts in one call, 64 KiB string | 16384 | 2060 MiB | 11 | 1.4 MiB | 68 to 75 us a part | 98 us a part |
+| 20000 parts in one call, 16 byte string | 15362 | 15 to 17 MiB | 239 | 0.9 MiB | 3.9 to 4.3 us a part | 2.6 to 2.7 us a part |
+
+Luau's own count stayed between 400 and 1100 KiB in every row, before and after.
+
+How many parts wait follows from the first goal, 256 KiB by the estimate: 240 small parts, or two parts with a 64 KiB string and what is destroyed while the cycle runs. With a large Luau heap a cycle takes longer and more parts wait for it. The first load beside 35 MiB of Luau in 400000 small tables had 178 parts and 21 MiB waiting.
+
+What the collector costs:
+
+| | Level alone, 0.4 MiB of Luau | 35 MiB of Luau |
+|---|---|---|
+| One step for a part with a 64 KiB string | 2.6 us | 38 us |
+| One cycle, in steps | 12 us | 5 ms |
+| One full collection | 4 us | 3.9 to 4.5 ms |
+
+A step works for twice the bytes the part weighs, so the cost follows what is destroyed and not the size of the heap: 10 such parts a tick cost 18 us a tick with the small heap and 0.42 ms with the large one. The time counts against `LuauHost.CallLimit` of the script that called Destroy. One step works for at most 1 MiB of weight, which was under 0.3 ms on the large heap.
+
+The first and fifth rows got slower, and the collector's steps are 18 us of it. The rest is the managed collector. A 64 KiB string is 128 KiB of text in memory, which .NET puts on its large object heap, and that heap is collected with the oldest generation. Holding 420 MiB of such strings it ran 28 such collections in 4000 ticks. Holding next to nothing it runs 1400, one about every third tick. With `DOTNET_GCLOHThreshold=0x40000`, which keeps such strings off that heap, the first row takes 0.24 ms a tick and the fifth 19 us a part, both faster than before. A string up to about 42 KiB does not reach that heap as it is.
+
+What is still found by count and not by bytes: a made node that is in no level and was never destroyed waits for the look-over of `LooseNodes`, which comes at 64 such trees. 20000 parts dropped that way with a 64 KiB string each had 7.8 MiB waiting.
+
 ## The open-world verdict
 
 `CsgBench openworld` moves one isolated part in worlds of 1k, 10k and 50k parts and compiles from the previous world. Its MOVE verdict is the edit at 50k over the edit at 1k, and the band is 1.5x. An edit is about 0.09 ms, and one sample is the mean of 16.
