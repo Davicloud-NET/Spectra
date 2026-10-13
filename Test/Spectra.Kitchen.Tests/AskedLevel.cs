@@ -44,6 +44,7 @@ internal static class AskedLevel
         project.WriteAsset(RequiringScript.ModulePath, RequiringScript.ModuleText);
         foreach ((string path, string text) in RequiringScript.Modules)
             project.WriteAsset(path, text);
+        project.WriteAsset(TaggingScript.Path, TaggingScript.Text);
 
         project.WriteAsset(TouchingScript.Path, TouchingScript.Text);
 
@@ -115,6 +116,9 @@ internal static class AskedLevel
         Ask(root);
         Ask(Named(scene, "Crate").Children.Single(child => child.Script is not null));
         AddWhatThePlayerTouches(root, Named(scene, "Start").LocalPosition);
+
+        // Last under the root, so it starts after every other script.
+        root.CreateChild(TaggingScript.Node).Script = new Script(TaggingScript.Path);
         return scene;
     }
 

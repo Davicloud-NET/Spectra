@@ -444,6 +444,18 @@ public class LooseAndCookedLevelTests
         loose.ShouldEndWith($"Touched is not a valid member of {className} \"{node} renamed\"");
     }
 
+    // A tag's nodes come in the order of the tree, which a baked level has
+    // to keep, and a world brush holds a tag and an attribute though its
+    // node has no brush left.
+    [Fact]
+    public void Tags_and_attributes_come_out_the_same_from_loose_files_and_from_the_pack()
+    {
+        Played played = Play();
+
+        played.Loose.Where(line => line.Contains(TaggingScript.Mark)).ShouldBe(TaggingScript.Lines);
+        played.Cooked.Where(line => line.Contains(TaggingScript.Mark)).ShouldBe(TaggingScript.Lines);
+    }
+
     // Skips where Luau is not built. The level is cooked and played once for
     // the whole class.
     private static Played Play()
