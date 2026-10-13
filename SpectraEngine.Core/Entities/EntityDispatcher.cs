@@ -149,9 +149,8 @@ internal sealed class EntityDispatcher
             Output = "",
         });
 
-    // An input a script sent to one entity. It waits with what scripts made,
-    // so a script that sends too many takes no room from the wires. False
-    // when it was not queued and will not come.
+    // An input a script sent to one entity. It waits with what scripts made
+    // and takes no room from the wires. False when it will not come.
     public bool QueueScriptInput(Entity target, string input, string parameter, string script, int line)
     {
         EntityEvent sent = ScriptEvents.Input(_world.TickNumber, _sequence++, target, input, parameter, script, line);
@@ -161,6 +160,9 @@ internal sealed class EntityDispatcher
         _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, _world, sent, target));
         return true;
     }
+
+    // How many of an output's listeners QueueSignal has room for.
+    public int SignalsThatFit(int listeners) => Math.Clamp(_maxPendingEvents - _scripts.Count, 0, listeners);
 
     // One event for each listener of a fired output, in the order they were
     // added. One the queue has no room for does not hear this fire.

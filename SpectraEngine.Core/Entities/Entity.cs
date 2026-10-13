@@ -176,12 +176,18 @@ public abstract class Entity
 
         EntityOutput? wired = FindOutput(output);
 
+        // Tick zero is the spawn. No script runs yet, so none hears this,
+        // and one that connects later is told so.
+        if (World.TickNumber == 0)
+            World.Listeners.NoteMissedFire(Node, output);
+
         // One check in a level where no script listens.
         List<long>? listeners = World.Listeners.Find(Node, output);
 
         // Before the wires fire, so the output is on record ahead of the
         // inputs it queues.
-        World.Trace?.Record(EntityTraceEvent.OfOutput(this, activator ?? this, output, wired, listeners?.Count ?? 0));
+        World.Trace?.Record(EntityTraceEvent.OfOutput(
+            this, activator ?? this, output, wired, World.Dispatcher.SignalsThatFit(listeners?.Count ?? 0)));
 
         wired?.Fire(this, activator ?? this, parameterOverride);
 

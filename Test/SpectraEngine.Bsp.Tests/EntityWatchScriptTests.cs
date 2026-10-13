@@ -124,6 +124,23 @@ public sealed class EntityWatchScriptTests
         trace.Events[2].WiresQueued.ShouldBe(0);
     }
 
+    [Fact]
+    public void A_fired_output_counts_the_listeners_the_queue_had_room_for()
+    {
+        var rig = new EntityConsoleRig();
+        SceneNode relay = rig.Place("relay1", "relay");
+        rig.Run("ent_watch on");
+        rig.Play();
+        rig.World.MaxPendingEvents = 2;
+        for (int listener = 1; listener <= 5; listener++)
+            rig.World.Listeners.Add(relay, "OnTrigger", listener);
+
+        rig.World.QueueInput("relay1", "Trigger");
+
+        rig.Tick().ShouldContain("ent 1 fire relay1.OnTrigger wires=0 listeners=2");
+        rig.World.DiscardedEventCount.ShouldBe(3);
+    }
+
     private sealed class RecordingTrace : IEntityTrace
     {
         public List<EntityTraceEvent> Events { get; } = [];

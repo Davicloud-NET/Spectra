@@ -95,8 +95,9 @@ public readonly struct EntityTraceEvent
     public int SenderLine { get; init; }
 
     /// <summary>
-    /// How many functions of scripts a fired output was queued for. Zero for
-    /// every other kind.
+    /// How many listeners of scripts a fired output queued a call for: the
+    /// connected functions and waiting threads the queue had room for. Zero
+    /// for every other kind.
     /// </summary>
     public int ListenersQueued { get; init; }
 

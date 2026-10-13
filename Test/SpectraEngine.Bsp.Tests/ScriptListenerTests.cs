@@ -212,6 +212,40 @@ public sealed class ScriptListenerTests
             () => elsewhere.QueueScriptInput(EntityRuntime.Live(world, door), "Open", "", "Scripts/opener.luau", 1));
     }
 
+    [Fact]
+    public void What_fired_while_the_level_spawned_is_a_missed_fire_once_and_what_fires_later_is_none()
+    {
+        SceneNode spawner = EntityRuntime.Place(_scene.Root, "spawner", "spawner");
+        SceneNode relay = EntityRuntime.Place(_scene.Root, "relay", "relay");
+        EntityCatalog catalog = EntityRuntime.Catalog(_log);
+        catalog.Add(new EntitySchema("spawner"), () => new SpawnFiringEntity());
+        var world = new EntityWorld(_scene, _logger, catalog) { FixedDeltaTime = Tick };
+
+        world.Activate();
+        world.Tick(Tick);
+        EntityRuntime.Live(world, relay).FireOutput("OnTrigger");
+        EntityRuntime.Live(world, spawner).FireOutput("OnLater");
+
+        world.Listeners.TakeMissedFire(relay, "OnTrigger").ShouldBeFalse();
+        world.Listeners.TakeMissedFire(spawner, "OnLater").ShouldBeFalse();
+        world.Listeners.TakeMissedFire(spawner, SpawnFiringEntity.OnSpawned).ShouldBeTrue();
+        world.Listeners.TakeMissedFire(spawner, SpawnFiringEntity.OnSpawned).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_stop_forgets_what_fired_while_the_level_spawned()
+    {
+        SceneNode spawner = EntityRuntime.Place(_scene.Root, "spawner", "spawner");
+        EntityCatalog catalog = EntityRuntime.Catalog(_log);
+        catalog.Add(new EntitySchema("spawner"), () => new SpawnFiringEntity());
+        var world = new EntityWorld(_scene, _logger, catalog) { FixedDeltaTime = Tick };
+        world.Activate();
+
+        world.Deactivate();
+
+        world.Listeners.TakeMissedFire(spawner, SpawnFiringEntity.OnSpawned).ShouldBeFalse();
+    }
+
     private EntityWorld Started(out FakeScriptRuntime runtime)
     {
         runtime = new FakeScriptRuntime(_log);

@@ -16,8 +16,9 @@ internal static class WireValues
     private const int First = 2;
 
     // Calls a listener with what an output sent. Nothing for an output that
-    // sends nothing, and for text its type cannot read.
-    public static void Hand(ScriptConnection connection, string parameter, Scene scene)
+    // sends nothing, and for text its type cannot read. That is the one case
+    // that answers false.
+    public static bool Hand(ScriptConnection connection, string parameter, Scene scene)
     {
         ParameterType sends = connection.Sends;
 
@@ -25,13 +26,19 @@ internal static class WireValues
         if (!sends.IsSaid && parameter.Length > 0)
         {
             connection.Run([parameter]);
-            return;
+            return true;
         }
 
-        if (!sends.HasValue || !ParameterText.TryParse(sends, parameter, out ParameterValue value))
+        if (!sends.HasValue)
         {
             connection.Run([]);
-            return;
+            return true;
+        }
+
+        if (!ParameterText.TryParse(sends, parameter, out ParameterValue value))
+        {
+            connection.Run([]);
+            return false;
         }
 
         PortValueKind kind = EntityClassApi.KindOf(sends.ValueType);
@@ -41,6 +48,8 @@ internal static class WireValues
             connection.Run([]);
         else
             HandValue(connection, kind, in value);
+
+        return true;
     }
 
     // How many values an input takes at most.

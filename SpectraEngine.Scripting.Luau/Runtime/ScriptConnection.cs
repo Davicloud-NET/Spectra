@@ -40,6 +40,15 @@ internal sealed partial class ScriptConnection : ScriptObject
     // What a fire of the signal carries.
     public ParameterType Sends => _signal.Sends;
 
+    // The node and the output it listens to, for a signal the queue fires.
+    public QueuedSignal? Source => _signal.Queued;
+
+    // False once nothing can call it: its script was switched off, or its
+    // thread was cancelled, ended or went on to another wait.
+    public bool CanRun => _function is { } function
+        ? function.Script is not { IsSwitchedOff: true }
+        : _waiting is { } waiting && waiting.IsWaiting(_wait);
+
     /// <summary>Whether the function is still called when the signal fires.</summary>
     [ScriptProperty(Name = "Connected")]
     public bool IsConnected { get; private set; } = true;

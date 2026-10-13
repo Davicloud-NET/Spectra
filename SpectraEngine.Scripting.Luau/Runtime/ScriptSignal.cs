@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Scripting;
 using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
@@ -31,6 +32,10 @@ internal sealed partial class ScriptSignal : ScriptObject
     // What a queued signal's fire carries, as a wire's text. Not said for a
     // signal the host fires where it stands.
     public ParameterType Sends => _queued?.Sends ?? ParameterType.NotSaid;
+
+    // The node and the output behind a signal the level's queue fires. Null
+    // for one the host fires where it stands.
+    public QueuedSignal? Queued => _queued;
 
     public ScriptConnection Connect(LuauFunction function, bool isOnce)
     {
@@ -96,6 +101,7 @@ internal sealed partial class ScriptSignal : ScriptObject
 
         WaitingThreads waiting = _hub.Waiting;
         Add(new ScriptConnection(this, waiting, waiting.Add(WaitingThread.ForSignal(thread))));
+        SayWhatWasMissed(stack);
         return LuauStack.Yield();
     }
 
@@ -111,7 +117,19 @@ internal sealed partial class ScriptSignal : ScriptObject
             return ScriptArguments.Wrong(stack, 2, method, "function", isMethod: true);
 
         ScriptConnection connection = Connect(function, isOnce);
+        SayWhatWasMissed(stack);
         return ScriptResult.Of(_hub.Host.Objects.Push(stack, ScriptTags.Object, connection));
+    }
+
+    // An output that fired while the level spawned was heard by no script.
+    // The first one that listens to it is told, at the line that does.
+    private void SayWhatWasMissed(LuauStack stack)
+    {
+        if (_queued?.TakeMissedFire() is not { } missed)
+            return;
+
+        LuauHost host = _hub.Host;
+        host.Report(ScriptReport.Line(stack.State, host.ScriptOf(stack), ScriptSeverity.Warning, missed));
     }
 
     // Not while a fire walks the list by index.
