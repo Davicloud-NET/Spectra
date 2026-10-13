@@ -69,7 +69,7 @@ public sealed class SettableListTests
         described.Order(StringComparer.Ordinal).ShouldBe(
             ScriptWrites.Settable
                 .SelectMany(member => member.Classes.Select(owner =>
-                    $"{owner}.{member.Name}: {MemberValue.TypeName(member.Kind)} through {member.Id}"))
+                    $"{owner}.{member.Name}: {TypeOf(member)} through {member.Id}"))
                 .Order(StringComparer.Ordinal),
             "what the description says a script can set, against the list of ScriptWrites. A member of the door " +
             "needs a property with Sets on each class the door names for it, of the type the door takes, and " +
@@ -86,6 +86,11 @@ public sealed class SettableListTests
         names.ShouldContain("LocalRotation", "the properties of SceneNode were not found");
         names.ShouldContain("Intensity", "the properties of Light were not found");
     }
+
+    // What the description calls a value the member takes. A node is the one
+    // kind that may be none, which the description writes with a question mark.
+    private static string TypeOf(SettableMember member) =>
+        member.Kind == MemberValueKind.Node ? "Instance?" : MemberValue.TypeName(member.Kind);
 
     // Every name a script might set: what the door lists, what the
     // description has, what the binding's sources name, what a node and its
@@ -118,10 +123,13 @@ public sealed class SettableListTests
         local names = { {{string.Join(", ", names.Select(name => $"\"{name}\""))}} }
         local values = { 1, true, workspace, {}, print, {{string.Join(", ", ValuesOfEveryKind())}} }
         local function takes(target, name)
+            local _, parent = pcall(function() return target.Parent end)
             local took = pcall(function() target[name] = nil end)
             for _, value in values do
                 if pcall(function() target[name] = value end) then took = true end
             end
+            -- Back where it was, or the level's own scripts find another node above them.
+            if name == "Parent" then pcall(function() target.Parent = parent end) end
             return took
         end
         for _, node in { script, script.Parent } do
@@ -150,6 +158,7 @@ public sealed class SettableListTests
             MemberValueKind.Boolean => "false",
             MemberValueKind.Number => "2",
             MemberValueKind.Color => "Color3.new(0.5, 0.25, 1)",
+            MemberValueKind.Node => "workspace",
             _ => throw new NotSupportedException(
                 $"The probe has no value of the kind {kind}. Add one, so a member of that kind is tried."),
         });

@@ -1,8 +1,8 @@
 namespace SpectraEngine.Entities.Tests;
 
 // The kinds of value the door takes beside a string, a Vector3 and a CFrame:
-// a boolean, a number and a Color3, each on a class below Instance. And a
-// Color3 as a value a script holds.
+// a boolean, a number and a Color3, each on a class below Instance, and a
+// node that may be none. And a Color3 as a value a script holds.
 public sealed class ScriptApiGeneratorDoorKindTests
 {
     private const string Atoms = "global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms";
@@ -10,6 +10,7 @@ public sealed class ScriptApiGeneratorDoorKindTests
     private const string ColorValue = "global::SpectraEngine.Scripting.Luau.Runtime.ColorValue";
     private const string Arguments = "global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments";
     private const string Color = "global::SpectraEngine.Core.Scene.Color3";
+    private const string Node = "global::SpectraEngine.Core.Scene.SceneNode";
 
     private const string Lamps = ScriptApiFixtures.Usings + """
         /// <summary>A node of the level.</summary>
@@ -19,6 +20,10 @@ public sealed class ScriptApiGeneratorDoorKindTests
             /// <summary>Its name.</summary>
             [ScriptProperty(Sets = SettableMemberId.Name)]
             public static partial string Name(SceneNode node);
+
+            /// <summary>The node above it, or nil.</summary>
+            [ScriptProperty(Sets = SettableMemberId.Parent)]
+            public static partial SceneNode? Parent(SceneNode node);
         }
 
         /// <summary>A node that lights the level.</summary>
@@ -92,6 +97,7 @@ public sealed class ScriptApiGeneratorDoorKindTests
     [InlineData("LightApi", "Brightness", "WriteNumber")]
     [InlineData("LightApi", "Color", "WriteColor")]
     [InlineData("BulbApi", "Range", "WriteNumber")]
+    [InlineData("NodeApi", "Parent", "WriteNode")]
     public void A_write_goes_to_the_doors_writer_for_its_kind(string owner, string name, string writer)
     {
         string source = Flat(ScriptApiHarness.Run(Lamps).SourceNamed($"{owner}.ScriptApi.g.cs"));
@@ -104,6 +110,7 @@ public sealed class ScriptApiGeneratorDoorKindTests
     [InlineData("LightApi", "publicstaticpartialfloatBrightness(", "(float)" + Door + ".ScriptWrites.Read(node," + Door + ".SettableMemberId.Brightness).Number;")]
     [InlineData("LightApi", "internalstaticpartial" + Color + "Color(", "Color).Color;")]
     [InlineData("BulbApi", "publicstaticpartialdoubleRange(", "(double)" + Door + ".ScriptWrites.Read(node," + Door + ".SettableMemberId.Range).Number;")]
+    [InlineData("NodeApi", "publicstaticpartial" + Node + "?Parent(", "Parent).Node;")]
     public void A_read_comes_from_the_door_as_the_type_the_property_has(string owner, string declared, string read)
     {
         string source = Flat(ScriptApiHarness.Run(Lamps).SourceNamed($"{owner}.ScriptApi.g.cs"));

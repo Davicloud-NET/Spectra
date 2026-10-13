@@ -2,6 +2,7 @@ using System.Numerics;
 using SpectraEngine.Bsp.Tests;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Tests;
 
@@ -71,12 +72,14 @@ internal static class OneOfEverything
     }
 
     // Sends the relay a Say, so its wire fires and counts one use down. By
-    // its node and not its name, which a script may have changed.
+    // its node and not its name, which a script may have changed. A script
+    // may have taken the relay out of the level too, and then nothing fires.
     public static void FireTheWire(ScriptLevel level)
     {
         EntityWorld world = level.Entities;
-        SceneNode relay = level.Scene.EntityNodes.First(node => node.Entity is { Connections.Count: > 0 });
-        if (world.Index is { } index && index.TryGetByNodeId(relay.Id, out Entity? entity))
+        SceneNode? relay = level.Scene.EntityNodes.FirstOrDefault(
+            node => node.Entity is { Connections.Count: > 0 } && !TreeWrites.IsMade(node));
+        if (relay is not null && world.Index is { } index && index.TryGetByNodeId(relay.Id, out Entity? entity))
             world.QueueInput(entity, "Say", "go");
     }
 

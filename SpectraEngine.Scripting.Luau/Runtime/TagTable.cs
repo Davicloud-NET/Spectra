@@ -121,6 +121,32 @@ internal sealed class TagTable
         return tags;
     }
 
+    // Gives a copy the tags its source has, in the order the source got
+    // them. The copy is in no tree, so it joins no tag's list yet.
+    public void Copy(SceneNode source, SceneNode copy)
+    {
+        IReadOnlyList<TagNodes> tags = Of(source);
+        for (int i = 0; i < tags.Count; i++)
+            Add(copy, tags[i].Tag, isInLevel: false);
+    }
+
+    // Takes every tag off a node that is gone for good. It has left the
+    // level's tree by then, and whoever fires the signals was told so.
+    public void Forget(SceneNode node)
+    {
+        if (!_ofNode.Remove(node, out List<TagNodes>? tags))
+            return;
+
+        for (int i = 0; i < tags.Count; i++)
+        {
+            TakeOut(tags[i], node);
+            tags[i].Holders--;
+        }
+
+        tags.Clear();
+        _spare.Push(tags);
+    }
+
     // A node moved inside the tree, so every list may be out of order.
     public void TreeMoved() => _moves++;
 

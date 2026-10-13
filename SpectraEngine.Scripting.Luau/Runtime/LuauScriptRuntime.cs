@@ -27,6 +27,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     private readonly DeferredCalls _deferred;
     private readonly LevelTags _tags;
     private readonly AttributeMethods _attributes;
+    private readonly NodeLifetime _lifetime;
     private volatile bool _isClosed;
 
     /// <summary>Opens a Luau state and gives it everything a script of this level can reach.</summary>
@@ -82,8 +83,12 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             context.Entities = new EntityMembers(_host, _world, _signals);
             context.Signals = _signals;
 
+            _starter = new ScriptStarter(_host, _world, setup.Source, _sink);
+            _lifetime = new NodeLifetime(_host, context.Tree, _starter, _childWaits, _signals, _tags, _attributes);
+            context.Lifetime = _lifetime;
+            new InstanceLibrary(_lifetime).ScriptInstall(context);
+
             _host.Seal();
-            _starter = new ScriptStarter(_host, setup.Source, _sink);
 
             // Last, so a runtime that was not made listens to nothing.
             _childWaits.Listen();
@@ -127,6 +132,15 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
     // How many tags are kept, with those nothing waits on until they are looked over.
     internal int KnownTagCount => _tags.Table.TagCount;
+
+    /// <summary>How many scripts run for a node of the level, with those their host switched off.</summary>
+    public int RunningScriptCount => _starter.RunningCount;
+
+    /// <summary>How many trees scripts made are in no level, and counted until they are found to be let go of.</summary>
+    public int LooseTreeCount => _lifetime.LooseCount;
+
+    /// <summary>How many signals of nodes scripts have asked for, such as a part's Touched.</summary>
+    public int NodeSignalCount => _signals.SignalCount;
 
     /// <summary>
     /// Whether the Luau state is gone, and every thread with it. After
@@ -281,6 +295,17 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     /// <inheritdoc/>
     public void StartEntered()
     {
+        if (_isClosed)
+            return;
+
+        try
+        {
+            _starter.StartEntered();
+        }
+        catch (Exception e) // boundary: nothing of a script may throw into the tick
+        {
+            ReportFault(e);
+        }
     }
 
     /// <inheritdoc/>

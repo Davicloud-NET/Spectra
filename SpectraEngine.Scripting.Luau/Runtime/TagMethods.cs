@@ -23,6 +23,10 @@ internal sealed class TagMethods(LevelTags tags)
         if (!NameChars.TryRead(utf8, room, out ReadOnlySpan<char> tag))
             return stack.Fail($"AddTag {NotText}");
 
+        // Nothing is kept for a node that is gone for good.
+        if (TreeWrites.IsDestroyed(node))
+            return stack.Fail(NodeLifetime.HoldsNo(node, "tag"));
+
         if (tags.Table.Of(node).Count >= TagLimits.MaxPerNode && !tags.Table.Has(node, tag))
         {
             return stack.Fail(

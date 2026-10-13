@@ -77,6 +77,21 @@ internal sealed partial class ScriptSignal : ScriptObject
         }
     }
 
+    // Ends every connection, for a signal of a node that was destroyed. A
+    // thread that waits for the signal is ended: nothing would resume it.
+    public void EndAll()
+    {
+        _fireDepth++;
+        for (int i = 0; i < _connections.Count; i++)
+        {
+            if (_connections[i].IsConnected)
+                _connections[i].End();
+        }
+
+        _fireDepth--;
+        DropDisconnected();
+    }
+
     public void OnDisconnected(ScriptConnection connection)
     {
         _queued?.Forget(connection);

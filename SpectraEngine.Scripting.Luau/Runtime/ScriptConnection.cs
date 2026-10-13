@@ -84,6 +84,16 @@ internal sealed partial class ScriptConnection : ScriptObject
         _signal.OnDisconnected(this);
     }
 
+    // Ends the connection because its signal will never fire again. A thread
+    // that waits on it is ended with it, as one is that a script cancels.
+    public void End()
+    {
+        if (_waiting is { } waiting && waiting.TryTake(_wait, out WaitingThread waiter))
+            waiter.Thread.Cancel();
+
+        Disconnect();
+    }
+
     // A thread that was cancelled or went on to another wait has left this
     // one, and its token names nothing.
     private LuauResume ResumeWaiter(ReadOnlySpan<LuauValue> arguments) =>

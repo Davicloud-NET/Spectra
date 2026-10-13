@@ -85,9 +85,11 @@ internal sealed class ChildWaits
             return true;
         }
 
+        // No child comes to a node that was destroyed, so a wait with a
+        // timeout is over there and then.
         long tick = _world.TickNumber;
         SceneNode? child = NodeTree.Child(wait.Parent, NodeMatch.Name, wait.Name);
-        if (child is null && tick < wait.Deadline)
+        if (child is null && tick < wait.Deadline && !TreeWrites.IsDestroyed(wait.Parent))
         {
             if (tick >= wait.WarnAt)
             {
@@ -119,6 +121,42 @@ internal sealed class ChildWaits
             QueueWake(token, 1);
 
         return true;
+    }
+
+    // A node got a parent that is in no level, which no scene event tells of.
+    public void Arrived(SceneNode child) => OnNamed(child);
+
+    // A node was destroyed, and no child will come to it. A wait with a
+    // timeout answers nil when its wake comes. One with none would wait for
+    // good, so its thread is ended and the script is told where it waited.
+    public void Destroyed(SceneNode parent)
+    {
+        for (int i = _waits.Count - 1; i >= 0 && i < _waits.Count; i--)
+        {
+            ChildWait wait = _waits[i];
+            if (!ReferenceEquals(wait.Parent, parent))
+                continue;
+
+            if (!_waiting.IsWaiting(wait.Token))
+                Forget(i);
+            else if (wait.Deadline != WholeTicks.Never)
+                QueueWake(wait.Token, 0);
+            else
+                End(i, in wait);
+        }
+    }
+
+    private void End(int index, in ChildWait wait)
+    {
+        _waits.RemoveAt(index);
+        _host.Report(wait.Warning with
+        {
+            Text = $"WaitForChild(\"{wait.Name}\") will not return: '{wait.Parent.Name}' was destroyed, " +
+                "so the thread that waited was ended",
+        });
+
+        if (_waiting.TryTake(wait.Token, out WaitingThread waiting))
+            waiting.Thread.Cancel();
     }
 
     // The end of a tick. Asks again for every wake the queue had no room

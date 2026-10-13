@@ -70,10 +70,11 @@ internal sealed class WriteCoverage
 
     // A level moves no node with a world brush at or below it, and switches
     // nothing on a world brush. A name every node takes, and a light every
-    // member a light has.
+    // member a light has. A node gets another parent when it can move.
     private static bool Takes(SceneNode node, SettableMember member) => member.Id switch
     {
         SettableMemberId.Name => true,
+        SettableMemberId.Parent => !node.HoldsWorldBrush,
         SettableMemberId.Position or SettableMemberId.CFrame or SettableMemberId.LocalPosition
             or SettableMemberId.LocalCFrame => node.SubtreeStaticWorldBrushCount == 0,
         SettableMemberId.CanCollide or SettableMemberId.CanQuery or SettableMemberId.CanTouch

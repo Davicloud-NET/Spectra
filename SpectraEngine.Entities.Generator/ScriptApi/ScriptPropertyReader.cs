@@ -187,8 +187,8 @@ internal static class ScriptPropertyReader
             return "Sets names no member of SettableMemberId";
         if (state.Kind != ScriptContainerKind.Class || state.Self?.ClrType != ScriptTypeMap.SceneNode)
             return "the door only sets a member of a node, so the class must be one whose members take a SceneNode";
-        if (type.IsNullable || !IsTakenByTheDoor(type.Kind))
-            return "the door takes a string, a number, a boolean, a Vector3, a CFrame or a Color3";
+        if (!IsTakenByTheDoor(type))
+            return "the door takes a string, a number, a boolean, a Vector3, a CFrame, a Color3 or a node that may be none";
         if (member is not IMethodSymbol { IsPartialDefinition: true, PartialImplementationPart: null })
             return "declare it as a partial method with no body. The generator writes the body, which reads the member from the door";
         if (member is IMethodSymbol { Parameters.Length: not 1 })
@@ -197,9 +197,12 @@ internal static class ScriptPropertyReader
         return null;
     }
 
-    private static bool IsTakenByTheDoor(ScriptValueKind kind) =>
-        kind is ScriptValueKind.Text or ScriptValueKind.Number or ScriptValueKind.Boolean
-            or ScriptValueKind.Vector3 or ScriptValueKind.CFrame or ScriptValueKind.Color3;
+    // A node is the one value that may be none: a node with no parent has none.
+    private static bool IsTakenByTheDoor(ScriptTypeModel type) =>
+        type.Kind == ScriptValueKind.Object
+            ? type.IsNullable && type.ClrType == ScriptTypeMap.SceneNode
+            : !type.IsNullable && type.Kind is ScriptValueKind.Text or ScriptValueKind.Number or ScriptValueKind.Boolean
+                or ScriptValueKind.Vector3 or ScriptValueKind.CFrame or ScriptValueKind.Color3;
 
     // A property of an object that is no node is set by a method of the
     // object, which takes the value and says why when it refuses it.

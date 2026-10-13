@@ -56,9 +56,16 @@ internal sealed class ScriptContext
     // The runtime sets it with Entities.
     public NodeSignals? Signals { get; set; }
 
+    // What a node's coming, going and end mean to the level's scripts. The
+    // runtime sets it with Entities.
+    public NodeLifetime? Lifetime { get; set; }
+
     // The level, for what a script only reads of it. A change of a node
     // goes through the writes below and no other way.
     public EntityWorld World => _writes.World;
+
+    // What a script adds to the level's tree and takes from it.
+    public TreeWrites Tree => _writes.Tree;
 
     // Nil for null. False: an error value is on top instead.
     public bool PushObject(LuauStack stack, object? value) =>
@@ -133,6 +140,22 @@ internal sealed class ScriptContext
         ColorValue.TryGet(stack, 3, out Color3 value)
             ? Write(stack, node, member, MemberValue.Of(value))
             : WrongKind(stack, member);
+
+    // A node, or nil for none. The scripts below a node that leaves the
+    // level with the write end, and those below one that comes in start.
+    public int WriteNode(LuauStack stack, SceneNode node, SettableMemberId member)
+    {
+        SceneNode? value = null;
+        if (!stack.IsNil(3) && !TryGetObject(stack, 3, out value))
+            return WrongKind(stack, member);
+
+        bool wasInLevel = Tree.IsInLevel(node);
+        int written = Write(stack, node, member, MemberValue.OfNode(value));
+        if (written == 0)
+            Lifetime?.Moved(node, wasInLevel);
+
+        return written;
+    }
 
     private int Write(LuauStack stack, SceneNode node, SettableMemberId member, in MemberValue value) =>
         _writes.TryWrite(node, member, in value, out string? refusal) ? 0 : stack.Fail(refusal);

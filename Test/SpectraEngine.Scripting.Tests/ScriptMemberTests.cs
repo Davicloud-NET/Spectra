@@ -75,14 +75,14 @@ public sealed class ScriptMemberTests
     {
         string[] printed = ScriptLevel.Run($$"""
             {{Values}}
-            print(pcall(function() return script.Parent:Destroy() end))
+            print(pcall(function() return script.Parent:Remove() end))
             print(pcall(function() return game:Destroy() end))
             print(pcall(function() return run.Heartbeat:Fire() end))
             print(pcall(function() return f:Destroy() end))
             print(pcall(function() return a:Destroy() end))
             """);
 
-        printed[0].ShouldEndWith("Destroy is not a valid member of Part \"Part\"");
+        printed[0].ShouldEndWith("Remove is not a valid member of Part \"Part\"");
         printed[1].ShouldEndWith("Destroy is not a valid member of DataModel \"game\"");
         printed[2].ShouldEndWith("Fire is not a valid member of RBXScriptSignal \"Signal Heartbeat\"");
         printed[3].ShouldEndWith("Destroy is not a valid member of CFrame");

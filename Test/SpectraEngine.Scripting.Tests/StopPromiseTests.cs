@@ -5,14 +5,16 @@ namespace SpectraEngine.Scripting.Tests;
 
 /// <summary>
 /// Stop puts a level back as it was. A write to every member a script can
-/// set on every kind of node, then random ones, and the level saves to the
-/// same bytes after Stop as before Play. The seed is in every failure, and
-/// the same seed makes the same writes.
+/// set on every kind of node, then random ones, with nodes made, cloned,
+/// moved and destroyed between them, and the level saves to the same bytes
+/// after Stop as before Play. The seed is in every failure, and the same
+/// seed makes the same run.
 /// </summary>
 public sealed class StopPromiseTests
 {
     private const int WritesPerPlay = 320;
     private const int WritesPerTick = 16;
+    private const int WritesPerTreeStep = 3;
     private const int WritesPerScript = 40;
 
     [Theory]
@@ -28,7 +30,7 @@ public sealed class StopPromiseTests
         SceneNode[] nodes = [.. level.Scene.Root.Traverse()];
         MemberValue[][] atStart = [.. nodes.Select(MembersOf)];
         var before = new LevelState(level.Scene);
-        var random = new RandomWrites(seed);
+        var random = new RandomWrites(seed) { Nodes = nodes, Homes = HomesOf(level), TakesNodesOut = true };
 
         // Twice: the second play starts from what the first Stop left.
         for (int play = 1; play <= 2; play++)
@@ -37,11 +39,17 @@ public sealed class StopPromiseTests
             var coverage = new WriteCoverage(level.Scene);
             level.Play();
             var door = new ScriptWrites(level.Entities);
+            var tree = new RandomTree(random, door.Tree, nodes);
 
-            // No tick has run, so nothing but these writes has changed the level.
+            // One tick first: a script of the level reads the node above it
+            // when it starts, and the writes give every node another parent.
+            level.Tick();
+            var started = new LevelState(level.Scene);
             int taken = WriteToEveryMember(door, coverage, nodes, random);
-            new LevelState(level.Scene).IsSavedAs(before).ShouldBeFalse($"{run}: the writes changed nothing a save holds");
+            new LevelState(level.Scene).IsSavedAs(started).ShouldBeFalse($"{run}: the writes changed nothing a save holds");
 
+            // The writes go to what the level was built with and to what was
+            // made since, in the level or out of it, destroyed or not.
             for (int i = 0; i < WritesPerPlay; i++)
             {
                 int node = random.Pick(nodes.Length);
@@ -49,6 +57,11 @@ public sealed class StopPromiseTests
                 MemberValue value = write.PutsBack ? atStart[node][(int)write.Member.Id] : write.Value;
                 if (coverage.Write(door, nodes[node], write.Member, in value))
                     taken++;
+
+                MemberValue again = write.Value;
+                door.TryWrite(tree.Any(), write.Member.Id, in again, out _);
+                if (i % WritesPerTreeStep == WritesPerTreeStep - 1)
+                    tree.Step();
 
                 if (i % WritesPerTick == WritesPerTick - 1)
                 {
@@ -59,11 +72,13 @@ public sealed class StopPromiseTests
 
             ShouldBeAMix(taken, WritesPerPlay + (nodes.Length * ScriptWrites.Settable.Count), run);
             coverage.ShouldBeWhole(run);
+            ShouldHaveChangedTheTree(tree, door, run);
             level.Errors.ShouldBeEmpty(run);
 
             level.Stop();
 
             new LevelState(level.Scene).ShouldBe(before, run);
+            level.Scene.Root.Traverse().ShouldBe(nodes, run);
         }
     }
 
@@ -80,12 +95,15 @@ public sealed class StopPromiseTests
         string run = $"seed {seed}";
 
         // A script on every node, so every kind of node is written to
-        // through the binding: a script reaches itself, its parent and the root.
-        var random = new RandomWrites(seed);
+        // through the binding: a script reaches itself, its parent and the
+        // root. A script that took a node out of the level would end every
+        // script below it, so here a new parent is always a node.
         SceneNode[] nodes = [.. level.Scene.Root.Traverse()];
+        var random = new RandomWrites(seed) { Nodes = nodes, Homes = HomesOf(level) };
         foreach (SceneNode node in nodes)
-            level.AddScript(node, WritingScript.From(random, WritesPerScript, node), "Writer");
+            level.AddScript(node, WritingScript.From(random, WritesPerScript, node), WritingScript.WriterName);
 
+        SceneNode[] built = [.. level.Scene.Root.Traverse()];
         var before = new LevelState(level.Scene);
         var coverage = new WriteCoverage(level.Scene);
 
@@ -106,9 +124,32 @@ public sealed class StopPromiseTests
         ShouldBeAMix(taken.Values.Sum(), taken.Values.Sum() + refused, run);
         coverage.ShouldBeWhole(run);
 
+        // Then each script makes, clones, moves and destroys, and the
+        // scripts that came in with a clone start.
+        level.Tick(WritingScript.TreeTicks);
+
+        level.Errors.ShouldBeEmpty(run);
+        new ScriptWrites(level.Entities).Tree.MadeCount.ShouldBeGreaterThan(0, $"{run}: no script made a node");
+        level.Scene.Root.Traverse().Count().ShouldNotBe(built.Length, $"{run}: the scripts left the tree as it was");
+
         level.Stop();
 
         new LevelState(level.Scene).ShouldBe(before, run);
+        level.Scene.Root.Traverse().ShouldBe(built, run);
+    }
+
+    // The root and the level's world brush, which no script can move.
+    private static SceneNode[] HomesOf(ScriptLevel level) => [level.Scene.Root, level.Baseplate];
+
+    // A run in which nothing was made, cloned, moved or destroyed shows
+    // nothing of the tree.
+    private static void ShouldHaveChangedTheTree(RandomTree tree, ScriptWrites door, string run)
+    {
+        tree.Made.ShouldBeGreaterThan(0, $"{run}: nothing was made");
+        tree.Cloned.ShouldBeGreaterThan(0, $"{run}: nothing was cloned");
+        tree.Destroyed.ShouldBeGreaterThan(0, $"{run}: nothing was destroyed");
+        tree.Moved.ShouldBeGreaterThan(0, $"{run}: nothing that was made got another parent");
+        door.Tree.MadeCount.ShouldBeGreaterThan(0, $"{run}: nothing that was made is still there");
     }
 
     // One write of a value it takes to every member of every node, so no

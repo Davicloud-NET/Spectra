@@ -31,7 +31,7 @@ internal sealed class ScriptWireActivity
     private long _version;
     private long _capturedVersion = -1;
     private long _capturedListeners = -1;
-    private int _stoppedSeen;
+    private long _stoppedSeen;
 
     public void Clear()
     {
@@ -70,7 +70,7 @@ internal sealed class ScriptWireActivity
         out LogicScriptWiring wiring,
         out IReadOnlyList<LogicScriptActivity> activity)
     {
-        if (world.StoppedScripts.Count != _stoppedSeen)
+        if (world.StoppedScripts.Version != _stoppedSeen)
             ForgetWhatTheStoppedSent(world.StoppedScripts);
 
         long listeners = world.Listeners.Version;
@@ -130,7 +130,7 @@ internal sealed class ScriptWireActivity
     // what it sent go with what it heard.
     private void ForgetWhatTheStoppedSent(StoppedScripts stopped)
     {
-        _stoppedSeen = stopped.Count;
+        _stoppedSeen = stopped.Version;
 
         for (int i = _sent.Count - 1; i >= 0; i--)
         {

@@ -72,6 +72,22 @@ internal sealed class AttributeTable
             own.Values.GetAlternateLookup<ReadOnlySpan<char>>().Remove(name);
     }
 
+    // Gives a copy what scripts set on its source, with the names a script
+    // took away. The signals stay the source's own.
+    public void Copy(SceneNode source, SceneNode copy)
+    {
+        if (!_ofNode.TryGetValue(source, out NodeAttributes? set) || set.Values.Count == 0)
+            return;
+
+        Dictionary<string, MemberValue> values = OfOrMake(copy).Values;
+        foreach (KeyValuePair<string, MemberValue> pair in set.Values)
+            values[pair.Key] = pair.Value;
+    }
+
+    // Takes everything scripts left on a node that is gone for good, and
+    // hands it over, for whoever ends its signals. Null when there is nothing.
+    public NodeAttributes? Take(SceneNode node) => _ofNode.Remove(node, out NodeAttributes? own) ? own : null;
+
     public void Clear()
     {
         _ofNode.Clear();

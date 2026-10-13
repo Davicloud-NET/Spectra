@@ -81,6 +81,7 @@ internal static class ScriptApiHarness
                 public int WriteBoolean(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
                 public int WriteNumber(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
                 public int WriteColor(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
+                public int WriteNode(LuauStack stack, SceneNode node, SettableMemberId member) => 0;
             }
 
             internal static class ScriptArguments

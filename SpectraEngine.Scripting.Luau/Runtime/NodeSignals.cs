@@ -16,6 +16,9 @@ internal sealed class NodeSignals
     private readonly SignalHub _hub;
     private readonly EntityWorld _world;
     private readonly Dictionary<Port, ScriptSignal> _signals = [];
+
+    // The names a node has a signal of, to find them all when the node goes.
+    private readonly Dictionary<Guid, List<string>> _namesOf = [];
     private readonly Dictionary<long, ScriptConnection> _listeners = [];
     private readonly List<ScriptConnection> _dead = [];
     private long _lastListener;
@@ -30,6 +33,8 @@ internal sealed class NodeSignals
 
     public int ListenerCount => _listeners.Count;
 
+    public int SignalCount => _signals.Count;
+
     // Who called and from which line, which a listener and a sent input carry.
     public ScriptPlaces Places { get; }
 
@@ -38,10 +43,45 @@ internal sealed class NodeSignals
         var port = new Port(node.Id, output.Name);
         if (_signals.TryGetValue(port, out ScriptSignal? signal))
             return signal;
+        if (TreeWrites.IsDestroyed(node))
+            return NeverFires(output.Name);
 
         signal = new ScriptSignal($"Signal {output.Name}", _hub, new QueuedSignal(this, node, output));
-        _signals.Add(port, signal);
+        Keep(port, signal);
         return signal;
+    }
+
+    // What a node that was destroyed has for a signal: one a script can
+    // connect to, as in Roblox, that never fires. Nothing is kept for it.
+    private ScriptSignal NeverFires(string name) => new($"Signal {name}", _hub);
+
+    // Ends every connection to what a node fires and lets go of its signals,
+    // for a node that is gone for good. A script that still holds one of the
+    // signals holds one that never fires.
+    public void Forget(SceneNode node)
+    {
+        if (!_namesOf.Remove(node.Id, out List<string>? names))
+            return;
+
+        for (int i = 0; i < names.Count; i++)
+        {
+            if (_signals.Remove(new Port(node.Id, names[i]), out ScriptSignal? signal))
+                signal.EndAll();
+
+            _world.Listeners.Forget(node, names[i]);
+        }
+    }
+
+    private void Keep(Port port, ScriptSignal signal)
+    {
+        _signals.Add(port, signal);
+        if (!_namesOf.TryGetValue(port.Node, out List<string>? names))
+        {
+            names = [];
+            _namesOf.Add(port.Node, names);
+        }
+
+        names.Add(port.Name);
     }
 
     public void Listen(SceneNode node, string name, ScriptConnection connection)
@@ -117,10 +157,12 @@ internal sealed class NodeSignals
         var port = new Port(node.Id, name);
         if (_signals.TryGetValue(port, out ScriptSignal? signal))
             return signal;
+        if (TreeWrites.IsDestroyed(node))
+            return NeverFires(name);
 
         var touch = new QueuedSignal(this, node, new EntityPort(name, ParameterType.None), isTouch: true);
         signal = new ScriptSignal($"Signal {name}", _hub, touch);
-        _signals.Add(port, signal);
+        Keep(port, signal);
         return signal;
     }
 

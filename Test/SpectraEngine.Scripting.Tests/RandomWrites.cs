@@ -41,10 +41,22 @@ internal sealed class RandomWrites(int seed)
     private static readonly MemberValueKind[] Kinds =
     [
         MemberValueKind.Text, MemberValueKind.Vector3, MemberValueKind.CFrame, MemberValueKind.Boolean,
-        MemberValueKind.Number, MemberValueKind.Color,
+        MemberValueKind.Number, MemberValueKind.Color, MemberValueKind.Node,
     ];
 
     private readonly Random _random = new(seed);
+
+    // The nodes a write of a Parent may name. A script reaches the same
+    // ones in the same order through its table `all`.
+    public IReadOnlyList<SceneNode> Nodes { get; set; } = [];
+
+    // Two parents every node that can move takes, since neither can: the
+    // root and a world brush under it. A script has them as `homes`.
+    public IReadOnlyList<SceneNode> Homes { get; set; } = [];
+
+    // Whether a write of a Parent may be of none, which takes the node out
+    // of the level. A script that did so to itself would write no more.
+    public bool TakesNodesOut { get; set; }
 
     public int Pick(int count) => _random.Next(count);
 
@@ -79,6 +91,12 @@ internal sealed class RandomWrites(int seed)
     // of every node first, so no seed leaves one out.
     public RandomWrite Taken(SettableMember member)
     {
+        if (member.Kind == MemberValueKind.Node)
+        {
+            int home = Pick(Homes.Count);
+            return new RandomWrite(member, MemberValue.OfNode(Homes[home]), $"homes[{home + 1}]");
+        }
+
         (MemberValue value, string luau) = Value(member.Kind, isRefused: false);
         return new RandomWrite(member, value, luau);
     }
@@ -134,6 +152,15 @@ internal sealed class RandomWrites(int seed)
                 Vector3 parts = ColorOf(isRefused);
                 return (MemberValue.Of(new Color3(parts.X, parts.Y, parts.Z)), $"Color3.new({Luau(parts)})");
 
+            // Any node of the level, or none. What refuses one is where the
+            // node and its new parent are in the tree.
+            case MemberValueKind.Node:
+                if (TakesNodesOut && Pick(5) == 0)
+                    return (MemberValue.OfNode(null), "nil");
+
+                int node = Pick(Nodes.Count);
+                return (MemberValue.OfNode(Nodes[node]), $"all[{node + 1}]");
+
             default:
                 throw new NotSupportedException(
                     $"RandomWrites makes no value of the kind {kind}. Add one, so the run covers the new member.");
@@ -162,7 +189,8 @@ internal sealed class RandomWrites(int seed)
     }
 
     private static bool IsOfKind(string luau, MemberValueKind kind) =>
-        (luau == "5" && kind == MemberValueKind.Number) || (luau == "true" && kind == MemberValueKind.Boolean);
+        (luau == "5" && kind == MemberValueKind.Number) || (luau == "true" && kind == MemberValueKind.Boolean)
+        || (luau is "nil" or "workspace" && kind == MemberValueKind.Node);
 
     private float Amount(bool isRefused)
     {

@@ -111,6 +111,28 @@ public sealed class ScriptListeners
     }
 
     /// <summary>
+    /// Lets go of everything kept for what <paramref name="node"/> fires
+    /// under <paramref name="name"/>, with any listener still there. For a
+    /// node that is gone for good: a list otherwise stays once it is empty.
+    /// </summary>
+    public void Forget(SceneNode node, string name)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentNullException.ThrowIfNull(name);
+
+        var port = new Port(node.Id, name);
+        _missed.Remove(port);
+        _toldNoTouch.Remove(node.Id);
+        if (!_byPort.Remove(port, out Heard? heard))
+            return;
+
+        Version++;
+        Count -= heard.Listeners.Count;
+        if (TouchSignal.IsOne(name))
+            TouchListenerCount -= heard.Listeners.Count;
+    }
+
+    /// <summary>
     /// Forgets whose listener it is, for one that nothing can call any more,
     /// so a view draws no wire for it. It stays a listener: a fire still
     /// queues an event for it, and a level somebody watches queues what any

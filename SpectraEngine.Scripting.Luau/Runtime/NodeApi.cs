@@ -20,9 +20,9 @@ internal static partial class NodeApi
     [ScriptProperty]
     public static string ClassName(SceneNode node) => NodeClassName.Of(node);
 
-    /// <summary>The node above this one in the tree. Nil for the root.</summary>
-    [ScriptProperty(CannotSet = "Parent cannot be set from a script yet")]
-    public static SceneNode? Parent(SceneNode node) => node.Parent;
+    /// <summary>The node above this one in the tree. Nil for the root, for a node that is in no tree and for one that was destroyed. Setting it moves the node, with all below it, under another node, and the node stays where it is in the world. Nil takes it out of the level without destroying it: its scripts and entities stop, and they start afresh when it comes back. A world brush and the root cannot be moved, and neither can a node that was destroyed. Stop puts every node back where it was built.</summary>
+    [ScriptProperty(Sets = SettableMemberId.Parent)]
+    public static partial SceneNode? Parent(SceneNode node);
 
     /// <summary>Where the node is in the world.</summary>
     [ScriptProperty(Sets = SettableMemberId.Position)]
@@ -190,6 +190,28 @@ internal static partial class NodeApi
     [ScriptMethod(Returns = "{string}")]
     private static int GetTags(ScriptContext context, LuauStack stack, SceneNode node) =>
         context.Tags.PushTagsOf(stack, node);
+
+    /// <summary>A copy of the node and everything below it, in no level until it gets a Parent. The copy stands where the node stands in the world, and has the tags and attributes scripts left on the node. A script below the copy starts and an entity below it runs once the copy is in the level. A world brush cannot be cloned.</summary>
+    [ScriptMethod(Returns = "Instance")]
+    private static int Clone(ScriptContext context, LuauStack stack, SceneNode node)
+    {
+        if (context.Lifetime is not { } lifetime)
+            return stack.Fail(NodeLifetime.NotSetUp);
+
+        return lifetime.Clone(node, out string? refusal) is { } copy
+            ? ScriptResult.Of(context.PushObject(stack, copy))
+            : stack.Fail(refusal ?? NodeLifetime.NotSetUp);
+    }
+
+    /// <summary>Takes the node and everything below it out of the level for good. Its Parent is nil from then on and cannot be set, its scripts and entities stop, every connection to what it fires ends, and its tags and attributes are gone. A world brush cannot be destroyed. Stop brings back a node the level was built with.</summary>
+    [ScriptMethod]
+    private static int Destroy(ScriptContext context, LuauStack stack, SceneNode node)
+    {
+        if (context.Lifetime is not { } lifetime)
+            return stack.Fail(NodeLifetime.NotSetUp);
+
+        return lifetime.Destroy(node) is { } refusal ? stack.Fail(refusal) : 0;
+    }
 
     // The text comes as the bytes Luau keeps, so a search makes no string.
     private static SceneNode? Below(SceneNode node, NodeMatch by, ReadOnlySpan<byte> text, bool recursive)

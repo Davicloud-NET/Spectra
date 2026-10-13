@@ -209,7 +209,7 @@ public sealed class ScriptFailureTests
             print(pcall(function() door.CFrame = Vector3.new(1, 2, 3) end))
             print(pcall(function() door.Name = 5 end))
             print(pcall(function() door.ClassName = 'Gate' end))
-            print(pcall(function() door.Parent = workspace end))
+            print(pcall(function() door.Parent = 5 end))
             """);
 
         level.Play().Tick();
@@ -221,7 +221,7 @@ public sealed class ScriptFailureTests
             $"false {here}:3: Unable to assign property CFrame. CFrame expected, got Vector3",
             $"false {here}:4: Unable to assign property Name. string expected, got number",
             $"false {here}:5: Unable to assign property ClassName. Property is read only",
-            $"false {here}:6: Parent cannot be set from a script yet",
+            $"false {here}:6: Unable to assign property Parent. Instance expected, got number",
         ]);
         part.LocalPosition.ShouldBe(new Vector3(1f, 2f, 3f));
         part.Name.ShouldBe("Door");

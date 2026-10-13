@@ -322,7 +322,7 @@ public sealed class ScriptApiGeneratorDiagnosticTests
     [Theory]
     [InlineData(
         "public static partial SceneNode Name(SceneNode node);",
-        "the door takes a string, a number, a boolean, a Vector3, a CFrame or a Color3")]
+        "the door takes a string, a number, a boolean, a Vector3, a CFrame, a Color3 or a node that may be none")]
     [InlineData("public static string Name(SceneNode node) => node.Name;", "declare it as a partial method with no body")]
     public void A_settable_property_the_door_cannot_serve_is_refused(string member, string why)
     {

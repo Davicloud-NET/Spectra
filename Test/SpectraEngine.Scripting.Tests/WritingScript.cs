@@ -10,12 +10,28 @@ namespace SpectraEngine.Scripting.Tests;
 // of each of the three, then the random ones. Every write is in a pcall,
 // and the script ends by printing how many were refused and how many each
 // member took. It is one line: every script ends on the same tick, and
-// scripts may print only so many lines in one.
+// scripts may print only so many lines in one. A tick later it changes the
+// tree: it makes, clones, moves and destroys nodes.
 internal static class WritingScript
 {
+    // What every node that carries one of these scripts is called.
+    public const string WriterName = "Writer";
+
+    // The level's world brush, which never moves and so is a parent every
+    // node that can move takes.
+    public const string Home = "Baseplate";
+
+    // The ticks a script's changes to the tree take, with the ticks after
+    // them in which what came into the level starts.
+    public const int TreeTicks = 3;
+
     private const int WritesPerTick = 4;
 
+    private const int TreeStepsPerScript = 6;
+
     private const string EndWord = "refused";
+
+    private static readonly string[] MadeClasses = ["Part", "Folder", "PointLight", "SpotLight", "DirectionalLight"];
 
     // Indexes into the script's table of targets.
     private const int TargetCount = 3;
@@ -38,7 +54,14 @@ internal static class WritingScript
         // The wait comes before the first write of any script, so what each
         // script read at its start is what the level was authored with. A
         // member the target does not have is left out of what was read.
+        // The nodes a script can name as a parent are those the level was
+        // built with, in the order of its tree, as RandomWrites counts them.
         var text = new StringBuilder()
+            .AppendLine("local all = { workspace }")
+            .AppendLine("for _, node in workspace:GetDescendants() do")
+            .AppendLine($"    if node.Name ~= '{WriterName}' then table.insert(all, node) end")
+            .AppendLine("end")
+            .AppendLine($"local homes = {{ workspace, workspace:FindFirstChild('{Home}') }}")
             .AppendLine("local targets = { script, script.Parent, workspace }")
             .AppendLine($"local members = {{ {string.Join(", ", ScriptWrites.Settable.Select(member => $"'{member.Name}'"))} }}")
             .AppendLine("local atStart = {}")
@@ -74,15 +97,44 @@ internal static class WritingScript
             Append(text, write.Member, value, target, ref written);
         }
 
-        return text
-            .AppendLine("local counts = {}")
+        text.AppendLine("local counts = {}")
             .AppendLine("for member, count in taken do table.insert(counts, `{member}={count}`) end")
-            .AppendLine($"print('{EndWord}', refused, table.concat(counts, ' '))")
-            .ToString();
+            .AppendLine($"print('{EndWord}', refused, table.concat(counts, ' '))");
+
+        AppendTreeSteps(text, random);
+        return text.ToString();
     }
 
     // The ticks a script of so many random writes needs to reach its last line.
     public static int TicksFor(int writes) => 4 + ((SweepWrites + writes) / WritesPerTick);
+
+    // After it has printed what it counted, a script changes the tree on a
+    // tick of its own: it makes nodes, clones, moves and destroys, all at
+    // once. One of them may end the script itself, or another one that has
+    // not come to this yet. Each step is in a pcall, since many are refused.
+    private static void AppendTreeSteps(StringBuilder text, RandomWrites random)
+    {
+        text.AppendLine("task.wait()")
+            .AppendLine("local made = {}")
+            .AppendLine("local function keep(node) table.insert(made, node) return node end");
+
+        for (int i = 0; i < TreeStepsPerScript; i++)
+        {
+            string any = $"all[{1 + random.Pick(random.Nodes.Count)}]";
+            string other = $"all[{1 + random.Pick(random.Nodes.Count)}]";
+            string step = random.Pick(8) switch
+            {
+                0 or 1 => $"keep(Instance.new('{MadeClasses[random.Pick(MadeClasses.Length)]}')).Parent = {any}",
+                2 or 3 => $"keep({any}:Clone()).Parent = {other}",
+                4 => "made[#made]:Destroy()",
+                5 => $"{any}:Destroy()",
+                6 => $"{any}.Parent = {other}",
+                _ => $"{any}.Parent = nil",
+            };
+
+            text.AppendLine(CultureInfo.InvariantCulture, $"pcall(function() {step} end)");
+        }
+    }
 
     // What the scripts that have ended counted, summed: how many scripts,
     // the writes each member took, and the writes that were refused.
@@ -117,6 +169,7 @@ internal static class WritingScript
     {
         MemberValueKind.Boolean => $"not atStart[{target}].{member.Name}",
         MemberValueKind.Number => $"(atStart[{target}].{member.Name} or 0) + 1",
+        MemberValueKind.Node => $"(atStart[{target}].{member.Name} == homes[1]) and homes[2] or homes[1]",
         _ => random.Taken(member).Luau,
     };
 

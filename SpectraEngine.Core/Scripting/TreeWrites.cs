@@ -31,6 +31,14 @@ public sealed class TreeWrites
     /// <summary>How many nodes the level's scripts have made that are still there.</summary>
     public int MadeCount => _journal.MadeCount;
 
+    /// <summary>
+    /// Whether the last <see cref="TryMake"/> or <see cref="TryClone"/> was
+    /// refused for <see cref="TreeLimits.MaxMadeNodes"/>. Whoever can find
+    /// made nodes that no script reaches any more hands them to
+    /// <see cref="Forget"/> and asks again.
+    /// </summary>
+    public bool IsOutOfRoom { get; private set; }
+
     /// <summary>Whether the level destroyed the node. Stop makes it whole again.</summary>
     public static bool IsDestroyed(SceneNode node)
     {
@@ -58,6 +66,7 @@ public sealed class TreeWrites
         ReadOnlySpan<char> className, [NotNullWhen(true)] out SceneNode? made, [NotNullWhen(false)] out string? refusal)
     {
         made = null;
+        IsOutOfRoom = false;
         if (!_world.IsRunningEntities)
         {
             refusal = "Instance.new made nothing: the level has stopped";
@@ -66,6 +75,7 @@ public sealed class TreeWrites
 
         if (_journal.MadeCount >= TreeLimits.MaxMadeNodes)
         {
+            IsOutOfRoom = true;
             refusal = $"Instance.new made nothing: {TooMany}";
             return false;
         }
@@ -101,7 +111,9 @@ public sealed class TreeWrites
         copy = null;
         copies.Clear();
         refusal = WhyNotCloned(source);
-        if (refusal is null && !NodeCopies.Fill(source, copies, TreeLimits.MaxMadeNodes - _journal.MadeCount))
+        IsOutOfRoom = refusal is null
+            && !NodeCopies.Fill(source, copies, TreeLimits.MaxMadeNodes - _journal.MadeCount);
+        if (IsOutOfRoom)
             refusal = $"{source.Name} was not cloned: with its copy, {TooMany}";
 
         if (refusal is not null)
