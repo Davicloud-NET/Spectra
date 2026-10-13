@@ -8,10 +8,10 @@ namespace SpectraEngine.Core.Scripting.Tooling;
 
 /// <summary>
 /// Writes the files of <see cref="ScriptProjectFiles"/> into a project's
-/// folder. The definitions file is the engine's and follows the engine. The
-/// other three belong to the person once they exist, and are never written
-/// over. A folder that cannot be written is reported, never thrown.
+/// folder, and reports a file the folder does not take.
 /// </summary>
+// The definitions file is the engine's and follows the engine. The other
+// three belong to the person once they exist, and are never written over.
 public static class ScriptProjectSetup
 {
     // No byte order mark: luau-lsp and Visual Studio Code read the files as they are.
@@ -69,16 +69,27 @@ public static class ScriptProjectSetup
     private static bool WriteDefinitions(string path, string text, Tally tally)
     {
         bool isThere = File.Exists(path);
-        if (isThere && IsSameText(File.ReadAllBytes(path), text))
-            return false;
+        bool hadMark = false;
+        if (isThere)
+        {
+            ReadOnlySpan<byte> onDisk = File.ReadAllBytes(path);
+            if (IsSameText(onDisk, text))
+                return false;
+
+            // The right text behind a mark is still written again:
+            // luau-lsp does not read a definitions file that starts with one.
+            ReadOnlySpan<byte> mark = Encoding.UTF8.Preamble;
+            hadMark = onDisk.StartsWith(mark) && IsSameText(onDisk[mark.Length..], text);
+        }
 
         File.WriteAllBytes(path, Utf8.GetBytes(text));
         tally.IsRenewal = isThere;
+        tally.HadByteOrderMark = hadMark;
         return true;
     }
 
     // A checkout on Windows may have given the file carriage returns.
-    private static bool IsSameText(byte[] onDisk, string text) =>
+    private static bool IsSameText(ReadOnlySpan<byte> onDisk, string text) =>
         Utf8.GetString(onDisk).Replace("\r\n", "\n", StringComparison.Ordinal) == text;
 
     // False when the file is there. CreateNew is what keeps this from ever
@@ -139,6 +150,8 @@ public static class ScriptProjectSetup
 
         public bool IsRenewal { get; set; }
 
+        public bool HadByteOrderMark { get; set; }
+
         public void Try(string file, Func<string, bool> write)
         {
             string path = Path.Combine(projectFolder, file.Replace('/', Path.DirectorySeparatorChar));
@@ -160,7 +173,11 @@ public static class ScriptProjectSetup
         public ScriptProjectReport Report() =>
             _written.Count == 0 && _refused.Count == 0
                 ? ScriptProjectReport.Nothing
-                : new ScriptProjectReport(_written, _refused, _reason) { IsRenewal = IsRenewal };
+                : new ScriptProjectReport(_written, _refused, _reason)
+                {
+                    IsRenewal = IsRenewal,
+                    HadByteOrderMark = HadByteOrderMark,
+                };
 
         private void Refuse(string file, string reason)
         {

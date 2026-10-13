@@ -1,3 +1,4 @@
+using System.Text;
 using SpectraEngine.Core.Scripting.Tooling;
 
 namespace SpectraEngine.Scripting.Tests;
@@ -25,6 +26,9 @@ public sealed class ScriptProjectSetupTests : IDisposable
         [ScriptProjectFiles.LuauRc, ScriptProjectFiles.CodeSettings, ScriptProjectFiles.CodeExtensions];
 
     public static TheoryData<string> EveryFile() => [.. All];
+
+    // The text as an editor saves it that puts a byte order mark first.
+    private static byte[] Marked(string text) => [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(text)];
 
     [Fact]
     public void A_project_gets_the_four_files_each_with_its_text()
@@ -78,6 +82,33 @@ public sealed class ScriptProjectSetupTests : IDisposable
         report.IsRefused.ShouldBeFalse();
     }
 
+    [Theory]
+    [MemberData(nameof(PersonsFiles))]
+    public void A_file_the_person_has_is_kept_also_when_it_is_empty(string file)
+    {
+        _project.Write(file, string.Empty);
+
+        ScriptProjectReport report = ScriptProjectSetup.Prepare(_project.Root, Api);
+
+        _project.Read(file).ShouldBeEmpty();
+        report.Written.ShouldBe(All.Where(name => name != file));
+        report.IsRefused.ShouldBeFalse();
+    }
+
+    [Theory]
+    [MemberData(nameof(PersonsFiles))]
+    public void A_file_the_person_has_and_nobody_may_write_is_kept_and_is_no_refusal(string file)
+    {
+        _project.Write(file, "{}");
+        File.SetAttributes(_project.PathOf(file), FileAttributes.ReadOnly);
+
+        ScriptProjectReport report = ScriptProjectSetup.Prepare(_project.Root, Api);
+
+        _project.Read(file).ShouldBe("{}");
+        report.Written.ShouldBe(All.Where(name => name != file));
+        report.IsRefused.ShouldBeFalse();
+    }
+
     [Fact]
     public void A_definitions_file_with_another_text_is_written_again()
     {
@@ -101,6 +132,32 @@ public sealed class ScriptProjectSetupTests : IDisposable
 
         report.Written.ShouldNotContain("spectra.d.luau");
         _project.Read("spectra.d.luau").ShouldContain("\r\n");
+    }
+
+    [Fact]
+    public void A_definitions_file_behind_a_byte_order_mark_is_written_again_without_it()
+    {
+        ScriptProjectSetup.Prepare(_project.Root, Api);
+        File.WriteAllBytes(_project.PathOf("spectra.d.luau"), Marked(Api));
+
+        ScriptProjectReport report = ScriptProjectSetup.Prepare(_project.Root, Api);
+
+        File.ReadAllBytes(_project.PathOf("spectra.d.luau")).ShouldBe(Encoding.UTF8.GetBytes(Api));
+        report.Describe().ShouldBe(
+            "Wrote spectra.d.luau again, without the byte order mark it had. luau-lsp does not read the file " +
+            "with one.");
+    }
+
+    [Fact]
+    public void An_old_definitions_file_behind_a_byte_order_mark_is_said_to_be_old()
+    {
+        ScriptProjectSetup.Prepare(_project.Root, Api);
+        File.WriteAllBytes(_project.PathOf("spectra.d.luau"), Marked("-- an older script API\n"));
+
+        ScriptProjectReport report = ScriptProjectSetup.Prepare(_project.Root, Api);
+
+        File.ReadAllBytes(_project.PathOf("spectra.d.luau")).ShouldBe(Encoding.UTF8.GetBytes(Api));
+        report.Describe().ShouldBe("Wrote spectra.d.luau again. It did not hold this engine's script API.");
     }
 
     [Fact]
@@ -171,9 +228,9 @@ public sealed class ScriptProjectSetupTests : IDisposable
     [Fact]
     public void A_definitions_file_that_cannot_be_written_is_reported_and_the_rest_is_written()
     {
-        // Root writes through a read only file, so there is nothing to see.
-        if (!OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess)
-            return;
+        Assert.SkipWhen(
+            !OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess,
+            "This process is root, which writes through a read only file. Nothing can be refused here.");
 
         _project.Write("spectra.d.luau", "-- an older script API\n");
         File.SetAttributes(_project.PathOf("spectra.d.luau"), FileAttributes.ReadOnly);

@@ -285,7 +285,7 @@ The editor makes the same text as `--export-script-types` (`ScriptDefinitions`, 
 
 | File | Written |
 |---|---|
-| `spectra.d.luau` | when it is missing, and again whenever its text is not this build's. A text that differs only in its line ends is left alone |
+| `spectra.d.luau` | when it is missing, and again whenever its text is not this build's. A text that differs only in its line ends is left alone. One behind a byte order mark is written again without it, since luau-lsp does not read the file with one |
 | `.luaurc` | when it is missing. It holds the alias `assets` for `./Assets` and nothing else |
 | `.vscode/settings.json` | when it is missing. The platform is `standard`, the definitions file is named as `@spectra`, and the Rojo sourcemap is off |
 | `.vscode/extensions.json` | when it is missing. It recommends `JohnnyMorganz.luau-lsp` |

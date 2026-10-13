@@ -13,8 +13,11 @@ public sealed record ScriptProjectReport(
     /// <summary>Nothing was written and nothing was refused.</summary>
     public static ScriptProjectReport Nothing { get; } = new([], [], string.Empty);
 
-    /// <summary>Whether the definitions file was there and held another text.</summary>
+    /// <summary>Whether the definitions file was there and was written again.</summary>
     public bool IsRenewal { get; init; }
+
+    /// <summary>Whether it was written again only to lose a byte order mark, with this engine's text behind it.</summary>
+    public bool HadByteOrderMark { get; init; }
 
     /// <summary>Whether a file could not be written.</summary>
     public bool IsRefused => Refused.Count > 0;
@@ -27,6 +30,8 @@ public sealed record ScriptProjectReport(
     public string? DescribeWritten() => Written.Count switch
     {
         0 => null,
+        1 when HadByteOrderMark =>
+            $"Wrote {Written[0]} again, without the byte order mark it had. luau-lsp does not read the file with one.",
         1 when IsRenewal => $"Wrote {Written[0]} again. It did not hold this engine's script API.",
         1 => $"Wrote {Written[0]} into the project folder. It sets a code editor up for the project's scripts.",
         _ => $"Wrote {Listed(Written)} into the project folder. They set a code editor up for the project's scripts.",
