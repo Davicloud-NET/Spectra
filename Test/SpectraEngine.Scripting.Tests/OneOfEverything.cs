@@ -42,6 +42,32 @@ internal static class OneOfEverything
         idle.Script = idle.Script.ShouldNotBeNull() with { IsEnabled = false };
         SceneNode shared = level.AddScript(root, "return {}", "Shared");
         shared.Script = shared.Script.ShouldNotBeNull() with { IsModule = true };
+
+        AddSwitchedOff(level, crates);
+    }
+
+    // Under the turned group: lights of two more kinds, one of them off and
+    // each with values a new light does not have, and a part with switches
+    // off. What a script sets on these has to go back to more than defaults.
+    private static void AddSwitchedOff(ScriptLevel level, SceneNode group)
+    {
+        SceneNode beam = group.CreateChild("Beam");
+        beam.LocalPosition = new Vector3(0f, 3f, -0f);
+        beam.Light = new Light
+        {
+            Kind = LightKind.Spot,
+            Enabled = false,
+            Color = new Vector3(0.25f, -0f, 2f),
+            Intensity = 0.1f,
+            Range = 7.5f,
+        };
+
+        SceneNode panel = group.CreateChild("Panel");
+        panel.Light = new Light { Kind = LightKind.Rect, Intensity = 0f, Range = 0.3f };
+
+        SceneNode hidden = level.Part("CrateC", new Vector3(2f, 0.25f, 2f), group);
+        hidden.CanQuery = false;
+        hidden.CanTouch = false;
     }
 
     // Sends the relay a Say, so its wire fires and counts one use down. By
