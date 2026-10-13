@@ -846,8 +846,10 @@ public sealed class SceneManager
         PlayerSpawnYaw = DemoPlayArea.SpawnYaw;
         PlayerFallOutHeight = DemoPlayArea.FallOutHeight;
 
-        // The level's one script, on a part in the start room.
+        // The level's scripts: one on a part in the start room, and the one
+        // that has a mover in Luau move the player.
         DemoSpinner.Build(scene, pillarMaterial);
+        DemoMover.Build(scene);
 
         // One part brush, clear of everything else so it cannot z-fight.
         var floatingPart = scene.Root.CreateChild("FloatingPart");

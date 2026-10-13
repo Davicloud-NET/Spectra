@@ -6,7 +6,7 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Core.Scene;
 
 /// <summary>
-/// The demo level's one script: a small part in the start room that a
+/// One of the demo level's scripts: a small part in the start room that a
 /// <c>.luau</c> file turns while the level plays.
 /// </summary>
 // Not in DemoPlayArea, which is the level that needs no code and is baked by

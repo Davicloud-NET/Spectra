@@ -20,9 +20,9 @@ internal sealed class MoverLevel : IDisposable
 {
     public const float Dt = PhysicsDefaults.FixedDeltaTime;
 
-    public const string Walk = "Scripts/movers/walk.luau";
+    public const string Walk = DemoMover.MoverPath;
     public const string DoubleJump = "Scripts/movers/double_jump.luau";
-    public const string Installer = "Scripts/player_mover.luau";
+    public const string Installer = DemoMover.ScriptPath;
 
     private int _scriptCount;
 
@@ -104,7 +104,7 @@ internal sealed class MoverLevel : IDisposable
     // The script the demo installs its mover with.
     public MoverLevel WithTheShippedMover()
     {
-        Scene.Root.CreateChild("PlayerMover").Script = new Script(Installer);
+        DemoMover.Build(Scene);
         return this;
     }
 

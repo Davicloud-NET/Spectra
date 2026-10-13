@@ -49,7 +49,7 @@ public sealed class LuauMoverInstallTests
     {
         using MoverLevel level = new MoverLevel().WithTheShippedMover();
         level.Play().Tick(in Ahead, 5).Stop();
-        SceneNode installer = level.Scene.Root.Children.Single(node => node.Name == "PlayerMover");
+        SceneNode installer = level.Scene.Root.Children.Single(node => node.Name == DemoMover.ScriptName);
         installer.Script = new Script(MoverLevel.Installer) { IsEnabled = false };
 
         level.Play().Tick(in Ahead, 30);
