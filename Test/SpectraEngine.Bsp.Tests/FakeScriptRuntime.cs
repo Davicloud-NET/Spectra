@@ -62,4 +62,10 @@ internal sealed class FakeScriptRuntime : IScriptRuntime
 
     public void HearTouch(long listener, in TouchVisitor visitor) =>
         _log.Add($"hear touch {listener} by {visitor.Id}");
+
+    // Not logged: it is called on every tick, and a test of what a tick
+    // calls counts the calls above.
+    public void StartEntered() => StartedEntered++;
+
+    public int StartedEntered { get; private set; }
 }

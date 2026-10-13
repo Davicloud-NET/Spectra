@@ -23,4 +23,7 @@ public enum MemberValueKind : byte
 
     /// <summary>A colour as a person picks one.</summary>
     Color,
+
+    /// <summary>A node, or no node.</summary>
+    Node,
 }

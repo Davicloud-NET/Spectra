@@ -60,4 +60,11 @@ public interface IScriptRuntime
     /// script has not returned. It waits for nothing.
     /// </summary>
     void Close();
+
+    /// <summary>
+    /// Loads and starts the scripts of the nodes that came into the level
+    /// since the last call, in the order they came. Called at the end of
+    /// each tick, once the entities of those nodes have spawned.
+    /// </summary>
+    void StartEntered();
 }

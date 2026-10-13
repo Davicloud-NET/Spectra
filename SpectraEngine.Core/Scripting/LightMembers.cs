@@ -28,9 +28,11 @@ internal static class LightMembers
         };
     }
 
-    // The value is of the member's kind, and the light is one that has the member.
+    // The value is of the member's kind, and the light is one that has the
+    // member. No journal for the light of a node the level made, which is
+    // gone at Stop.
     public static bool TryWrite(
-        PlayJournal journal, Light light, SettableMemberId member, in MemberValue value,
+        PlayJournal? journal, Light light, SettableMemberId member, in MemberValue value,
         [NotNullWhen(false)] out string? refusal)
     {
         refusal = member switch
@@ -44,19 +46,19 @@ internal static class LightMembers
         return refusal is null;
     }
 
-    private static string? SetEnabled(PlayJournal journal, Light light, bool value)
+    private static string? SetEnabled(PlayJournal? journal, Light light, bool value)
     {
         if (value == light.Enabled)
             return null;
 
-        journal.Record(light, LightJournalKind.Enabled);
+        journal?.Record(light, LightJournalKind.Enabled);
         light.Enabled = value;
         return null;
     }
 
     // In each setter the value the light already has comes first: it is
     // left alone and records nothing, whatever a level was saved with.
-    private static string? SetBrightness(PlayJournal journal, Light light, float value)
+    private static string? SetBrightness(PlayJournal? journal, Light light, float value)
     {
         if (value == light.Intensity)
             return null;
@@ -75,12 +77,12 @@ internal static class LightMembers
                 "Brightness", string.Create(CultureInfo.InvariantCulture, $"{value}"), "with the light's Color ");
         }
 
-        journal.Record(light, LightJournalKind.Intensity);
+        journal?.Record(light, LightJournalKind.Intensity);
         light.Intensity = value;
         return null;
     }
 
-    private static string? SetRange(PlayJournal journal, Light light, float value)
+    private static string? SetRange(PlayJournal? journal, Light light, float value)
     {
         if (value == light.Range)
             return null;
@@ -90,12 +92,12 @@ internal static class LightMembers
         if (!(value > 0f) || float.IsInfinity(value))
             return Refused("Range", value, "a number above 0 that is not infinite");
 
-        journal.Record(light, LightJournalKind.Range);
+        journal?.Record(light, LightJournalKind.Range);
         light.Range = value;
         return null;
     }
 
-    private static string? SetColor(PlayJournal journal, Light light, Color3 value)
+    private static string? SetColor(PlayJournal? journal, Light light, Color3 value)
     {
         // Compared as the colour a script reads. Its linear value can be a
         // rounding step from the one the light holds, and a write of what
@@ -115,7 +117,7 @@ internal static class LightMembers
         if (!Shines(linear, light.Intensity))
             return TooMuch("Color", Written(value), "with the light's Brightness ");
 
-        journal.Record(light, LightJournalKind.Color);
+        journal?.Record(light, LightJournalKind.Color);
         light.DisplayColor = value;
         return null;
     }

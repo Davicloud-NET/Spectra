@@ -35,6 +35,7 @@ public sealed class ScriptWrites
         new(SettableMemberId.CanQuery, "CanQuery", MemberValueKind.Boolean) { Classes = [NodeClass.BasePart] },
         new(SettableMemberId.CanTouch, "CanTouch", MemberValueKind.Boolean) { Classes = [NodeClass.BasePart] },
         new(SettableMemberId.Visible, "Visible", MemberValueKind.Boolean) { Classes = [NodeClass.BasePart] },
+        new(SettableMemberId.Parent, "Parent", MemberValueKind.Node),
     ];
 
     private static readonly byte[][] Utf8Names =
@@ -50,7 +51,14 @@ public sealed class ScriptWrites
     {
         ArgumentNullException.ThrowIfNull(world);
         _world = world;
+        Tree = new TreeWrites(world);
     }
+
+    /// <summary>
+    /// What a script adds to the level's tree and takes from it. A write of
+    /// a node's Parent goes through it too.
+    /// </summary>
+    public TreeWrites Tree { get; }
 
     /// <summary>Every member of a node a script can set.</summary>
     public static IReadOnlyList<SettableMember> Settable => Listed;
@@ -93,6 +101,7 @@ public sealed class ScriptWrites
                 or SettableMemberId.Range => LightMembers.Read(node, member),
             SettableMemberId.CanCollide or SettableMemberId.CanQuery or SettableMemberId.CanTouch
                 or SettableMemberId.Visible => PartMembers.Read(node, member),
+            SettableMemberId.Parent => MemberValue.OfNode(node.Parent),
             _ => throw NoSuchMember(member),
         };
     }
@@ -154,6 +163,7 @@ public sealed class ScriptWrites
             SettableMemberId.CanCollide or SettableMemberId.CanQuery or SettableMemberId.CanTouch
                 or SettableMemberId.Visible =>
                 PartMembers.TryWrite(_world.Journal, node, in described, value.Boolean, out refusal),
+            SettableMemberId.Parent => Tree.TrySetParent(node, value.Node, out refusal),
             _ => throw NoSuchMember(member),
         };
     }
@@ -176,7 +186,10 @@ public sealed class ScriptWrites
         SceneNode node, SettableMemberId member, in MemberValue value, [NotNullWhen(false)] out string? refusal)
     {
         if (node.Light is { } light)
-            return LightMembers.TryWrite(_world.Journal, light, member, in value, out refusal);
+        {
+            PlayJournal? journal = node.IsMadeByLevel ? null : _world.Journal;
+            return LightMembers.TryWrite(journal, light, member, in value, out refusal);
+        }
 
         refusal = $"{node.Name} is no light.";
         return false;

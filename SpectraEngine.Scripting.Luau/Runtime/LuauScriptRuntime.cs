@@ -279,6 +279,11 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     }
 
     /// <inheritdoc/>
+    public void StartEntered()
+    {
+    }
+
+    /// <inheritdoc/>
     // The host closes at once when no call into a script is running. When one
     // is, as after the thread that ran the level died inside it, the host
     // closes if that call ever returns. Nothing here waits or touches Luau,

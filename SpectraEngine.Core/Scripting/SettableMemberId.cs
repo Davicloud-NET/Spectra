@@ -44,4 +44,7 @@ public enum SettableMemberId
 
     /// <summary>Whether a part or a mesh is drawn.</summary>
     Visible,
+
+    /// <summary>The node above the node in the tree, or none for a node that is in no tree.</summary>
+    Parent,
 }

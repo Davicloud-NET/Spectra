@@ -286,6 +286,14 @@ public class SceneNode
     /// </summary>
     public bool HoldsWorldBrush => _subtree.World > 0 || _subtree.Baked > 0;
 
+    // A level made the node while it played. It is gone at Stop, so what the
+    // level changes on it records nothing.
+    internal bool IsMadeByLevel { get; set; }
+
+    // A level destroyed the node while it played. Its parent stays null until
+    // Stop puts the level back.
+    internal bool IsDestroyed { get; set; }
+
     /// <summary>
     /// Whether this node's own mesh or part brush is drawn and casts a shadow.
     /// Default <c>true</c>. Not inherited by children. Picking, queries and
@@ -570,7 +578,7 @@ public class SceneNode
         if (child.Parent is { } oldParent)
         {
             child.UnlinkSiblings();
-            oldParent._children.Remove(child);
+            oldParent.TakeFromList(child);
             if (!child._subtree.IsEmpty)
             {
                 AdjustSubtreeCounts(oldParent, child._subtree.Negated);
@@ -661,7 +669,7 @@ public class SceneNode
 
     public void RemoveChild(SceneNode child)
     {
-        if (_children.Remove(child))
+        if (TakeFromList(child))
         {
             child.UnlinkSiblings();
             child.Parent = null;
@@ -675,6 +683,18 @@ public class SceneNode
             child.SetOwner(null);
             child.MarkWorldDirty();
         }
+    }
+
+    // From the end: what a running level takes out is mostly what it put in
+    // last, and a level can have tens of thousands of nodes under its root.
+    private bool TakeFromList(SceneNode child)
+    {
+        int at = _children.LastIndexOf(child);
+        if (at < 0)
+            return false;
+
+        _children.RemoveAt(at);
+        return true;
     }
 
     /// <summary>

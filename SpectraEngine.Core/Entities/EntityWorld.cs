@@ -359,7 +359,8 @@ public sealed class EntityWorld
     /// due up to <see cref="MaxDispatchesPerTick"/>,
     /// calls <see cref="Entity.OnTick"/> on the entities that asked for it,
     /// in <see cref="Entities"/> order, then drains the deferred spawn and
-    /// despawn queues.
+    /// despawn queues and starts the scripts of the nodes that came into
+    /// the level.
     /// </summary>
     /// <param name="fixedDt">
     /// The step the host is running at. It must be this world's
@@ -412,6 +413,9 @@ public sealed class EntityWorld
         }
 
         DrainDeferred();
+
+        // After the spawns: a script that came with an entity finds it running.
+        Scripts?.StartEntered();
 
         Trace?.EndTick(TickNumber, Time);
     }
@@ -734,29 +738,46 @@ public sealed class EntityWorld
             _spawnScratch.AddRange(_pendingSpawn);
             _pendingSpawn.Clear();
 
-            for (int i = 0; i < _spawnScratch.Count; i++)
-                Spawn(_spawnScratch[i]);
-
-            _spawnScratch.Clear();
+            try
+            {
+                SpawnAll(_spawnScratch);
+            }
+            finally
+            {
+                _spawnScratch.Clear();
+            }
         }
     }
 
-    private void Spawn(SceneNode node)
+    // The phases of Activate, for the nodes that came into the level since
+    // the last tick. Entities that come together then start as those of the
+    // level did: each spawns once all of them are built, named and wired.
+    private void SpawnAll(List<SceneNode> nodes)
     {
-        if (node.Entity is not { } data)
-            return;
+        int first = _entities.Count;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            SceneNode node = nodes[i];
 
-        // May have been queued twice, or already built by Activate.
-        if (_index!.TryGetByNodeId(node.Id, out _))
-            return;
+            // Gone again since it was queued, queued twice, or built by Activate.
+            if (node.Entity is not { } data || !ReferenceEquals(node.Owner, _scene)
+                || _index!.TryGetByNodeId(node.Id, out _))
+            {
+                continue;
+            }
 
-        Entity entity = Build(node, data);
-        _entities.Add(entity);
-        ParseKeyvalues(entity, data);
-        _index.Register(entity);
-        entity.BuildOutputs(data.Connections);
-        entity.OnSpawn();
-        entity.OnActivate();
+            Entity entity = Build(node, data);
+            _entities.Add(entity);
+            ParseKeyvalues(entity, data);
+            _index.Register(entity);
+        }
+
+        for (int i = first; i < _entities.Count; i++)
+            _entities[i].BuildOutputs(_entities[i].Data.Connections);
+        for (int i = first; i < _entities.Count; i++)
+            _entities[i].OnSpawn();
+        for (int i = first; i < _entities.Count; i++)
+            _entities[i].OnActivate();
     }
 
     private void Despawn(Entity entity)

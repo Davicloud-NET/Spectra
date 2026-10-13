@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Scene;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -18,6 +19,9 @@ internal sealed class PlayJournal
 
     public int Count => _entries.Count;
 
+    // What the level added to its tree, took from it and moved within it.
+    public TreeJournal Tree { get; } = new();
+
     // How many owners hold a first value of this kind.
     public int CountOf<TOwner, T>(JournalKind<TOwner, T> kind)
         where TOwner : class
@@ -37,13 +41,36 @@ internal sealed class PlayJournal
     public void Record<TOwner, T>(TOwner owner, JournalKind<TOwner, T> kind)
         where TOwner : class
     {
+        // A node the level made is gone at Stop, with all it holds. Kept
+        // here, every part a level spawns would stay until then.
+        if (owner is SceneNode { IsMadeByLevel: true })
+            return;
+
         if (_recorded.Add(new Key(owner, kind)))
             _entries.Add(new FirstValue<TOwner, T>(owner, kind, kind.Read(owner)));
     }
 
-    // Newest first. A value that is already back raises no event and
-    // dirties nothing.
+    // Newest first, and then the tree. A value that is already back raises
+    // no event and dirties nothing.
     public void Restore()
+    {
+        ExceptionDispatchInfo? first = PutValuesBack();
+
+        try
+        {
+            // After the values: a node that comes back into the scene comes
+            // back where it was built, and is indexed once.
+            Tree.Restore();
+        }
+        catch (Exception failure)
+        {
+            first ??= ExceptionDispatchInfo.Capture(failure);
+        }
+
+        first?.Throw();
+    }
+
+    private ExceptionDispatchInfo? PutValuesBack()
     {
         ExceptionDispatchInfo? first = null;
         for (int i = _entries.Count - 1; i >= 0; i--)
@@ -62,7 +89,7 @@ internal sealed class PlayJournal
 
         _entries.Clear();
         _recorded.Clear();
-        first?.Throw();
+        return first;
     }
 
     private readonly record struct Key(object Owner, object Kind);

@@ -47,6 +47,20 @@ public sealed class MemberValueTests
     {
         string[] names = [.. Enum.GetValues<MemberValueKind>().Select(MemberValue.TypeName)];
 
-        names.ShouldBe(["nil", "string", "Vector3", "CFrame", "boolean", "number", "Color3"]);
+        names.ShouldBe(["nil", "string", "Vector3", "CFrame", "boolean", "number", "Color3", "Instance"]);
+    }
+
+    [Fact]
+    public void A_node_is_a_value_and_so_is_no_node()
+    {
+        var door = new SceneNode("Door");
+
+        MemberValue.OfNode(door).Node.ShouldBeSameAs(door);
+        MemberValue.OfNode(door).ToString().ShouldBe(door.Id.ToString());
+        MemberValue.OfNode(null).ToString().ShouldBe("nil");
+        MemberValue.OfNode(door).ShouldBe(MemberValue.OfNode(door));
+        MemberValue.OfNode(door).ShouldNotBe(MemberValue.OfNode(new SceneNode("Door")));
+        MemberValue.OfNode(null).ShouldNotBe(MemberValue.None);
+        MemberValue.OfNode(null).Kind.ShouldBe(MemberValueKind.Node);
     }
 }

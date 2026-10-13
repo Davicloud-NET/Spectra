@@ -16,15 +16,18 @@ public readonly record struct MemberValue
     private readonly Vector3 _vector;
     private readonly CFrame _frame;
     private readonly double _number;
+    private readonly SceneNode? _node;
 
     private MemberValue(
-        MemberValueKind kind, string? text = null, Vector3 vector = default, CFrame frame = default, double number = 0d)
+        MemberValueKind kind, string? text = null, Vector3 vector = default, CFrame frame = default, double number = 0d,
+        SceneNode? node = null)
     {
         Kind = kind;
         _text = text;
         _vector = vector;
         _frame = frame;
         _number = number;
+        _node = node;
     }
 
     /// <summary>No value. This is the default.</summary>
@@ -51,6 +54,9 @@ public readonly record struct MemberValue
     /// <summary>The value of a <see cref="MemberValueKind.Color"/>.</summary>
     public Color3 Color => new(_vector.X, _vector.Y, _vector.Z);
 
+    /// <summary>The value of a <see cref="MemberValueKind.Node"/>. Null is no node, which is a value too.</summary>
+    public SceneNode? Node => _node;
+
     /// <summary>Text.</summary>
     public static MemberValue Of(string value)
     {
@@ -74,6 +80,9 @@ public readonly record struct MemberValue
     public static MemberValue Of(Color3 value) =>
         new(MemberValueKind.Color, vector: new Vector3(value.R, value.G, value.B));
 
+    /// <summary>A node, or null for no node.</summary>
+    public static MemberValue OfNode(SceneNode? value) => new(MemberValueKind.Node, node: value);
+
     /// <summary>What a script calls a value of this kind.</summary>
     public static string TypeName(MemberValueKind kind) => kind switch
     {
@@ -83,12 +92,13 @@ public readonly record struct MemberValue
         MemberValueKind.Boolean => "boolean",
         MemberValueKind.Number => "number",
         MemberValueKind.Color => "Color3",
+        MemberValueKind.Node => "Instance",
         _ => "nil",
     };
 
     /// <summary>
     /// The value as text, the same on every machine. A number is written so
-    /// that it reads back as the same number.
+    /// that it reads back as the same number, and a node as its id.
     /// </summary>
     public override string ToString() => Kind switch
     {
@@ -100,6 +110,7 @@ public readonly record struct MemberValue
         MemberValueKind.Number => _number.ToString(CultureInfo.InvariantCulture),
         MemberValueKind.Color => string.Create(
             CultureInfo.InvariantCulture, $"{_vector.X}, {_vector.Y}, {_vector.Z}"),
+        MemberValueKind.Node => _node?.Id.ToString() ?? "nil",
         _ => "nil",
     };
 }

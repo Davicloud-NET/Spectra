@@ -34,6 +34,16 @@ internal static class WorldFrame
         return local;
     }
 
+    // The local transform that keeps a node at a world frame under another
+    // parent, or under none. The scale is kept.
+    public static Transform LocalUnder(SceneNode? parent, Transform local, CFrame world)
+    {
+        CFrame solved = parent is null ? world : Of(parent).ToObjectSpace(world);
+        local.Rotation = solved.Rotation;
+        local.Position = parent is null ? world.Position : PositionUnder(parent, world.Position) ?? solved.Position;
+        return local;
+    }
+
     // By the parent's whole matrix, so the position lands under a scaled
     // ancestor too. The parent's own position comes off first: far from the
     // origin the inverse of the whole matrix loses the low digits of the
