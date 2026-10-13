@@ -1,4 +1,5 @@
 using Spectra.Kitchen.Tests;
+using SpectraEngine.Core.Projects;
 using SpectraEngine.Core.Scripting.Tooling;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Shell.Scripts;
@@ -27,6 +28,9 @@ public sealed class ScriptCommandsProjectTests : IDisposable
     private readonly FakeProgramStarter _starter = new();
     private readonly ScriptCommands _commands;
 
+    // How often the project's folder was looked at: every look asks for the text.
+    private int _definitionsAsked;
+
     public ScriptCommandsProjectTests()
     {
         _project.WriteAsset("Scripts/Spin.luau", "print('hello')\n");
@@ -34,7 +38,11 @@ public sealed class ScriptCommandsProjectTests : IDisposable
             _shell, _document, () => null,
             new ScriptLauncher(
                 _starter, () => new ScriptEditorFacts(Code, true, FileManagerKind.Explorer),
-                setup: new ScriptEditorSetup(() => Api)),
+                setup: new ScriptEditorSetup(() =>
+                {
+                    Interlocked.Increment(ref _definitionsAsked);
+                    return Api;
+                })),
             answer => answer());
     }
 
@@ -150,5 +158,49 @@ public sealed class ScriptCommandsProjectTests : IDisposable
         await _commands.RefreshProjectAsync();
 
         Said.ShouldBeEmpty();
+    }
+
+    // What the window does after a save: it reads the manifest again and
+    // sets the project it read, which is another object for the same folder.
+    private Task SaveLevel()
+    {
+        _document.SetProject(ProjectLayout.Open(_project.Layout.ManifestPath));
+        return _commands.ProjectRefresh.WaitAsync(Patience, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task A_save_of_a_level_does_not_bring_the_project_up_again()
+    {
+        await OpenProject();
+        int asked = _definitionsAsked;
+
+        await SaveLevel();
+
+        _definitionsAsked.ShouldBe(asked);
+    }
+
+    [Fact]
+    public async Task A_refusal_that_stands_is_not_said_again_after_a_save()
+    {
+        Directory.CreateDirectory(DefinitionsPath);
+        await OpenProject();
+        await _commands.OpenAsync("Scripts/Spin.luau");
+
+        await SaveLevel();
+        await _commands.OpenAsync("Scripts/Spin.luau");
+
+        Said.ShouldHaveSingleItem().Severity.ShouldBe(OutputSeverity.Warning);
+    }
+
+    [Fact]
+    public async Task A_project_that_was_closed_and_opened_again_is_brought_up_again()
+    {
+        await OpenProject();
+        int asked = _definitionsAsked;
+
+        _document.SetProject(null);
+        await OpenProject();
+
+        _definitionsAsked.ShouldBe(asked + 1);
     }
 }

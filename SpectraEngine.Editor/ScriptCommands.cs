@@ -31,6 +31,9 @@ internal sealed class ScriptCommands
     // The last line about files a project's folder did not take.
     private string? _refusalSaid;
 
+    // The folder of the project that is open, or null with none.
+    private string? _projectRoot;
+
     /// <summary>Creates the commands.</summary>
     /// <param name="session">The session that is live now, or null.</param>
     /// <param name="launcher">The one way a script is opened, whoever asks.</param>
@@ -56,13 +59,22 @@ internal sealed class ScriptCommands
 
         document.PropertyChanged += (_, change) =>
         {
-            if (change.PropertyName != nameof(EditorDocument.Project))
-                return;
-
-            // Another project is another folder, with refusals of its own.
-            _refusalSaid = null;
-            ProjectRefresh = RefreshProjectAsync();
+            if (change.PropertyName == nameof(EditorDocument.Project))
+                OnProjectSet();
         };
+    }
+
+    // The window sets the project again after every save, from a manifest it
+    // read anew. Only another folder is another project.
+    private void OnProjectSet()
+    {
+        string? root = _document.Project?.Root;
+        if (string.Equals(root, _projectRoot, StringComparison.Ordinal))
+            return;
+
+        _projectRoot = root;
+        _refusalSaid = null;
+        ProjectRefresh = RefreshProjectAsync();
     }
 
     /// <summary>The refresh the project that was opened last started. Done when its line is in Output.</summary>
