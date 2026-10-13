@@ -108,6 +108,15 @@ public static class MapFormat
     /// </summary>
     public const string SourceMember = "source";
 
+    public const string TagsMember = "tags";
+    public const string AttributesMember = "attributes";
+
+    // The one member of the object an attribute's value is when JSON has no
+    // value of its kind.
+    public const string Vector3Value = "vector3";
+    public const string Color3Value = "color3";
+    public const string CFrameValue = "cframe";
+
     /// <summary>
     /// Target names resolved when a wire fires, not against the map. Matched ordinally.
     /// </summary>

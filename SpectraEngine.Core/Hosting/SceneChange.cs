@@ -27,6 +27,9 @@ public enum SceneChangeKind
     /// its light changed kind.
     /// </summary>
     KindChanged,
+
+    /// <summary>The node's tags became other tags. Carries the new ones.</summary>
+    TagsChanged,
 }
 
 /// <summary>
@@ -68,6 +71,13 @@ public readonly record struct SceneChange(
     /// </summary>
     public bool HasScript { get; init; }
 
+    /// <summary>The tags the node was built with. Never null.</summary>
+    public TagSet Tags
+    {
+        get => field ?? TagSet.Empty;
+        init;
+    }
+
     /// <summary>
     /// The change that says <paramref name="node"/> is as it is now. Render
     /// thread only: it reads a live node.
@@ -84,6 +94,7 @@ public readonly record struct SceneChange(
             EntityClass = node.Entity?.ClassName,
             LightKind = node.Light?.Kind,
             HasScript = node.Script is not null,
+            Tags = node.Tags,
         };
     }
 }

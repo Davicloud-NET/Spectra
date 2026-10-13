@@ -42,7 +42,7 @@ public sealed class MapNodeRealmTests
 
     private const string Level = """
         {
-          "spectramap": 5,
+          "spectramap": 6,
           "minimumReadableVersion": 5,
           "engine": "1.0.0",
           "scene": {

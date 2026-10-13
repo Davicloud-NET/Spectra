@@ -20,6 +20,8 @@ public class SceneNode
     private Light? _light;
     private Entities.EntityData? _entity;
     private Script? _script;
+    private TagSet _tags = TagSet.Empty;
+    private AttributeSet _attributes = AttributeSet.Empty;
     private PhysicsFlags _physicsFlags = PhysicsFlags.Default;
     private byte _collisionGroup;
     private bool _isRendered = true;
@@ -174,6 +176,39 @@ public class SceneNode
             Owner?.UpdateScriptMembership(this);
             if (had != (value is not null))
                 Owner?.OnNodeKindChanged(this);
+        }
+    }
+
+    /// <summary>
+    /// The tags the node was built with. A level that plays starts its own
+    /// copy from them and never writes back. Setting other tags on an
+    /// attached node raises <see cref="Scene.NodeTagsChanged"/>.
+    /// </summary>
+    public TagSet Tags
+    {
+        get => _tags;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (_tags.Equals(value))
+                return;
+
+            _tags = value;
+            Owner?.OnNodeTagsChanged(this);
+        }
+    }
+
+    /// <summary>
+    /// The attributes the node was built with. A level that plays starts its
+    /// own copy from them and never writes back.
+    /// </summary>
+    public AttributeSet Attributes
+    {
+        get => _attributes;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _attributes = value;
         }
     }
 
@@ -636,7 +671,8 @@ public class SceneNode
     /// <summary>
     /// A detached copy of this node with a new id, for the caller to attach.
     /// The mesh renderer is shared; the brush, light and entity are copied.
-    /// The script is shared too, since it never changes.
+    /// The script, the tags and the attributes are shared too, since none
+    /// of them ever changes.
     /// </summary>
     /// <param name="deep">
     /// True (the default) to copy the whole subtree; false for this node alone.
@@ -665,6 +701,8 @@ public class SceneNode
         copy.Light = _light?.Clone();
         copy.Entity = Entity?.Clone();
         copy.Script = _script;
+        copy._tags = _tags;
+        copy._attributes = _attributes;
 
         if (deep)
         {

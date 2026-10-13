@@ -29,6 +29,7 @@ public sealed class ScmapBuilder
     private readonly List<ScmapCollisionHullSource> _hulls = [];
     private readonly List<ScmapLightSource> _lights = [];
     private readonly List<(ScmapScriptSource Script, uint AssetIndex)> _scripts = [];
+    private readonly List<ScmapNodeSetsSource> _nodeSets = [];
 
     /// <summary>Creates a builder for a scene.</summary>
     public ScmapBuilder(string sceneName)
@@ -264,6 +265,27 @@ public sealed class ScmapBuilder
         _scripts.Add((script, AddAsset(new ScmapAssetSource(PackEntryKind.Script, script.Path))));
     }
 
+    /// <summary>
+    /// Adds the tags and attributes one node was built with, to <c>NTAG</c>
+    /// and <c>NATR</c>. Call in node pre-order, once per node that has any.
+    /// The node index is checked in <see cref="Write"/>.
+    /// </summary>
+    public void AddNodeSets(ScmapNodeSetsSource sets)
+    {
+        ArgumentNullException.ThrowIfNull(sets.Tags);
+        ArgumentNullException.ThrowIfNull(sets.Attributes);
+
+        if (_nodeSets.Count > 0 && sets.NodeIndex <= _nodeSets[^1].NodeIndex)
+        {
+            throw new InvalidOperationException(
+                $"The tags and attributes of node {sets.NodeIndex} were added after those of node " +
+                $"{_nodeSets[^1].NodeIndex}. Their records are in node order, and a loader walks them in " +
+                "step with the nodes.");
+        }
+
+        _nodeSets.Add(sets);
+    }
+
     /// <summary>Builds the whole file.</summary>
     /// <param name="sourceMapDigest">See <see cref="MapBundleDigest"/>.</param>
     /// <param name="mapFormatVersion">The authored map format version the bake read.</param>
@@ -280,8 +302,8 @@ public sealed class ScmapBuilder
         var strings = new ScmapStringTableBuilder();
 
         // Strings are interned here in a fixed order (scene name, asset paths,
-        // node names, entity strings), not as callers add things, so the blob
-        // does not depend on call order.
+        // node names, entity strings, tags and attributes), not as callers
+        // add things, so the blob does not depend on call order.
         uint sceneNameString = strings.Intern(SceneName);
 
         var assetPathStrings = new uint[_assets.Count];
@@ -292,6 +314,8 @@ public sealed class ScmapBuilder
 
         // Before the string blob is built: this interns as it goes.
         byte[] entityBody = ScmapEntitySection.Build(_entities, _nodes.Count, strings, out byte[] connectionBody);
+        ScmapNodeSetsSection.Build(
+            _nodeSets, _nodes.Count, strings, out byte[]? tagBody, out byte[]? attributeBody);
 
         byte[] stringBody = strings.Build();
         byte[] assetBody = _assets.Build(assetPathStrings);
@@ -329,6 +353,11 @@ public sealed class ScmapBuilder
 
         writer.AddSection(ScmapFormat.LightSection, lightBody);
         writer.AddSection(ScmapFormat.ScriptSection, ScmapScriptSection.Build(_scripts, _nodes.Count));
+
+        // Left out when no node has any: a reader takes a missing section
+        // as no tag and no attribute.
+        if (tagBody is not null) writer.AddSection(ScmapFormat.NodeTagSection, tagBody);
+        if (attributeBody is not null) writer.AddSection(ScmapFormat.NodeAttributeSection, attributeBody);
 
         // Last, so what a load always reads sits at the front. Omitted when
         // there is none: an empty BRSH would still count as present.

@@ -184,6 +184,24 @@ public static class ScmapFormat
     public const int ScriptRecordSize = 16;
 
     /// <summary>
+    /// Bytes of fixed preamble in <c>NTAG</c>: the tag count, padded to the
+    /// payload alignment.
+    /// </summary>
+    public const int NodeTagPreambleSize = 16;
+
+    /// <summary>Bytes in one <see cref="ScmapTagRecord"/>.</summary>
+    public const int NodeTagRecordSize = 8;
+
+    /// <summary>
+    /// Bytes of fixed preamble in <c>NATR</c>: the attribute count, padded to
+    /// the payload alignment.
+    /// </summary>
+    public const int NodeAttributePreambleSize = 16;
+
+    /// <summary>Bytes in one <see cref="ScmapAttributeRecord"/>.</summary>
+    public const int NodeAttributeRecordSize = 56;
+
+    /// <summary>
     /// The <c>assetIndex</c> a submesh or a face carries when it names no asset.
     /// Not 0: row 0 of <c>ASTB</c> is a real asset.
     /// </summary>
@@ -242,6 +260,18 @@ public static class ScmapFormat
     /// order.
     /// </summary>
     public const uint ScriptSection = 'S' | ('C' << 8) | ('P' << 16) | ((uint)'T' << 24);
+
+    /// <summary>
+    /// Section <c>NTAG</c>: the tags nodes were built with, one record per
+    /// tag, in node order. Optional: a map with no tag has none.
+    /// </summary>
+    public const uint NodeTagSection = 'N' | ('T' << 8) | ('A' << 16) | ((uint)'G' << 24);
+
+    /// <summary>
+    /// Section <c>NATR</c>: the attributes nodes were built with, one record
+    /// per attribute, in node order. Optional: a map with no attribute has none.
+    /// </summary>
+    public const uint NodeAttributeSection = 'N' | ('A' << 8) | ('T' << 16) | ((uint)'R' << 24);
 
     /// <summary>
     /// Section <c>LUAB</c>, retired and never written. A map holds no script

@@ -41,9 +41,9 @@ public static class MapSceneBinder
 
     // The oldest reader that can open and re-save this scene without losing data.
     // Per document: only a shaped light (spot, rect, disc), an entity, a node
-    // flag that is off, a script, or a declared realm or state raises the
-    // floor, since an older editor would drop those on save. Light kind is
-    // tested, not its numbers. Takes the max of what applies.
+    // flag that is off, a script, a declared realm or state, or a tag or an
+    // attribute raises the floor, since an older editor would drop those on
+    // save. Light kind is tested, not its numbers. Takes the max of what applies.
     private static int RequiredReaderVersion(Scene.Scene scene)
     {
         int floor = EngineInfo.MinimumReadableMapVersion;
@@ -78,6 +78,9 @@ public static class MapSceneBinder
         {
             floor = Math.Max(floor, EngineInfo.NodeRealmMapVersion);
         }
+
+        if (AnyBelow(root, static node => node.Tags.Count > 0 || node.Attributes.Count > 0))
+            floor = Math.Max(floor, EngineInfo.NodeTagsMapVersion);
 
         return floor;
     }
@@ -122,6 +125,9 @@ public static class MapSceneBinder
 
         if (node.Script is { } script)
             mapped.Script = ScriptToMap(script);
+
+        mapped.Tags.AddRange(node.Tags);
+        mapped.Attributes.AddRange(node.Attributes);
 
         mapped.Mesh = MeshToMap(node, report);
 
@@ -361,6 +367,9 @@ public static class MapSceneBinder
 
         if (mapped.Script is { } script)
             node.Script = ToScript(script, mapped);
+
+        node.Tags = MapNodeSets.TagsOf(mapped);
+        node.Attributes = MapNodeSets.AttributesOf(mapped);
 
         // In document order: child order is placement order, which breaks ties
         // in the carve.

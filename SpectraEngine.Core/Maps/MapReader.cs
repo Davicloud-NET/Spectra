@@ -244,14 +244,24 @@ public static class MapReader
                     anchor = 14;
                     break;
 
+                case MapFormat.TagsMember:
+                    MapTags.Read(ref reader, node.Tags, state.NodeName);
+                    anchor = 15;
+                    break;
+
+                case MapFormat.AttributesMember:
+                    MapAttributes.Read(ref reader, node.Attributes, state.NodeName);
+                    anchor = 16;
+                    break;
+
                 case MapFormat.EditorMember:
                     node.Editor = new PreservedValue(CanonicalJson.CaptureValue(ref reader, utf8));
-                    anchor = 15;
+                    anchor = 17;
                     break;
 
                 case MapFormat.ChildrenMember:
                     ReadNodeArray(ref reader, utf8, node.Children, state);
-                    anchor = 16;
+                    anchor = 18;
                     break;
 
                 default:

@@ -20,7 +20,7 @@ public sealed class MapRule : IRule
     public RuleKind Kind => RuleKind.Map;
 
     /// <inheritdoc/>
-    public int Version => 7;
+    public int Version => 8;
 
     /// <inheritdoc/>
     public CookSettingKeys SettingsRead => CookSettingKeys.KeepBrushSource;

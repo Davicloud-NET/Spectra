@@ -15,8 +15,8 @@ namespace SpectraEngine.Core.Maps.Compiled;
 /// Loads a baked <c>.scmap</c> into a live scene without running any CSG.
 /// </summary>
 // Pass order: reader gates, ASTB interned in table order, nodes rebuilt in one
-// forward pass with their flags, lights, entities and scripts, collision
-// hulls built, chunks adopted.
+// forward pass with their flags, lights, entities, scripts, tags and
+// attributes, collision hulls built, chunks adopted.
 // A baked world brush gets no Brush even when BRSH holds its planes. Rebuilding
 // it would carve the level again and draw every wall twice.
 public static class CompiledMapLoader
@@ -116,6 +116,8 @@ public static class CompiledMapLoader
         int nextEntity = 0;
         int nextLight = 0;
         int nextScript = 0;
+        int nextTag = 0;
+        int nextAttribute = 0;
 
         for (int i = 0; i < nodes.Length; i++)
         {
@@ -135,6 +137,10 @@ public static class CompiledMapLoader
 
             if (nextScript < document.Scripts.Length && document.Scripts[nextScript].NodeIndex == (uint)i)
                 node.Script = BuildScript(in document, document.Scripts[nextScript++]);
+
+            node.Tags = ScmapTagTable.Take(document.NodeTags, document.Strings, ref nextTag, i);
+            node.Attributes = ScmapAttributeTable.Take(
+                document.NodeAttributes, document.Strings, ref nextAttribute, i);
 
             if (record.ParentIndex < 0) scene.Root.AddChild(node);
             else nodes[record.ParentIndex].AddChild(node);

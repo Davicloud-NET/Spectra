@@ -72,8 +72,8 @@ public sealed class MapNode
         [MapFormat.IdMember, MapFormat.NameMember, MapFormat.RealmMember, MapFormat.StateMember,
          MapFormat.KindMember, MapFormat.CollideMember, MapFormat.QueryMember, MapFormat.TouchMember,
          MapFormat.RenderMember, MapFormat.TransformMember, MapFormat.BrushMember, MapFormat.MeshMember,
-         MapFormat.LightMember, MapFormat.EntityMember, MapFormat.ScriptMember, MapFormat.EditorMember,
-         MapFormat.ChildrenMember];
+         MapFormat.LightMember, MapFormat.EntityMember, MapFormat.ScriptMember, MapFormat.TagsMember,
+         MapFormat.AttributesMember, MapFormat.EditorMember, MapFormat.ChildrenMember];
 
     public Guid Id { get; set; }
 
@@ -128,6 +128,13 @@ public sealed class MapNode
     /// <summary>The script this node is, if any: the file it names.</summary>
     // Bound for the same reason the entity is.
     public MapScript? Script { get; set; }
+
+    /// <summary>The node's tags, in the order it got them. Written only when there are any.</summary>
+    // Bound for the same reason the entity is.
+    public List<string> Tags { get; } = [];
+
+    /// <summary>The node's attributes, in the order they were added. Written only when there are any.</summary>
+    public List<KeyValuePair<string, Scripting.MemberValue>> Attributes { get; } = [];
 
     /// <summary>The reserved per-node <c>editor</c> key, carried verbatim.</summary>
     public PreservedValue? Editor { get; set; }

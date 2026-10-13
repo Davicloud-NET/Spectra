@@ -13,7 +13,7 @@ using SpectraEngine.Core.Scripting;
 namespace Spectra.Kitchen.Maps;
 
 // The bake's pass over a map's nodes: one NODE record each, and beside it
-// the node's brush, hull, light, entity and script.
+// the node's brush, hull, light, entity, script, tags and attributes.
 internal static class ScmapNodeBake
 {
     // Walks document and scene together in pre-order. The binder builds the
@@ -69,6 +69,9 @@ internal static class ScmapNodeBake
 
             if (node.Script is { } script && !WriteScript(builder, node, script, index, report, sourcePath))
                 return false;
+
+            if (node.Tags.Count > 0 || node.Attributes.Count > 0)
+                builder.AddNodeSets(new ScmapNodeSetsSource(index, node.Tags, node.Attributes));
 
             PushChildren(pending, mapped.Children, node, index);
         }

@@ -56,7 +56,7 @@ public sealed class MapNodeFlagTests
     // No brush: Brush re-normalises its planes, which changes the bytes.
     private const string Volumes = """
         {
-          "spectramap": 5,
+          "spectramap": 6,
           "minimumReadableVersion": 4,
           "engine": "1.0.0",
           "scene": {

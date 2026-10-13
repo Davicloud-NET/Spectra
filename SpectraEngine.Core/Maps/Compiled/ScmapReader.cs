@@ -60,6 +60,17 @@ public static class ScmapReader
         ReadOnlySpan<ScmapScriptRecord> scripts = ScmapScriptTable.Read(
             source, sections.Body(file, ScmapSectionTable.Script), nodes.Length, assets, strings);
 
+        // Optional: a map cooked before them, or with none, has no node with a
+        // tag or an attribute.
+        ReadOnlySpan<ScmapTagRecord> nodeTags = sections.Has(ScmapSectionTable.NodeTag)
+            ? ScmapTagTable.Read(source, sections.Body(file, ScmapSectionTable.NodeTag), nodes.Length, strings)
+            : default;
+
+        ReadOnlySpan<ScmapAttributeRecord> nodeAttributes = sections.Has(ScmapSectionTable.NodeAttribute)
+            ? ScmapAttributeTable.Read(
+                source, sections.Body(file, ScmapSectionTable.NodeAttribute), nodes.Length, strings)
+            : default;
+
         // An absent blob section is an empty span.
         ReadOnlySpan<byte> meshBlob = sections.Body(file, ScmapSectionTable.ChunkMesh);
         ReadOnlySpan<byte> bspBlob = sections.Body(file, ScmapSectionTable.ChunkBsp);
@@ -71,7 +82,7 @@ public static class ScmapReader
             source, header, strings, assets, meta, spawns, nodes,
             entities, keyvalues, connections,
             hulls, hullPlanes, hullFaceAssets, sections.Has(ScmapSectionTable.HullMaterial),
-            lights, scripts,
+            lights, scripts, nodeTags, nodeAttributes,
             chunks, meshBlob, bspBlob, sections.OffsetOf(ScmapSectionTable.ChunkBsp),
             sections.Body(file, ScmapSectionTable.BrushSource), sections.Has(ScmapSectionTable.BrushSource),
             sections.SkippedCount, invalidDeclaredStates);

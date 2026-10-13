@@ -154,19 +154,35 @@ public static class MapWriter
         }
         CanonicalJson.Flush(writer, node.Unknown, 14);
 
+        // Neither is written for a node that has none, so a map from before
+        // them saves to the bytes it had.
+        if (node.Tags.Count > 0)
+        {
+            writer.WritePropertyName(MapFormat.TagsMember);
+            writer.WriteRawValue(MapTags.Compact(node.Tags));
+        }
+        CanonicalJson.Flush(writer, node.Unknown, 15);
+
+        if (node.Attributes.Count > 0)
+        {
+            writer.WritePropertyName(MapFormat.AttributesMember);
+            writer.WriteRawValue(MapAttributes.Compact(node.Attributes));
+        }
+        CanonicalJson.Flush(writer, node.Unknown, 16);
+
         if (node.Editor is { } editor)
         {
             writer.WritePropertyName(MapFormat.EditorMember);
             writer.WriteRawValue(editor.Raw);
         }
-        CanonicalJson.Flush(writer, node.Unknown, 15);
+        CanonicalJson.Flush(writer, node.Unknown, 17);
 
         writer.WritePropertyName(MapFormat.ChildrenMember);
         writer.WriteStartArray();
         foreach (MapNode child in node.Children)
             WriteNode(writer, child);
         writer.WriteEndArray();
-        CanonicalJson.Flush(writer, node.Unknown, 16);
+        CanonicalJson.Flush(writer, node.Unknown, 18);
 
         writer.WriteEndObject();
     }

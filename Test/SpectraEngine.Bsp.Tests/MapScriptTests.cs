@@ -57,7 +57,7 @@ public sealed class MapScriptTests
     // No brush: Brush re-normalises its planes, which changes the bytes.
     private const string Level = """
         {
-          "spectramap": 5,
+          "spectramap": 6,
           "minimumReadableVersion": 5,
           "engine": "1.0.0",
           "scene": {

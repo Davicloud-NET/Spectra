@@ -296,7 +296,7 @@ public sealed class MapSceneRoundTripTests
         // format version, so 'spectramap' is the current one.
         byte[] source = Encoding.UTF8.GetBytes("""
             {
-              "spectramap": 5,
+              "spectramap": 6,
               "minimumReadableVersion": 3,
               "engine": "1.0.0",
               "scene": {

@@ -103,6 +103,14 @@ public sealed partial class Scene
 
     internal void OnNodeKindChanged(SceneNode node) => NodeKindChanged?.Invoke(node);
 
+    /// <summary>
+    /// Raised when an owned node's <see cref="SceneNode.Tags"/> become other
+    /// tags. Handlers must not mutate the graph.
+    /// </summary>
+    public event Action<SceneNode>? NodeTagsChanged;
+
+    internal void OnNodeTagsChanged(SceneNode node) => NodeTagsChanged?.Invoke(node);
+
     // Membership and reparent notifications bump _graphStructureVersion:
     // traversal order may have changed.
     internal void OnNodeAdded(SceneNode node)

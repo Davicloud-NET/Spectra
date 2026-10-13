@@ -21,8 +21,10 @@ internal sealed class ScmapSectionTable
     public const int Light = 11;
     public const int HullMaterial = 12;
     public const int Script = 13;
+    public const int NodeTag = 14;
+    public const int NodeAttribute = 15;
 
-    private const int KnownCount = 14;
+    private const int KnownCount = 16;
     private const int Absent = -1;
 
     private readonly int[] _offset = new int[KnownCount];
@@ -149,6 +151,8 @@ internal sealed class ScmapSectionTable
         ScmapFormat.LightSection => Light,
         ScmapFormat.HullMaterialSection => HullMaterial,
         ScmapFormat.ScriptSection => Script,
+        ScmapFormat.NodeTagSection => NodeTag,
+        ScmapFormat.NodeAttributeSection => NodeAttribute,
 
         // Codes with no consumer (NBND, RGNI) and retired ones (BMDL, LUAB,
         // LUAS) are skipped like any unknown one.
