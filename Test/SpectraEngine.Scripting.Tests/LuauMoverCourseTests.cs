@@ -106,6 +106,43 @@ public sealed class LuauMoverCourseTests
         level.State.Grounded.ShouldBeTrue();
     }
 
+    // Nothing holds a mover to keeping its count in the state. This one
+    // counts in a local, which no state brings back: put back after the
+    // second jump, the replay finds the count at zero and jumps again.
+    [Fact]
+    public void A_count_kept_in_a_local_outside_the_mover_does_not_come_back_with_the_state()
+    {
+        using MoverLevel level = new MoverLevel().WithScript("""
+            local walk = require("./movers/walk")
+            local jumpsInTheAir = 0
+            game:GetService("Players").LocalPlayer.Character:SetMover(function(state, command, collision, tuning, dt)
+                if state.IsGrounded then
+                    jumpsInTheAir = 0
+                end
+                if command.JumpPressed and not state.IsGrounded and state.AirTicks > tuning.CoyoteTicks and jumpsInTheAir < 1 then
+                    state.Velocity = Vector3.new(state.Velocity.X, tuning.JumpVelocity, state.Velocity.Z)
+                    jumpsInTheAir = 1
+                end
+                walk(state, command, collision, tuning, dt)
+            end)
+            """);
+        level.Play().Tick(default, 30);
+        CharacterCommand ahead = MoverCourse.Walk(0f);
+        CharacterCommand jump = MoverCourse.Walk(0f, CharacterButtons.Jump);
+
+        // In the air with both jumps made.
+        level.Tick(in jump).Tick(in ahead, 10).Tick(in jump).Tick(in ahead, 10);
+        CharacterState kept = level.State;
+        string[] first = AJumpAndALanding(level, in ahead, in jump);
+
+        level.Character.Restore(in kept);
+        string[] second = AJumpAndALanding(level, in ahead, in jump);
+
+        level.Errors.ShouldBeEmpty();
+        level.State.Grounded.ShouldBeTrue();
+        second.ShouldNotBe(first);
+    }
+
     private static string[] AJumpAndALanding(MoverLevel level, in CharacterCommand ahead, in CharacterCommand jump)
     {
         var states = new List<string>();

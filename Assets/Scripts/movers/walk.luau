@@ -2,8 +2,8 @@
 
 -- How the player moves: walk, sprint, jump, slide along walls, step up. It
 -- does what the engine's built-in mover does. Change a rule here and the
--- player moves another way on the next Play. A mover keeps nothing between
--- ticks: what it needs later it leaves in the state.
+-- player moves another way on the next Play. It keeps nothing between ticks:
+-- what it needs later it leaves in the state, so played again it moves alike.
 
 local function dot(a: Vector3, b: Vector3): number
 	return a.X * b.X + a.Y * b.Y + a.Z * b.Z

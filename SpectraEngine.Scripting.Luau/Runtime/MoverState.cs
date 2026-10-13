@@ -5,7 +5,7 @@ using SpectraEngine.Core.Scripting.Api;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-/// <summary>Where the player is and how it moves, as a mover is handed it on every tick. What the mover leaves in it is where the player is after the tick. Everything a mover keeps from one tick to the next is kept here, so the same ticks played again move the player the same way.</summary>
+/// <summary>Where the player is and how it moves, as a mover is handed it on every tick. What the mover leaves in it is where the player is after the tick. A mover keeps here what it needs on a later tick, so the same ticks played again move the player the same way. What it keeps anywhere else, as in a local outside the function, does not come back when the state is put back.</summary>
 // A write is checked here, at the line that made it. What is no number
 // never reaches the capsule maths.
 [ScriptClass("CharacterState")]
