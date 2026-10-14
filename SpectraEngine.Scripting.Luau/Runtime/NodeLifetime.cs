@@ -97,8 +97,12 @@ internal sealed class NodeLifetime
             return null;
 
         // Before the copy is loose, or the room it looks for would be the copy.
+        // The stop comes while the copy still counts, for the message.
         long grown = _tags.Table.Bytes + _attributes.Table.Bytes - before;
         IsOverBudget = grown > 0 && !HasRoom();
+        if (IsOverBudget)
+            _host.Memory.Stop();
+
         _loose.Add(copy);
         _loose.Grew(grown);
         if (!IsOverBudget)

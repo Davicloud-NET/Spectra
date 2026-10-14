@@ -156,6 +156,44 @@ public sealed class NodeBytesTests
         runtime.NodeBytes.ShouldBe(runtime.CountNodeBytes());
     }
 
+    // The destroyed parts weigh more than the model, and less than the model
+    // with its copy. The message is made while the copy still counts.
+    [Fact]
+    public void A_clone_past_the_budget_is_told_of_as_what_scripts_set_on_nodes()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.AddScript(level.Scene.Root, """
+            task.wait()
+            local blob = string.rep("x", 65536)
+            local held = {}
+            for index = 1, 55 do
+                local part = Instance.new("Part")
+                part.Parent = workspace
+                part:SetAttribute("Blob", blob)
+                part:Destroy()
+                held[index] = part
+            end
+            local model = Instance.new("Folder")
+            for index = 1, 45 do
+                local part = Instance.new("Part")
+                part:SetAttribute("Blob", blob)
+                part.Parent = model
+            end
+            model.Parent = workspace
+            print("built")
+            local copy = model:Clone()
+            print("cloned", #held, copy)
+            """, "Cloner");
+        LuauScriptRuntime runtime = level.Play().Runtime.ShouldNotBeNull();
+        runtime.MemoryBudget = 8 * Megabyte;
+
+        level.Tick(2);
+
+        level.Printed.ShouldBe(["built"]);
+        level.Errors.ShouldHaveSingleItem().ShouldBe(
+            "the scripts hold more than 8 MB, with the tags and attributes they set on nodes, and this one was switched off");
+    }
+
     [Fact]
     public void The_count_goes_down_when_an_attribute_or_a_tag_is_taken_away_and_when_the_node_is_destroyed()
     {
