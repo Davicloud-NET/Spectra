@@ -13,7 +13,7 @@ internal static partial class Program
         "call-host-function, compile-error, raise-through-shim, raise-from-managed-frame, " +
         "close-from-another-thread, host-stress, yield-from-host, many-finalizers, run-inside-host-call, " +
         "require-in-a-level, inputs-and-outputs-in-a-level, members-in-a-level, touch-in-a-level, tags-in-a-level, " +
-        "nodes-in-a-level or mover-in-a-level";
+        "nodes-in-a-level, mover-in-a-level or budget-in-a-level";
 
     // A native executable has no assembly file. The dynamic code switch alone
     // says nothing: PublishAot turns it off for a JIT run too.
@@ -77,6 +77,8 @@ internal static partial class Program
                 return TreeCase.Run();
             case "mover-in-a-level":
                 return MoverCase.Run();
+            case "budget-in-a-level":
+                return BudgetCase.Run();
             default:
                 Console.WriteLine($"Give one case: --case={Cases}.");
                 return CaseExit.UnknownCase;
