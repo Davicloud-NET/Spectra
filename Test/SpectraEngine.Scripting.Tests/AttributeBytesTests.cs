@@ -6,8 +6,7 @@ namespace SpectraEngine.Scripting.Tests;
 
 /// <summary>
 /// What a node's few attributes hold in managed memory: what scripts set,
-/// and what the level was built with. The bounds are under what a value of
-/// 72 bytes in a dictionary held. <see cref="AttributeBytesCostTests"/>
+/// and what the level was built with. <see cref="AttributeBytesCostTests"/>
 /// writes the numbers down.
 /// </summary>
 [Collection(ManagedHeapCollection.Name)]

@@ -127,7 +127,7 @@ public sealed class MemberValueTests
     }
 
     [Fact]
-    public void Numbers_are_equal_as_they_were_before_the_kinds_shared_their_bytes()
+    public void A_number_is_equal_by_value_and_reads_nothing_of_another_kind()
     {
         MemberValue.Of(0d).ShouldBe(MemberValue.Of(-0d));
         MemberValue.Of(double.NaN).ShouldBe(MemberValue.Of(double.NaN));

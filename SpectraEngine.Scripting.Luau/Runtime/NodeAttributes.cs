@@ -11,12 +11,8 @@ internal sealed class NodeAttributes
     // Past this many names a dictionary finds one sooner than a walk does.
     public const int MostWalked = 32;
 
-    // While there are few names they are in slots: the first here, the rest
-    // in an array just long enough. Past that, a dictionary is the store.
-    // The slots keep the order a dictionary keeps, since GetAttributes fills
-    // a Luau table in it and pairs reads the table in the order it was
-    // filled. So a slot let go is taken by the next new name, the last one
-    // let go first.
+    // Slots keep a dictionary's order, the slot let go last taken first. Where
+    // names collide in the table GetAttributes fills, that order decides pairs.
     private Slot _first;
     private object? _store;
     private ushort _used;

@@ -139,12 +139,11 @@ An attribute's text is now kept as its bytes of UTF-8 (`MemberValue`, `docs/scri
 | 10 parts a tick, 64 KiB string | 11 | 0.1 MiB | 0.63 to 1.36 ms a tick | 11 | 0.2 MiB | 0.16 to 0.17 ms a tick |
 | 1 part a tick, 64 KiB string | 11 | 1.1 MiB | 31 us a tick | 11 | 0.6 MiB | 9.4 to 9.8 us a tick |
 | 10 parts a tick, 16 byte string | 155 | 0.2 MiB | 57 to 58 us a tick | 193 | 0.2 MiB | 18 to 19 us a tick |
-| nothing destroyed | 0 | 0 | 1.2 to 3.6 us a tick | 0 | 0 | 0.7 us a tick |
 | 10 parts a tick, 64 KiB, 35 MiB of Luau | 175 | 20.7 MiB | 1.02 to 1.07 ms a tick | 341 | 20.9 MiB | 0.47 to 0.48 ms a tick |
 | 20000 parts in one call, 64 KiB string | 11 | 4.3 MiB | 137 to 179 us a part | 11 | 0.7 to 1.0 MiB | 32 us a part |
 | 20000 parts in one call, 16 byte string | 154 | 0.4 to 1.3 MiB | 8.2 to 8.9 us a part | 191 | 0.4 to 0.5 MiB | 7.5 to 7.9 us a part |
 
-The estimate of a part with a 64 KiB string fell from about 130 KiB to 66 KiB, as what it holds did. So with a large Luau heap twice as many parts wait for a cycle, and they hold about as many bytes as before. Small parts weigh less by the estimate too, so more of them wait and the collector runs fewer cycles.
+The load with nothing destroyed does no attribute work and took 0.7 to 3.6 us a tick over the four runs. That spread is the busy machine, so take a small change in time here as noise. The estimate of a part with a 64 KiB string fell from about 130 KiB to 66 KiB, as what it holds did. So with a large Luau heap twice as many parts wait for a cycle, and they hold about as many bytes as before. Small parts weigh less by the estimate too, so more of them wait and the collector runs fewer cycles.
 
 What a node's attributes hold, from the table `AttributeBytesCostTests` writes (`-explicit only`, in Release), before and after on 14 October 2026:
 
