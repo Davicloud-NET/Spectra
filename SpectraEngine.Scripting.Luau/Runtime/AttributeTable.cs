@@ -115,9 +115,17 @@ internal sealed class AttributeTable
     public long Set(SceneNode node, string name, in MemberValue value)
     {
         // A destroyed node is weighed by HeldNodes, while a script holds it.
-        _ofNode.TryGetValue(node, out NodeAttributes? found);
-        NodeAttributes own = found ?? OfOrMake(node);
-        bool isCounted = found is not null || !TreeWrites.IsDestroyed(node);
+        bool isCounted = !TreeWrites.IsDestroyed(node);
+        if (!_ofNode.TryGetValue(node, out NodeAttributes? own))
+        {
+            own = isCounted ? new NodeAttributes() : OfOrMake(node);
+            if (isCounted)
+                _ofNode.Add(node, own);
+        }
+        else
+        {
+            isCounted = true;
+        }
 
         bool had = own.Set(name, in value, out MemberValue old);
         if (!isCounted)

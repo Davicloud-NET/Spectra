@@ -189,15 +189,14 @@ internal sealed class LooseNodes(
         _tops.Remove(top);
         tree.Forget(top);
         Fill(top);
-        long bytes = 0;
         for (int i = 0; i < _walk.Count; i++)
-        {
-            bytes += bytesOf(_walk[i]);
             forget(_walk[i]);
-        }
 
         _walk.Clear();
-        _kept = Math.Max(0, _kept - bytes);
+
+        // What the trees kept is an estimate until the next look-over counts again.
+        if (_tops.Count == 0)
+            _kept = 0;
     }
 
     private long BytesOf(SceneNode top)
