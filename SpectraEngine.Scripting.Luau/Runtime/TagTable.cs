@@ -24,9 +24,24 @@ internal sealed class TagTable
     // A node that gets a tag and loses it every tick takes its list from here.
     private readonly Stack<List<TagNodes>> _spare = [];
     private readonly TreeOrder _order = new();
+    private readonly NodeBytes _bytes;
     private int _moves;
 
-    public TagTable() => _byChars = _tags.GetAlternateLookup<ReadOnlySpan<char>>();
+    public TagTable()
+        : this(new NodeBytes(null))
+    {
+    }
+
+    // The tags scripts give nodes that are not destroyed are added to `bytes`.
+    public TagTable(NodeBytes bytes)
+    {
+        _bytes = bytes;
+        _byChars = _tags.GetAlternateLookup<ReadOnlySpan<char>>();
+    }
+
+    // What the tags scripts gave the nodes that are not destroyed weigh, by
+    // NodeWeight. A tag a node was built with weighs nothing.
+    public long Bytes { get; private set; }
 
     // How many nodes have a tag, in the level's tree or out of it. A
     // destroyed node is not counted.
@@ -77,8 +92,9 @@ internal sealed class TagTable
         return made;
     }
 
-    // Null when the node has the tag already.
-    public TagNodes? Add(SceneNode node, ReadOnlySpan<char> tag, bool isInLevel)
+    // Null when the node has the tag already. A tag the node was built with,
+    // as LevelSeed adds, is known to weigh nothing.
+    public TagNodes? Add(SceneNode node, ReadOnlySpan<char> tag, bool isInLevel, bool isBuilt = false)
     {
         if (!_ofNode.TryGetValue(node, out List<TagNodes>? tags))
         {
@@ -98,6 +114,8 @@ internal sealed class TagTable
         added.Holders++;
         if (isInLevel)
             Put(added, node);
+        if (!isBuilt)
+            Count(NodeWeight.OfSetTag(node, added.Tag));
 
         return added;
     }
@@ -123,6 +141,7 @@ internal sealed class TagTable
 
         wasInLevel = TakeOut(removed, node);
         removed.Holders--;
+        Count(-NodeWeight.OfSetTag(node, removed.Tag));
         return removed;
     }
 
@@ -166,6 +185,16 @@ internal sealed class TagTable
         Uncount(node, tags);
         tags.Clear();
         _spare.Push(tags);
+    }
+
+    // What Bytes should be, counted again from every node. For a test.
+    public long CountBytes()
+    {
+        long bytes = 0;
+        foreach (KeyValuePair<SceneNode, List<TagNodes>> pair in _ofNode)
+            bytes += WeightOf(pair.Key, pair.Value);
+
+        return bytes;
     }
 
     // The node was destroyed. It keeps its tags. From here on it is in no
@@ -264,6 +293,7 @@ internal sealed class TagTable
         _ofDestroyed.Clear();
         _tags.Clear();
         _spare.Clear();
+        Count(-Bytes);
     }
 
     private List<TagNodes>? ListOf(SceneNode node)
@@ -301,13 +331,30 @@ internal sealed class TagTable
         return removed;
     }
 
-    private static void Uncount(SceneNode node, List<TagNodes> tags)
+    private void Uncount(SceneNode node, List<TagNodes> tags)
     {
         for (int i = 0; i < tags.Count; i++)
         {
             TakeOut(tags[i], node);
             tags[i].Holders--;
         }
+
+        Count(-WeightOf(node, tags));
+    }
+
+    private static long WeightOf(SceneNode node, List<TagNodes> tags)
+    {
+        long bytes = 0;
+        for (int i = 0; i < tags.Count; i++)
+            bytes += NodeWeight.OfSetTag(node, tags[i].Tag);
+
+        return bytes;
+    }
+
+    private void Count(long bytes)
+    {
+        Bytes += bytes;
+        _bytes.Add(bytes);
     }
 
     private static void Put(TagNodes tag, SceneNode node)

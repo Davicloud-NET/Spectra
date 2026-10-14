@@ -72,11 +72,13 @@ internal sealed class NodeLifetime
     // and attributes scripts left on each.
     public SceneNode? Clone(SceneNode source, out string? refusal)
     {
+        IsOverBudget = false;
         _loose.LookOver();
         List<NodeCopy> copies = _spareCopies.Count > 0 ? _spareCopies.Pop() : [];
         if (!_tree.TryClone(source, copies, out SceneNode? copy, out refusal) && _tree.IsOutOfRoom && MakeRoom())
             _tree.TryClone(source, copies, out copy, out refusal);
 
+        long before = _tags.Table.Bytes + _attributes.Table.Bytes;
         for (int i = 0; i < copies.Count; i++)
         {
             _tags.Table.Copy(copies[i].Source, copies[i].Copy);
@@ -85,10 +87,34 @@ internal sealed class NodeLifetime
 
         copies.Clear();
         _spareCopies.Push(copies);
-        if (copy is not null)
-            _loose.Add(copy);
+        if (copy is null)
+            return null;
 
-        return copy;
+        // Before the copy is loose, or the room it looks for would be the copy.
+        IsOverBudget = _tags.Table.Bytes + _attributes.Table.Bytes > before && !HasRoom();
+        _loose.Add(copy);
+        if (!IsOverBudget)
+            return copy;
+
+        // Past the budget no script gets the copy, and it goes now.
+        _loose.DropUnheld();
+        return null;
+    }
+
+    // Whether the last Clone made nothing because the copy took the scripts
+    // past the memory budget.
+    public bool IsOverBudget { get; private set; }
+
+    // Whether the scripts are under the memory budget after what they keep
+    // on nodes grew. Garbage, and loose trees no script holds, go first.
+    public bool HasRoom()
+    {
+        if (!_host.IsOverBudget)
+            return true;
+
+        _host.Collect();
+        _loose.DropUnheld();
+        return !_host.IsOverBudget;
     }
 
     // Destroy. Null, or why nothing was destroyed.

@@ -20,8 +20,9 @@ internal sealed class LevelTags
     private readonly Func<ScriptSignal, bool> _isHeld;
     private int _lookOverAt = FirstLookOver;
 
-    public LevelTags(LuauHost host, EntityWorld world, SignalHub hub, DeferredCalls calls)
+    public LevelTags(LuauHost host, EntityWorld world, SignalHub hub, DeferredCalls calls, TagTable table)
     {
+        Table = table;
         _host = host;
         _world = world;
         _hub = hub;
@@ -31,13 +32,16 @@ internal sealed class LevelTags
 
     // Who has what. Adding here fires nothing, which is how a level's own
     // tags are put in before its scripts start.
-    public TagTable Table { get; } = new();
+    public TagTable Table { get; }
 
     // What reads a node that comes into the level, or null.
     public LevelSeed? Seed { get; set; }
 
     // Is told of a destroyed node that got a tag or lost one.
     public Action<SceneNode>? DestroyedChanged { get; set; }
+
+    // Says whether the scripts are under the memory budget after a tag.
+    public Func<bool>? HasRoom { get; set; }
 
     public void Listen()
     {
@@ -57,20 +61,35 @@ internal sealed class LevelTags
     }
 
     // A tag the node has already is added to nothing and fires nothing.
-    public void Add(SceneNode node, ReadOnlySpan<char> tag)
+    // False when the tag took the scripts past the memory budget: it is not
+    // kept then, and fires nothing either.
+    public bool Add(SceneNode node, ReadOnlySpan<char> tag)
     {
         if (Table.TagCount >= _lookOverAt && Table.Find(tag) is null)
             LookOver();
 
         bool isInLevel = NodeTree.IsIn(_world.Scene.Root, node);
+        long before = Table.Bytes;
         if (Table.Add(node, tag, isInLevel) is not { } added)
-            return;
+            return true;
+
+        if (Table.Bytes > before && HasRoom?.Invoke() == false)
+        {
+            _host.StopForMemory();
+            Table.Remove(node, tag, out _);
+            return false;
+        }
 
         if (isInLevel)
             Fire(added.Added, node);
         else if (TreeWrites.IsDestroyed(node))
             DestroyedChanged?.Invoke(node);
+
+        return true;
     }
+
+    // What AddTag returns when Add said false: the script is switched off.
+    public int FailForMemory(LuauStack stack) => _host.FailForMemory(stack);
 
     // Nor does taking away one it lacks.
     public void Remove(SceneNode node, ReadOnlySpan<char> tag)

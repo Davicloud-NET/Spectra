@@ -34,8 +34,7 @@ internal sealed class TagMethods(LevelTags tags)
                 $"\"{node.Name}\" has {TagLimits.MaxPerNode} tags, and a node has no more. RemoveTag takes one off");
         }
 
-        tags.Add(node, tag);
-        return 0;
+        return tags.Add(node, tag) ? 0 : tags.FailForMemory(stack);
     }
 
     public int Remove(LuauStack stack, SceneNode node, int tagAt)

@@ -116,17 +116,19 @@ public sealed unsafe class LuauObjects
     /// <summary>
     /// Says how many bytes the host keeps for as long as a script holds the object's
     /// userdata. They count against <see cref="LuauHost.MemoryBudget"/> until Luau has
-    /// collected the userdata. Hands back by how much <see cref="WeightBytes"/> moved,
+    /// collected the userdata, unless they are for the collector alone: bytes the budget
+    /// counts some other way. Hands back by how much <see cref="WeightBytes"/> moved,
     /// which is 0 for an object no script can hold.
     /// </summary>
-    public long SetWeight(object value, long bytes)
+    public long SetWeight(object value, long bytes, bool isPacingOnly = false)
     {
         ArgumentNullException.ThrowIfNull(value);
         if (_host.IsClosed || !_slotOf.TryGetValue(value, out int index))
             return 0;
 
-        uint weight = (uint)Math.Clamp(bytes, 0, uint.MaxValue);
-        return Shim.sl_setobjectweight(_host.Stack.State, (uint)index, _slots[index].Generation, weight);
+        uint weight = (uint)Math.Clamp(bytes, 0, int.MaxValue);
+        return Shim.sl_setobjectweight(
+            _host.Stack.State, (uint)index, _slots[index].Generation, weight, isPacingOnly ? 1 : 0);
     }
 
     /// <summary>

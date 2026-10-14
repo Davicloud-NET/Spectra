@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
@@ -39,27 +40,39 @@ internal sealed class NodeAttributes
 
     public bool Contains(string name) => TryGet(name, out _);
 
-    public void Set(string name, in MemberValue value)
+    public void Set(string name, in MemberValue value) => Set(name, in value, out _);
+
+    // False when the name is new. Otherwise `old` is the value it had.
+    public bool Set(string name, in MemberValue value, out MemberValue old)
     {
         if (_store is Dictionary<string, MemberValue> many)
         {
-            many[name] = value;
-            return;
+            ref MemberValue held = ref CollectionsMarshal.GetValueRefOrAddDefault(many, name, out bool had);
+            old = held;
+            held = value;
+            return had;
         }
 
         int index = IndexOf(name);
-        if (index < 0 && _freeCount > 0)
+        old = index >= 0 ? At(index).Value : MemberValue.None;
+        if (index >= 0)
+        {
+            At(index) = new Slot(name, value);
+            return true;
+        }
+
+        if (_freeCount > 0)
         {
             index = _free;
             _free = (short)At(index).Value.Number;
             _freeCount--;
         }
-        else if (index < 0 && _used == MostWalked)
+        else if (_used == MostWalked)
         {
             GoOver(name, in value);
-            return;
+            return false;
         }
-        else if (index < 0)
+        else
         {
             index = _used;
             if (index > 0)
@@ -69,14 +82,23 @@ internal sealed class NodeAttributes
         }
 
         At(index) = new Slot(name, value);
+        return false;
     }
 
-    public bool Remove(ReadOnlySpan<char> name)
+    public bool Remove(ReadOnlySpan<char> name) => Remove(name, out _, out _);
+
+    // The name as it was held, and its value.
+    public bool Remove(ReadOnlySpan<char> name, out string? held, out MemberValue old)
     {
         if (_store is Dictionary<string, MemberValue> many)
-            return many.GetAlternateLookup<ReadOnlySpan<char>>().Remove(name);
+        {
+            var lookup = many.GetAlternateLookup<ReadOnlySpan<char>>();
+            return lookup.Remove(name, out held, out old);
+        }
 
         int index = IndexOf(name);
+        held = index >= 0 ? At(index).Name : null;
+        old = index >= 0 ? At(index).Value : MemberValue.None;
         if (index < 0)
             return false;
 

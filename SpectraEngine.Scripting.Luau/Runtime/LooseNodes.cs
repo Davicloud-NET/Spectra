@@ -49,6 +49,16 @@ internal sealed class LooseNodes(LuauHost host, TreeWrites tree, Action<SceneNod
     // one was forgotten.
     public bool Sweep()
     {
+        if (_tops.Count == 0 || _isSweeping)
+            return false;
+
+        host.Collect();
+        return DropUnheld();
+    }
+
+    // Forgets every tree no script holds a node of, as far as Luau has said.
+    public bool DropUnheld()
+    {
         // Forgetting a node can end a thread, and ending one can run a
         // script that makes a node and so comes back here.
         if (_tops.Count == 0 || _isSweeping)
@@ -57,7 +67,6 @@ internal sealed class LooseNodes(LuauHost host, TreeWrites tree, Action<SceneNod
         _isSweeping = true;
         try
         {
-            host.Collect();
             foreach (SceneNode top in _tops)
             {
                 if (!IsHeld(top))

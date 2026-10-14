@@ -49,8 +49,9 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         // What scripts leave on nodes for each other: tags and attributes.
         var hub = new SignalHub(_host, _waiting);
         _deferred = new DeferredCalls(_world);
-        _tags = new LevelTags(_host, _world, hub, _deferred);
-        _attributes = new AttributeMethods(hub, _deferred);
+        var nodeBytes = new NodeBytes(_host);
+        _tags = new LevelTags(_host, _world, hub, _deferred, new TagTable(nodeBytes));
+        _attributes = new AttributeMethods(hub, _deferred, new AttributeTable(nodeBytes));
         _seed = new LevelSeed(_host, _world, _tags.Table, _attributes.Table);
         _tags.Seed = _seed;
         var tagMethods = new TagMethods(_tags);
@@ -83,6 +84,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             context.Lifetime = _lifetime;
             new InstanceLibrary(_lifetime).ScriptInstall(context);
             _tags.DestroyedChanged = _lifetime.DestroyedChanged;
+            _tags.HasRoom = _lifetime.HasRoom;
             _host.Objects.Reached = _lifetime.Reached;
             _host.Objects.Released = _lifetime.Released;
 
@@ -186,6 +188,13 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
     // What Luau counts for the scripts, garbage included.
     internal long LuauBytes => _host.MemoryUsed;
+
+    // What the tags and attributes scripts set on nodes that are not
+    // destroyed weigh, as the memory budget counts them, and the same counted
+    // again from every node.
+    internal long NodeBytes => _host.NodeBytes;
+
+    internal long CountNodeBytes() => _tags.Table.CountBytes() + _attributes.Table.CountBytes();
 
     // Has Luau collect in full, so the counts above say what is held now,
     // and so does the count of made nodes.

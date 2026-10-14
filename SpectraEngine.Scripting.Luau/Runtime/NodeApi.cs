@@ -198,7 +198,11 @@ internal static partial class NodeApi
         if (context.Lifetime is not { } lifetime)
             return stack.Fail(NodeLifetime.NotSetUp);
 
-        return lifetime.Clone(node, out string? refusal) is { } copy
+        SceneNode? copy = lifetime.Clone(node, out string? refusal);
+        if (lifetime.IsOverBudget)
+            return context.Host.FailForMemory(stack);
+
+        return copy is not null
             ? ScriptResult.Of(context.PushObject(stack, copy))
             : stack.Fail(refusal ?? NodeLifetime.NotSetUp);
     }

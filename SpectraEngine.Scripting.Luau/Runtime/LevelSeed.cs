@@ -35,7 +35,7 @@ internal sealed class LevelSeed(LuauHost host, EntityWorld world, TagTable tags,
             return;
 
         for (int i = 0; i < built.Count; i++)
-            tags.Add(node, built[i], isInLevel);
+            tags.Add(node, built[i], isInLevel, isBuilt: true);
 
         for (int i = 0; i < set.Count; i++)
         {
@@ -47,7 +47,7 @@ internal sealed class LevelSeed(LuauHost host, EntityWorld world, TagTable tags,
             if (AuthoredAttributes.TryRead(node, world.Catalog, name, out _, out _))
                 Warn(node, name);
             else
-                attributes.Set(node, attributes.NameOf(name), set[i].Value);
+                attributes.SetBuilt(node, attributes.NameOf(name), set[i].Value);
         }
     }
 

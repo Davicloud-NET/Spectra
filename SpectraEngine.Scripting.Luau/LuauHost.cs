@@ -31,6 +31,8 @@ public sealed unsafe class LuauHost : IDisposable
     private readonly Lock _closing = new();
     private GCHandle _handle;
     private long _memoryBudget = DefaultMemoryBudget;
+    private long _nodeBytes;
+    private string? _heldAtStop;
     private volatile bool _isClosed;
     private volatile bool _isCloseWanted;
 
@@ -106,6 +108,22 @@ public sealed unsafe class LuauHost : IDisposable
 
     /// <summary>How many bytes the state holds now, garbage included.</summary>
     public long MemoryUsed => _isClosed ? 0 : Shim.sl_memory(_main);
+
+    // What the host keeps for the scripts outside any userdata, such as the
+    // attributes they set on nodes. It counts against the budget.
+    internal long NodeBytes
+    {
+        get => _nodeBytes;
+        set
+        {
+            _nodeBytes = value;
+            if (!_isClosed)
+                Shim.sl_setlive(_main, value);
+        }
+    }
+
+    // Whether the scripts hold more than the budget now, garbage included.
+    internal bool IsOverBudget => !_isClosed && _memoryBudget > 0 && Shim.sl_held(_main) > _memoryBudget;
 
     internal HostFunctions Functions { get; }
 
@@ -339,18 +357,53 @@ public sealed unsafe class LuauHost : IDisposable
         return true;
     }
 
+    // What a host function returns that found the scripts over the budget.
+    // The script stops as the interrupt would stop it, so a pcall does not
+    // hold on, and is switched off.
+    internal int FailForMemory(LuauStack stack)
+    {
+        StopForMemory();
+        return stack.Fail(OverBudget(_heldAtStop ?? string.Empty));
+    }
+
+    // The stop alone, for whoever takes back what went over before it fails.
+    // What was held is kept for the message from here.
+    internal void StopForMemory()
+    {
+        if (!_isClosed)
+            Shim.sl_stopcall(_main, Shim.StopMemory);
+
+        _heldAtStop ??= HeldOutsideLuau();
+    }
+
     // What the sink is told in place of Luau's own message when the host stopped a script.
     internal string Explain(int stop)
     {
+        if (stop != Shim.StopMemory)
+            return string.Create(CultureInfo.InvariantCulture, $"the script ran for more than {CallLimit.TotalSeconds:0.###} s without a pause and was switched off");
+
+        string held = _heldAtStop ?? HeldOutsideLuau();
+        _heldAtStop = null;
+        return OverBudget(held);
+    }
+
+    private string OverBudget(string held)
+    {
         string budget = _memoryBudget >= Megabyte ? $"{_memoryBudget / Megabyte} MB" : $"{_memoryBudget / 1024} KB";
+        return $"the scripts hold more than {budget}{held} and this one was switched off";
+    }
 
-        // What a destroyed node keeps counts too, and a script that reads only
-        // Luau's own count would not find it.
-        string held = Objects.WeightBytes > 0 ? ", with what the destroyed nodes they keep hold," : string.Empty;
+    // What the host keeps for the scripts counts too, and a script that reads
+    // only Luau's own count would not find it. The larger of the two is named.
+    private string HeldOutsideLuau()
+    {
+        long weights = _isClosed ? 0 : Shim.sl_held(_main) - Shim.sl_memory(_main) - _nodeBytes;
+        if (weights <= 0 && _nodeBytes <= 0)
+            return string.Empty;
 
-        return stop == Shim.StopMemory
-            ? $"the scripts hold more than {budget}{held} and this one was switched off"
-            : string.Create(CultureInfo.InvariantCulture, $"the script ran for more than {CallLimit.TotalSeconds:0.###} s without a pause and was switched off");
+        return weights >= _nodeBytes
+            ? ", with what the destroyed nodes they keep hold,"
+            : ", with the tags and attributes they set on nodes,";
     }
 
     // For whatever just returned from a call into Luau. Nothing may touch the
