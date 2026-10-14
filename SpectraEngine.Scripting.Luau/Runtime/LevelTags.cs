@@ -37,8 +37,9 @@ internal sealed class LevelTags
     // What reads a node that comes into the level, or null.
     public LevelSeed? Seed { get; set; }
 
-    // Is told of a destroyed node that got a tag or lost one.
-    public Action<SceneNode>? DestroyedChanged { get; set; }
+    // Is told of a node in no level that got a tag or lost one, and by how
+    // many bytes what scripts keep on nodes grew.
+    public Action<SceneNode, long>? ChangedOutside { get; set; }
 
     // Says whether the scripts are under the memory budget after a tag.
     public Func<bool>? HasRoom { get; set; }
@@ -82,8 +83,8 @@ internal sealed class LevelTags
 
         if (isInLevel)
             Fire(added.Added, node);
-        else if (TreeWrites.IsDestroyed(node))
-            DestroyedChanged?.Invoke(node);
+        else
+            ChangedOutside?.Invoke(node, Table.Bytes - before);
 
         return true;
     }
@@ -99,8 +100,8 @@ internal sealed class LevelTags
 
         if (wasInLevel)
             Fire(removed.Removed, node);
-        else if (TreeWrites.IsDestroyed(node))
-            DestroyedChanged?.Invoke(node);
+        else
+            ChangedOutside?.Invoke(node, 0);
     }
 
     // The nodes of the level's tree with that tag, in the tree's order.

@@ -8,7 +8,7 @@
 // Raise it with every change to what this library does or exports, and
 // Shim.Revision with it. A library built before the change has every other
 // constant right, and the startup check tells it apart by this one.
-#define SL_SHIM_REVISION 11
+#define SL_SHIM_REVISION 12
 
 #ifndef SL_API
 #define SL_API extern "C"

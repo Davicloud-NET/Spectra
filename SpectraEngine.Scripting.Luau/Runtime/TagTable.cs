@@ -187,6 +187,9 @@ internal sealed class TagTable
         _spare.Push(tags);
     }
 
+    // What the tags scripts gave the node weigh, while it is not destroyed.
+    public long BytesOf(SceneNode node) => _ofNode.TryGetValue(node, out List<TagNodes>? tags) ? WeightOf(node, tags) : 0;
+
     // What Bytes should be, counted again from every node. For a test.
     public long CountBytes()
     {

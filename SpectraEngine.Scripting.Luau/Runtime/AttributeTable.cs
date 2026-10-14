@@ -195,6 +195,9 @@ internal sealed class AttributeTable
         return own;
     }
 
+    // What scripts set on the node weighs, while it is not destroyed.
+    public long BytesOf(SceneNode node) => _ofNode.TryGetValue(node, out NodeAttributes? own) ? WeightOf(node, own) : 0;
+
     // What Bytes should be, counted again from every node. For a test.
     public long CountBytes()
     {

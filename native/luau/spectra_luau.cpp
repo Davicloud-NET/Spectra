@@ -79,18 +79,13 @@ struct HostState
     // not collected yet. Written by the thread that runs the state, read by any.
     std::atomic<int64_t> outside{0};
 
-    // The part of `outside` that is for the collector alone, and does not
-    // count against the budget. Written and read as `outside` is.
-    std::atomic<int64_t> pacingOnly{0};
-
     // Bytes the host keeps for the scripts outside any userdata, such as the
     // attributes they set on nodes. They count against the budget, and no
     // collection takes them away. Written and read as `outside` is.
     std::atomic<int64_t> live{0};
 
     // What makes up `outside`: the bytes for one userdata, by (slot << 32) |
-    // generation, with PacingOnly set for those. Few userdata have any, so the
-    // userdata holds no field for it.
+    // generation. Few userdata have any, so the userdata holds no field for it.
     std::unordered_map<uint64_t, uint32_t> weights;
 
     // (serial << 1) | running, for the outermost call into Luau. Written by
@@ -300,7 +295,7 @@ struct CallScope
 int64_t heldBytes(const HostState* host)
 {
     return host->bytes.load(std::memory_order_relaxed) + host->outside.load(std::memory_order_relaxed)
-        - host->pacingOnly.load(std::memory_order_relaxed) + host->live.load(std::memory_order_relaxed);
+        + host->live.load(std::memory_order_relaxed);
 }
 
 // A full collection first: what the allocator counts includes garbage, and
@@ -381,32 +376,19 @@ void threadCreated(lua_State* parent, lua_State* thread)
         lua_setthreaddata(thread, reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(lua_getthreaddata(parent)) & 0xffffffffu));
 }
 
-// The top bit of a kept weight: its bytes are for the collector alone.
-constexpr uint32_t PacingOnly = 0x80000000u;
-
-void addTo(std::atomic<int64_t>& count, int64_t bytes)
-{
-    count.store(count.load(std::memory_order_relaxed) + bytes, std::memory_order_relaxed);
-}
-
 // Returns by how much the count of outside bytes moved.
-int64_t setWeight(HostState* host, uint64_t key, uint32_t weight, bool isPacingOnly)
+int64_t setWeight(HostState* host, uint64_t key, uint32_t weight)
 {
-    weight &= ~PacingOnly;
     auto found = host->weights.find(key);
-    uint32_t old = found == host->weights.end() ? 0 : found->second;
-    int64_t oldBytes = static_cast<int64_t>(old & ~PacingOnly);
-    uint32_t kept = weight | (isPacingOnly ? PacingOnly : 0);
+    int64_t moved = static_cast<int64_t>(weight) - (found == host->weights.end() ? 0 : static_cast<int64_t>(found->second));
     if (weight == 0 && found != host->weights.end())
         host->weights.erase(found);
     else if (weight != 0 && found != host->weights.end())
-        found->second = kept;
+        found->second = weight;
     else if (weight != 0)
-        host->weights.emplace(key, kept);
+        host->weights.emplace(key, weight);
 
-    int64_t moved = static_cast<int64_t>(weight) - oldBytes;
-    addTo(host->outside, moved);
-    addTo(host->pacingOnly, (isPacingOnly ? static_cast<int64_t>(weight) : 0) - ((old & PacingOnly) != 0 ? oldBytes : 0));
+    host->outside.store(host->outside.load(std::memory_order_relaxed) + moved, std::memory_order_relaxed);
     return moved;
 }
 
@@ -433,7 +415,7 @@ void objectCollected(lua_State* L, void* data)
     uint64_t key = (static_cast<uint64_t>(payload->slot) << 32) | payload->generation;
     host->released[host->releasedCount++] = key;
     if (!host->weights.empty())
-        setWeight(host, key, 0, false);
+        setWeight(host, key, 0);
 }
 
 // What a host function returned, once its managed frame is gone. A raise from
@@ -1358,10 +1340,9 @@ SL_API int sl_takereleased(lua_State* L, uint64_t* buffer, int capacity)
 }
 
 // Says how many bytes the host keeps for as long as the userdata of a slot
-// lives. They count against the budget unless they are for the collector
-// alone. The collector is not told by this: sl_gcstep does that. Returns by
+// lives. The collector is not told by this: sl_gcstep does that. Returns by
 // how much the count moved, which is 0 when the userdata is gone.
-SL_API int64_t sl_setobjectweight(lua_State* L, uint32_t slot, uint32_t generation, uint32_t weight, int isPacingOnly)
+SL_API int64_t sl_setobjectweight(lua_State* L, uint32_t slot, uint32_t generation, uint32_t weight)
 {
     HostState* host = hostOf(L);
     if (slot >= 0x7fffffffu || !lua_checkstack(L, 2))
@@ -1372,7 +1353,7 @@ SL_API int64_t sl_setobjectweight(lua_State* L, uint32_t slot, uint32_t generati
     const ObjectPayload* found = static_cast<const ObjectPayload*>(lua_touserdata(L, -1));
     bool isThere = found && found->slot == slot && found->generation == generation;
     lua_pop(L, 2);
-    return isThere ? setWeight(host, (static_cast<uint64_t>(slot) << 32) | generation, weight, isPacingOnly != 0) : 0;
+    return isThere ? setWeight(host, (static_cast<uint64_t>(slot) << 32) | generation, weight) : 0;
 }
 
 // Bytes the host keeps for the object userdata that are not collected yet.

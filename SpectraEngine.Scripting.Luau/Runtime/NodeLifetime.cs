@@ -39,12 +39,15 @@ internal sealed class NodeLifetime
         _signals = signals;
         _tags = tags;
         _attributes = context.Attributes;
-        _loose = new LooseNodes(_host, _tree, Forget);
+        _loose = new LooseNodes(_host, _tree, Forget, BytesOf);
         _held = new HeldNodes(_host, _tree, _tags.Table, _attributes.Table);
     }
 
-    // How many made trees are in no level and may still be reached.
+    // How many made trees are in no level and may still be reached, and the
+    // most there were at one time.
     public int LooseCount => _loose.Count;
+
+    public int PeakLooseCount => _loose.PeakCount;
 
     // How many destroyed nodes scripts made count on, as far as is known.
     public int HeldCount => _held.Count;
@@ -91,8 +94,10 @@ internal sealed class NodeLifetime
             return null;
 
         // Before the copy is loose, or the room it looks for would be the copy.
-        IsOverBudget = _tags.Table.Bytes + _attributes.Table.Bytes > before && !HasRoom();
+        long grown = _tags.Table.Bytes + _attributes.Table.Bytes - before;
+        IsOverBudget = grown > 0 && !HasRoom();
         _loose.Add(copy);
+        _loose.Grew(grown);
         if (!IsOverBudget)
             return copy;
 
@@ -168,19 +173,36 @@ internal sealed class NodeLifetime
             _loose.Add(TopOf(node));
     }
 
-    // A script gave a destroyed node a tag or an attribute, or took one, so
-    // the node keeps more or less than it did.
-    public void DestroyedChanged(SceneNode node) => _held.Changed(node);
+    // A script gave a made or destroyed node a tag or an attribute, or took
+    // one, and what scripts keep on nodes grew by so many bytes.
+    public void Changed(SceneNode node, long grown)
+    {
+        if (TreeWrites.IsDestroyed(node))
+            _held.Changed(node);
+        else if (grown > 0 && TreeWrites.IsMade(node) && !_tree.IsInLevel(node))
+            _loose.Grew(grown);
+    }
 
-    // Once a tick, after the scripts ran.
-    public void EndTick() => _held.EndTick();
+    // Once a tick, after the scripts ran. What scripts let go of since the
+    // last tick is let go of here.
+    public void EndTick()
+    {
+        _held.EndTick(_loose.Bytes);
+        _host.Objects.ReleaseCollected();
+        _loose.EndTick();
+    }
 
     // No script holds the object any more. A destroyed node a script made
-    // stops counting, and the runtime keeps it no longer.
+    // stops counting, and the runtime keeps it no longer. A loose tree is
+    // looked at later, since this runs inside the collector's report.
     public void Released(object released)
     {
-        if (released is SceneNode node)
-            _held.Released(node);
+        if (released is not SceneNode node)
+            return;
+
+        _held.Released(node);
+        if (TreeWrites.IsMade(node) && !TreeWrites.IsDestroyed(node) && !_tree.IsInLevel(node))
+            _loose.Released(node);
     }
 
     // Stops counting every loose tree no script holds a node of any more.
@@ -196,6 +218,9 @@ internal sealed class NodeLifetime
         _held.Sweep();
         return _tree.MadeCount < counted;
     }
+
+    // What scripts set on a node that is not destroyed weighs.
+    private long BytesOf(SceneNode node) => _tags.Table.BytesOf(node) + _attributes.Table.BytesOf(node);
 
     private static SceneNode TopOf(SceneNode node)
     {
@@ -222,9 +247,15 @@ internal sealed class NodeLifetime
         for (int i = 0; i < nodes.Count; i++)
         {
             if (cameIn)
+            {
                 _starter.Entered(nodes[i]);
-            else
-                _starter.Left(nodes[i]);
+                continue;
+            }
+
+            // What a made node keeps is loose from here, and may be let go of.
+            _starter.Left(nodes[i]);
+            if (TreeWrites.IsMade(nodes[i]))
+                _loose.Grew(BytesOf(nodes[i]));
         }
 
         Return(nodes);

@@ -122,8 +122,11 @@ public sealed unsafe class LuauHost : IDisposable
         }
     }
 
+    // What counts against the budget now, garbage included.
+    internal long HeldBytes => _isClosed ? 0 : Shim.sl_held(_main);
+
     // Whether the scripts hold more than the budget now, garbage included.
-    internal bool IsOverBudget => !_isClosed && _memoryBudget > 0 && Shim.sl_held(_main) > _memoryBudget;
+    internal bool IsOverBudget => _memoryBudget > 0 && HeldBytes > _memoryBudget;
 
     internal HostFunctions Functions { get; }
 

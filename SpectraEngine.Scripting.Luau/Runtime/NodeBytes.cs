@@ -8,12 +8,16 @@ internal sealed class NodeBytes(LuauHost? host)
 {
     public long Bytes { get; private set; }
 
+    // The most there was since the level started.
+    public long Peak { get; private set; }
+
     public void Add(long bytes)
     {
         if (bytes == 0)
             return;
 
         Bytes += bytes;
+        Peak = Math.Max(Peak, Bytes);
         if (host is not null)
             host.NodeBytes = Bytes;
     }

@@ -29,6 +29,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     private readonly AttributeMethods _attributes;
     private readonly NodeLifetime _lifetime;
     private readonly LevelSeed _seed;
+    private readonly NodeBytes _nodeBytes;
     private volatile bool _isClosed;
 
     /// <summary>Opens a Luau state and gives it everything a script of this level can reach.</summary>
@@ -49,9 +50,9 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         // What scripts leave on nodes for each other: tags and attributes.
         var hub = new SignalHub(_host, _waiting);
         _deferred = new DeferredCalls(_world);
-        var nodeBytes = new NodeBytes(_host);
-        _tags = new LevelTags(_host, _world, hub, _deferred, new TagTable(nodeBytes));
-        _attributes = new AttributeMethods(hub, _deferred, new AttributeTable(nodeBytes));
+        _nodeBytes = new NodeBytes(_host);
+        _tags = new LevelTags(_host, _world, hub, _deferred, new TagTable(_nodeBytes));
+        _attributes = new AttributeMethods(hub, _deferred, new AttributeTable(_nodeBytes));
         _seed = new LevelSeed(_host, _world, _tags.Table, _attributes.Table);
         _tags.Seed = _seed;
         var tagMethods = new TagMethods(_tags);
@@ -83,7 +84,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             _lifetime = new NodeLifetime(context, _starter, modules, _signals, _tags);
             context.Lifetime = _lifetime;
             new InstanceLibrary(_lifetime).ScriptInstall(context);
-            _tags.DestroyedChanged = _lifetime.DestroyedChanged;
+            _tags.ChangedOutside = _lifetime.Changed;
             _tags.HasRoom = _lifetime.HasRoom;
             _host.Objects.Reached = _lifetime.Reached;
             _host.Objects.Released = _lifetime.Released;
@@ -193,6 +194,10 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     // destroyed weigh, as the memory budget counts them, and the same counted
     // again from every node.
     internal long NodeBytes => _host.NodeBytes;
+
+    internal long PeakNodeBytes => _nodeBytes.Peak;
+
+    internal int PeakLooseTreeCount => _lifetime.PeakLooseCount;
 
     internal long CountNodeBytes() => _tags.Table.CountBytes() + _attributes.Table.CountBytes();
 
@@ -352,7 +357,6 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
             // What scripts let go of since the last tick.
             _lifetime.EndTick();
-            _host.Objects.ReleaseCollected();
             _prints.EndTick();
         }
         catch (Exception e) // boundary: nothing of a script may throw into the tick

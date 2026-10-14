@@ -66,11 +66,13 @@ internal sealed class AttributeMethods
         // Taken away from a keyvalue, the name is kept with no value, or
         // the keyvalue would show through again.
         string kept = Table.NameOf(name);
+        long grown = 0;
         if (value.Kind == MemberValueKind.None && !AttributeRead.TryRead(context, node, name, out _, out _))
-        {
             Table.Forget(node, name);
-        }
-        else if (Table.Set(node, kept, in value) > 0 && context.Lifetime?.HasRoom() == false)
+        else
+            grown = Table.Set(node, kept, in value);
+
+        if (grown > 0 && context.Lifetime?.HasRoom() == false)
         {
             // Past the budget the value is not kept, and the script is switched
             // off. The message is made first, while the value still counts.
@@ -83,8 +85,8 @@ internal sealed class AttributeMethods
             return failed;
         }
 
-        if (TreeWrites.IsDestroyed(node))
-            context.Lifetime?.DestroyedChanged(node);
+        if (TreeWrites.IsMade(node) || TreeWrites.IsDestroyed(node))
+            context.Lifetime?.Changed(node, grown);
 
         FireChanged(node, kept);
         return 0;

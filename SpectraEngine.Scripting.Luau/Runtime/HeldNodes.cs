@@ -85,14 +85,15 @@ internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, A
             host.Collect();
     }
 
-    // Once a tick.
-    public void EndTick()
+    // Once a tick. Loose trees that keep `loose` bytes are looked for the
+    // same way: Luau's report of what it let go of names their nodes.
+    public void EndTick(long loose)
     {
-        if (_held.Count == 0 || ++_idleTicks < IdleStepTicks)
+        if ((_held.Count == 0 && loose == 0) || ++_idleTicks < IdleStepTicks)
             return;
 
         _idleTicks = 0;
-        if (host.IsClosed || Bytes < FirstGoal)
+        if (host.IsClosed || Bytes + loose < FirstGoal)
             return;
 
         if (host.StepCollector(Math.Max(1024, host.MemoryUsed / IdleCycleSteps)))
