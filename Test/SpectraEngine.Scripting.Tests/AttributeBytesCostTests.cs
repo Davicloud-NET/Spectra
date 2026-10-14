@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
+using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.Tests;
 
@@ -31,11 +32,14 @@ public sealed class AttributeBytesCostTests
 
         table.AppendLine(Line("built with, 16 byte string", Built(1, text: true)));
 
-        foreach (int count in (int[])[1, 1, 8, 16, 24, 32, 33, 64])
+        // Once for nothing: the first level runs before the runtime compiled the calls again.
+        Time("warm", 1, "local _ = part:GetAttribute('A1')");
+        foreach (int count in (int[])[1, 4, 16, NodeAttributes.MostWalked, NodeAttributes.MostWalked + 1, 64])
         {
             table.AppendLine(Time($"get the last of {count} numbers", count, $"local _ = part:GetAttribute('A{count}')"));
             table.AppendLine(Time($"set the last of {count} to what it has", count, $"part:SetAttribute('A{count}', {count})"));
         }
+
         File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "attribute-bytes.txt"), table.ToString());
     }
 

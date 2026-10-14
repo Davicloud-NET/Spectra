@@ -130,7 +130,39 @@ What the collector costs:
 
 A step works for twice the bytes the part weighs, so the cost follows what is destroyed and not the size of the heap: 10 such parts a tick cost 18 us a tick with the small heap and 0.42 ms with the large one. The time counts against `LuauHost.CallLimit` of the script that called Destroy. One step works for at most 1 MiB of weight, which was under 0.3 ms on the large heap.
 
-The first and fifth rows got slower, and the collector's steps are 18 us of it. The rest is the managed collector. A 64 KiB string is 128 KiB of text in memory, which .NET puts on its large object heap, and that heap is collected with the oldest generation. Holding 420 MiB of such strings it ran 28 such collections in 4000 ticks. Holding next to nothing it runs 1400, one about every third tick. With `DOTNET_GCLOHThreshold=0x40000`, which keeps such strings off that heap, the first row takes 0.24 ms a tick and the fifth 19 us a part, both faster than before. A string up to about 42 KiB does not reach that heap as it is.
+The first and fifth rows got slower, and the collector's steps are 18 us of it. The rest was the managed collector: a 64 KiB string was 128 KiB of text in memory as a .NET string, which .NET puts on its large object heap, and that heap is collected with the oldest generation. Holding next to nothing, .NET then collected it about every third tick.
+
+An attribute's text is now kept as its bytes of UTF-8 (`MemberValue`, `docs/script-api.md`). A 64 KiB string is a 64 KiB array, under the 85000 bytes that put an object on the large object heap, and text of up to 28 bytes needs no array. The same table, run on 14 October 2026 with the old build and the new one in turn, twice each, on a machine that was busy with other work:
+
+| Load | Waiting before | Managed before | Time before | Waiting after | Managed after | Time after |
+|---|---|---|---|---|---|---|
+| 10 parts a tick, 64 KiB string | 11 | 0.1 MiB | 0.63 to 1.36 ms a tick | 11 | 0.2 MiB | 0.16 to 0.17 ms a tick |
+| 1 part a tick, 64 KiB string | 11 | 1.1 MiB | 31 us a tick | 11 | 0.6 MiB | 9.4 to 9.8 us a tick |
+| 10 parts a tick, 16 byte string | 155 | 0.2 MiB | 57 to 58 us a tick | 193 | 0.2 MiB | 18 to 19 us a tick |
+| nothing destroyed | 0 | 0 | 1.2 to 3.6 us a tick | 0 | 0 | 0.7 us a tick |
+| 10 parts a tick, 64 KiB, 35 MiB of Luau | 175 | 20.7 MiB | 1.02 to 1.07 ms a tick | 341 | 20.9 MiB | 0.47 to 0.48 ms a tick |
+| 20000 parts in one call, 64 KiB string | 11 | 4.3 MiB | 137 to 179 us a part | 11 | 0.7 to 1.0 MiB | 32 us a part |
+| 20000 parts in one call, 16 byte string | 154 | 0.4 to 1.3 MiB | 8.2 to 8.9 us a part | 191 | 0.4 to 0.5 MiB | 7.5 to 7.9 us a part |
+
+The estimate of a part with a 64 KiB string fell from about 130 KiB to 66 KiB, as what it holds did. So with a large Luau heap twice as many parts wait for a cycle, and they hold about as many bytes as before. Small parts weigh less by the estimate too, so more of them wait and the collector runs fewer cycles.
+
+What a node's attributes hold, from the table `AttributeBytesCostTests` writes (`-explicit only`, in Release), before and after on 14 October 2026:
+
+| Attributes on a node | Before | After |
+|---|---|---|
+| set by a script, 1 number | 475 bytes | 124 bytes |
+| set by a script, 2 numbers | 475 bytes | 195 bytes |
+| set by a script, 4 numbers | 844 bytes | 292 bytes |
+| set by a script, 16 numbers | 1764 bytes | 868 bytes |
+| set by a script, a 16 byte string | 530 bytes | 124 bytes |
+| set by a script, a 1000 byte string | 2493 bytes | 1145 bytes |
+| set by a script, a 64 KiB string | 131596 bytes | 65684 bytes |
+| built with 1 number | 128 bytes | 96 bytes |
+| built with 4 numbers | 368 bytes | 240 bytes |
+| built with 16 numbers | 1328 bytes | 816 bytes |
+| built with a 16 byte string | 184 bytes | 96 bytes |
+
+Of the 124 bytes about 28 are the node's entry in the table's dictionary. Setting an attribute to a short new string allocated a 32 byte string and allocates nothing now. A new 1000 byte string allocates its 1024 byte array where it allocated a 2024 byte string, and setting the same long string again allocates nothing where it made a string each time. `ScriptCostTests` shows no time that moved past its noise.
 
 What is still found by count and not by bytes: a made node that is in no level and was never destroyed waits for the look-over of `LooseNodes`, which comes at 64 such trees. 20000 parts dropped that way with a 64 KiB string each had 7.8 MiB waiting.
 
