@@ -86,18 +86,22 @@ internal sealed class HeldNodes(LuauHost host, TreeWrites tree, TagTable tags, A
     }
 
     // Once a tick. Loose trees that keep `loose` bytes are looked for the
-    // same way: Luau's report of what it let go of names their nodes.
-    public void EndTick(long loose)
+    // same way. True when a step for them ended a cycle, after which Luau
+    // has said which of their nodes no script holds.
+    public bool EndTick(long loose)
     {
         if ((_held.Count == 0 && loose == 0) || ++_idleTicks < IdleStepTicks)
-            return;
+            return false;
 
         _idleTicks = 0;
         if (host.IsClosed || Bytes + loose < FirstGoal)
-            return;
+            return false;
 
-        if (host.StepCollector(Math.Max(1024, host.MemoryUsed / IdleCycleSteps)))
-            EndCycle();
+        if (!host.StepCollector(Math.Max(1024, host.MemoryUsed / IdleCycleSteps)))
+            return false;
+
+        EndCycle();
+        return loose > 0;
     }
 
     private void Weigh(SceneNode node)

@@ -184,25 +184,24 @@ internal sealed class NodeLifetime
     }
 
     // Once a tick, after the scripts ran. What scripts let go of since the
-    // last tick is let go of here.
+    // last tick is let go of here. A cycle of the collector that the step for
+    // loose trees ended has said which of them no script holds.
     public void EndTick()
     {
-        _held.EndTick(_loose.Bytes);
+        bool isLooseCycleOver = _held.EndTick(_loose.Bytes);
         _host.Objects.ReleaseCollected();
+        if (isLooseCycleOver)
+            _loose.DropUnheld();
+
         _loose.EndTick();
     }
 
     // No script holds the object any more. A destroyed node a script made
-    // stops counting, and the runtime keeps it no longer. A loose tree is
-    // looked at later, since this runs inside the collector's report.
+    // stops counting, and the runtime keeps it no longer.
     public void Released(object released)
     {
-        if (released is not SceneNode node)
-            return;
-
-        _held.Released(node);
-        if (TreeWrites.IsMade(node) && !TreeWrites.IsDestroyed(node) && !_tree.IsInLevel(node))
-            _loose.Released(node);
+        if (released is SceneNode node)
+            _held.Released(node);
     }
 
     // Stops counting every loose tree no script holds a node of any more.
