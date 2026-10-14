@@ -87,6 +87,7 @@ public sealed class ScriptCostTests
         ("read a string attribute a script set", "local _ = part:GetAttribute('State')"),
         ("read a long string attribute a script set", "local _ = part:GetAttribute('Long')"),
         ("set an attribute to the long string it has", "part:SetAttribute('Long', long)"),
+        ("set an attribute to another short string", "part:SetAttribute('Word', if i % 2 == 0 then 'left' else 'right')"),
         ("set an attribute to another number", "part:SetAttribute('Count', i)"),
         ("set an attribute to another CFrame", "part:SetAttribute('Rest', if i % 2 == 0 then f else g)"),
         ("set an attribute a script hears of", "part:SetAttribute('Heard', i)"),
@@ -101,11 +102,12 @@ public sealed class ScriptCostTests
         ("destroy a node that is destroyed", "gone:Destroy()"),
     ];
 
+    private const string NewLongText = "set an attribute to another long string";
+
     // What a script does in one round that has to keep new text.
     private static readonly (string Name, string Statement)[] Storings =
     [
-        ("set an attribute to another short string", "part:SetAttribute('Word', if i % 2 == 0 then 'left' else 'right')"),
-        ("set an attribute to another long string", "part:SetAttribute('Other', if i % 2 == 0 then long else other)"),
+        (NewLongText, "part:SetAttribute('Other', if i % 2 == 0 then long else other)"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
@@ -115,6 +117,15 @@ public sealed class ScriptCostTests
     public void A_crossing_allocates_nothing_on_the_managed_heap(string name)
     {
         Measure(name).Allocated.ShouldBe(0, $"{Ticks * Rounds} rounds of '{name}' allocated");
+    }
+
+    // The 1000 bytes of the text in an array of their own, and no string of twice as many.
+    [Fact]
+    public void Keeping_new_long_text_allocates_its_bytes_and_no_string()
+    {
+        long perRound = Measure(NewLongText).Allocated / (Ticks * Rounds);
+
+        perRound.ShouldBeLessThanOrEqualTo(1024);
     }
 
     // A measurement and no test: it has nothing to fail on, so it runs only

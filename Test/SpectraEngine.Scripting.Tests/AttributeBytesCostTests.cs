@@ -9,6 +9,7 @@ namespace SpectraEngine.Scripting.Tests;
 /// <summary>
 /// What attributes hold in managed memory, for each node, written down. A
 /// measurement and no test: it runs only when asked for, with -explicit only.
+/// <see cref="AttributeBytesTests"/> holds the bounds.
 /// </summary>
 public sealed class AttributeBytesCostTests
 {

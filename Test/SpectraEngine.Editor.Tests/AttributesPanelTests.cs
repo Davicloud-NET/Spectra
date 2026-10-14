@@ -223,6 +223,24 @@ public sealed class AttributesPanelTests
         ValueOf(brick, "Label").ShouldBe(MemberValue.Of(""));
     }
 
+    // A node keeps text as UTF-8, and the cell shows it as the text it is.
+    [Fact]
+    public void Text_outside_ASCII_is_shown_as_it_is_and_written_as_typed()
+    {
+        const string Built = "hei\u00df \u20ac\U0001F600";
+        const string Typed = "\u65e5\u672c\u8a9e, more than fits in a value \U0001F600";
+        SceneNode brick = Node("Brick", ("Label", MemberValue.Of(Built)));
+        var rig = new TagPanelRig(null, brick);
+
+        rig.Row("Label").Cells.Single().Text.ShouldBe(Built);
+
+        rig.Type(rig.Row("Label").Cells.Single(), Typed);
+
+        ValueOf(brick, "Label").ShouldBe(MemberValue.Of(Typed));
+        ValueOf(brick, "Label").IsUtf8.ShouldBeTrue();
+        rig.Row("Label").Cells.Single().Text.ShouldBe(Typed);
+    }
+
     [Fact]
     public void One_cell_of_three_numbers_and_of_a_frame_writes_that_number_alone()
     {

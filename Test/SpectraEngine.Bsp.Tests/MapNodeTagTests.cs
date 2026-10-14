@@ -4,6 +4,7 @@ using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 using System.Numerics;
 using System.Text;
+using System.Text.Json;
 
 namespace SpectraEngine.Bsp.Tests;
 
@@ -204,6 +205,40 @@ public sealed class MapNodeTagTests
 
         loaded.Root.Children[0].Tags.ShouldBe(node.Tags);
         loaded.Root.Children[0].Attributes.ShouldBe(node.Attributes);
+    }
+
+    // A set keeps text as UTF-8, and a save writes the text it was handed.
+    [Fact]
+    public void Text_kept_as_UTF8_is_saved_as_the_text_it_was_made_from()
+    {
+        string[] texts =
+        [
+            "\u00e9\u20ac\U0001F600\0",
+            new string('x', MemberValue.InlineUtf8Bytes),
+            new string('x', MemberValue.InlineUtf8Bytes + 1),
+            new string('\u00fc', 1000),
+            "\"quoted\" \\ </script> \u2028\u0001\u007f",
+        ];
+        var source = new Scene("Texts");
+        SceneNode node = source.Root.CreateChild("Holder");
+        for (int i = 0; i < texts.Length; i++)
+            node.Attributes = node.Attributes.With($"Text{i}", MemberValue.Of(texts[i]));
+
+        byte[] bytes = MapWriter.Write(MapSceneBinder.FromScene(source));
+        var loaded = new Scene("Texts");
+        MapSceneBinder.ApplyTo(MapReader.Read(bytes), loaded);
+
+        using JsonDocument written = JsonDocument.Parse(bytes);
+        JsonElement attributes = written.RootElement.GetProperty("nodes")[0].GetProperty("attributes");
+        for (int i = 0; i < texts.Length; i++)
+        {
+            attributes.GetProperty($"Text{i}").GetString().ShouldBe(texts[i]);
+            MemberValue back = ValueOf(loaded.Root.Children[0], $"Text{i}");
+            back.IsUtf8.ShouldBeTrue();
+            back.Text.ShouldBe(texts[i]);
+        }
+
+        MapWriter.Write(MapSceneBinder.FromScene(loaded)).ShouldBe(bytes);
     }
 
     [Fact]
