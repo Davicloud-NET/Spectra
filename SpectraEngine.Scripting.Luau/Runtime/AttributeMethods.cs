@@ -55,7 +55,7 @@ internal sealed class AttributeMethods
             return 0;
 
         // From here a name the node does not hold is one more for it to hold.
-        if (!wasSet && Table.Of(node) is { Values.Count: >= AttributeLimits.MaxPerNode })
+        if (!wasSet && Table.Of(node) is { Count: >= AttributeLimits.MaxPerNode })
         {
             return stack.Fail(
                 $"\"{node.Name}\" has {AttributeLimits.MaxPerNode} attributes, and a node holds no more. " +
@@ -98,7 +98,7 @@ internal sealed class AttributeMethods
     // GetAttributes: the keyvalues of the node's entity, under what scripts set.
     public int GetAll(ScriptContext context, LuauStack stack, SceneNode node)
     {
-        Dictionary<string, MemberValue>? set = Table.Of(node)?.Values;
+        NodeAttributes? set = Table.Of(node);
         if (!stack.NewTable(0, set?.Count ?? 0))
             return LuauStack.Raise;
 
@@ -108,7 +108,7 @@ internal sealed class AttributeMethods
         foreach (string name in _built)
         {
             // A name a script set or took away is the script's from then on.
-            if (set?.ContainsKey(name) == true)
+            if (set?.Contains(name) == true)
                 continue;
 
             // One that reads as nil is no entry: a table holds no nil.

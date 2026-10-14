@@ -84,6 +84,9 @@ public sealed class ScriptCostTests
         ("read every attribute of an entity", "local _ = sign:GetAttributes()"),
         ("set an attribute to the number it has", "part:SetAttribute('Score', 5)"),
         ("set an attribute to the string it has", "part:SetAttribute('State', 'idle')"),
+        ("read a string attribute a script set", "local _ = part:GetAttribute('State')"),
+        ("read a long string attribute a script set", "local _ = part:GetAttribute('Long')"),
+        ("set an attribute to the long string it has", "part:SetAttribute('Long', long)"),
         ("set an attribute to another number", "part:SetAttribute('Count', i)"),
         ("set an attribute to another CFrame", "part:SetAttribute('Rest', if i % 2 == 0 then f else g)"),
         ("set an attribute a script hears of", "part:SetAttribute('Heard', i)"),
@@ -96,6 +99,13 @@ public sealed class ScriptCostTests
         ("take a part out of the level and put it back", "spare.Parent = nil spare.Parent = workspace"),
         ("read the parent of a destroyed node", "local _ = gone.Parent"),
         ("destroy a node that is destroyed", "gone:Destroy()"),
+    ];
+
+    // What a script does in one round that has to keep new text.
+    private static readonly (string Name, string Statement)[] Storings =
+    [
+        ("set an attribute to another short string", "part:SetAttribute('Word', if i % 2 == 0 then 'left' else 'right')"),
+        ("set an attribute to another long string", "part:SetAttribute('Other', if i % 2 == 0 then long else other)"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));
@@ -114,7 +124,7 @@ public sealed class ScriptCostTests
     {
         double empty = Measure(Nothing).Nanoseconds;
         var table = new StringBuilder();
-        foreach ((string name, _) in Crossings)
+        foreach ((string name, _) in Crossings.Concat(Storings))
         {
             (double nanoseconds, long allocated) = Measure(name);
             table.AppendLine(string.Create(
@@ -128,7 +138,7 @@ public sealed class ScriptCostTests
     // The time of one round and the bytes all rounds allocated.
     private static (double Nanoseconds, long Allocated) Measure(string name)
     {
-        string statement = Crossings.Single(crossing => crossing.Name == name).Statement;
+        string statement = Crossings.Concat(Storings).Single(crossing => crossing.Name == name).Statement;
 
         using var level = new ScriptLevel(hasCharacter: false);
         SceneNode part = level.Part("Mover", new Vector3(0f, 2f, 0f));
@@ -158,6 +168,9 @@ public sealed class ScriptCostTests
             part:SetAttribute("Score", 5)
             part:SetAttribute("State", "idle")
             part:SetAttribute("Glow", c)
+            local long = string.rep("x", 1000)
+            local other = string.rep("y", 1000)
+            part:SetAttribute("Long", long)
             part:GetAttributeChangedSignal("Heard"):Connect(function() end)
             tags:GetInstanceAddedSignal("Heard"):Connect(function() end)
             local spare = workspace.Spare

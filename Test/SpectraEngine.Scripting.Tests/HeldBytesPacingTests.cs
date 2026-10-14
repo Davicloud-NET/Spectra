@@ -14,10 +14,11 @@ public sealed class HeldBytesPacingTests
     [Fact]
     public void A_gain_too_small_to_step_for_is_owed_and_ends_no_cycle()
     {
-        // Two bytes a character, so the part ends up this far under the goal.
-        const int Short = 16;
+        // A byte a character, so the part ends up this far under the goal.
+        // The short text is too long to be kept in its value already.
+        const int Short = 32;
         long room = HeldNodes.FirstGoal - 200 - WeightWithBlob(Short);
-        int characters = Short + (int)(room / 2);
+        int characters = Short + (int)room;
 
         using var level = new ScriptLevel(hasCharacter: false);
         level.AddScript(level.Scene.Root, WithBlob(characters) + """
@@ -90,10 +91,12 @@ public sealed class HeldBytesPacingTests
         (runtime.HeldStepCount - steps).ShouldBe(0, "the step every so many ticks switched the goal off");
     }
 
-    // An attribute takes 64 KiB of text and no more, so there are two.
+    // An attribute takes 64 KiB of text and no more, so there are four.
     private static string WithBlob(int characters) => $"""
         local part = Instance.new("Part")
-        part:SetAttribute("Full", string.rep("x", 65536))
+        for index = 1, 3 do
+            part:SetAttribute("Full" .. index, string.rep("x", 65536))
+        end
         part:SetAttribute("Blob", string.rep("x", {characters}))
         part:Destroy()
 

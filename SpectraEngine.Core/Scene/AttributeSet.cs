@@ -11,7 +11,7 @@ namespace SpectraEngine.Core.Scene;
 /// order they were added. It never changes once made: an edit makes a new
 /// one. Every name keeps <see cref="AttributeName"/>'s rule and every value
 /// <see cref="AttributeValueRule"/>'s, no name is there twice, and there are
-/// at most <see cref="AttributeLimits.MaxPerNode"/>.
+/// at most <see cref="AttributeLimits.MaxPerNode"/>. Text is kept as UTF-8.
 /// </summary>
 public sealed class AttributeSet : IReadOnlyList<KeyValuePair<string, MemberValue>>, IEquatable<AttributeSet>
 {
@@ -61,7 +61,17 @@ public sealed class AttributeSet : IReadOnlyList<KeyValuePair<string, MemberValu
         if (refusal is not null)
             return false;
 
-        made = pairs.Count == 0 ? Empty : new AttributeSet([.. pairs]);
+        if (pairs.Count == 0)
+        {
+            made = Empty;
+            return true;
+        }
+
+        var kept = new KeyValuePair<string, MemberValue>[pairs.Count];
+        for (int i = 0; i < kept.Length; i++)
+            kept[i] = new KeyValuePair<string, MemberValue>(pairs[i].Key, pairs[i].Value.AsUtf8());
+
+        made = new AttributeSet(kept);
         return true;
     }
 
@@ -96,7 +106,7 @@ public sealed class AttributeSet : IReadOnlyList<KeyValuePair<string, MemberValu
             throw new ArgumentException($"A node holds at most {AttributeLimits.MaxPerNode} attributes.", nameof(name));
 
         KeyValuePair<string, MemberValue>[] next = index >= 0 ? [.. _pairs] : [.. _pairs, default];
-        next[index >= 0 ? index : ^1] = new KeyValuePair<string, MemberValue>(name, value);
+        next[index >= 0 ? index : ^1] = new KeyValuePair<string, MemberValue>(name, value.AsUtf8());
         return new AttributeSet(next);
     }
 

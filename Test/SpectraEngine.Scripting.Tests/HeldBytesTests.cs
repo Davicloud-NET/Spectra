@@ -13,8 +13,8 @@ public sealed class HeldBytesTests
 {
     private const long Megabyte = 1024 * 1024;
 
-    // A 64 KiB string is 128 KiB of text in memory.
-    private const long BlobBytes = 2 * 65536;
+    // An attribute keeps a string's bytes as they are.
+    private const long BlobBytes = 65536;
 
     [Fact]
     public void A_loop_that_destroys_parts_with_a_long_attribute_keeps_few_of_them_waiting()
@@ -230,7 +230,7 @@ public sealed class HeldBytesTests
         long name = NodeWeight.OfText + (2 * "Blob".Length);
         long tag = NodeWeight.OfTag + (2 * "Late".Length);
         (full - bare).ShouldBe(
-            NodeWeight.OfAttributes + NodeWeight.OfAttribute + name + NodeWeight.OfText + BlobBytes + tag);
+            NodeWeight.OfAttributes + NodeWeight.OfAttribute + name + NodeWeight.OfBytes + BlobBytes + tag);
         emptied.ShouldBe(bare + tag);
     }
 

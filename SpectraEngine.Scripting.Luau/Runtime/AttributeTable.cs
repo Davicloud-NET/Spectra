@@ -40,7 +40,7 @@ internal sealed class AttributeTable
             int count = 0;
             foreach (KeyValuePair<SceneNode, NodeAttributes> kept in _ofDestroyed)
             {
-                if (kept.Value.Values.Count > 0)
+                if (kept.Value.Count > 0)
                     count++;
             }
 
@@ -92,21 +92,20 @@ internal sealed class AttributeTable
     public bool TryGet(SceneNode node, ReadOnlySpan<char> name, out MemberValue value)
     {
         value = MemberValue.None;
-        return Of(node) is { } own
-            && own.Values.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out value);
+        return Of(node) is { } own && own.TryGet(name, out value);
     }
 
     // No value keeps the name as one that was taken away.
-    public void Set(SceneNode node, string name, in MemberValue value) => OfOrMake(node).Values[name] = value;
+    public void Set(SceneNode node, string name, in MemberValue value) => OfOrMake(node).Set(name, in value);
 
     // A node whose last attribute went, and that has no signal, is kept
     // nothing for.
     public void Forget(SceneNode node, ReadOnlySpan<char> name)
     {
-        if (Of(node) is not { } own || !own.Values.GetAlternateLookup<ReadOnlySpan<char>>().Remove(name))
+        if (Of(node) is not { } own || !own.Remove(name))
             return;
 
-        if (own.Values.Count == 0 && own.Changed is null && own.ChangedOf is null && !_ofNode.Remove(node))
+        if (own.Count == 0 && own.Changed is null && own.ChangedOf is null && !_ofNode.Remove(node))
             _ofDestroyed.Remove(node);
     }
 
@@ -114,12 +113,12 @@ internal sealed class AttributeTable
     // took away. The signals stay the source's own.
     public void Copy(SceneNode source, SceneNode copy)
     {
-        if (Of(source) is not { Values.Count: > 0 } set)
+        if (Of(source) is not { Count: > 0 } set)
             return;
 
-        Dictionary<string, MemberValue> values = OfOrMake(copy).Values;
-        foreach (KeyValuePair<string, MemberValue> pair in set.Values)
-            values[pair.Key] = pair.Value;
+        NodeAttributes values = OfOrMake(copy);
+        foreach (KeyValuePair<string, MemberValue> pair in set)
+            values.Set(pair.Key, pair.Value);
     }
 
     // Takes everything scripts left on a node no script can reach any more,
@@ -134,7 +133,7 @@ internal sealed class AttributeTable
         if (!_ofNode.Remove(node, out NodeAttributes? own))
             return null;
 
-        if (own.Values.Count > 0)
+        if (own.Count > 0)
             _ofDestroyed.AddOrUpdate(node, own);
 
         return own;
@@ -155,8 +154,8 @@ internal sealed class AttributeTable
         _names.Clear();
         foreach (NodeAttributes own in _ofNode.Values)
         {
-            foreach (string name in own.Values.Keys)
-                _names.Add(name);
+            foreach (KeyValuePair<string, MemberValue> pair in own)
+                _names.Add(pair.Key);
 
             if (own.ChangedOf is not { } signals)
                 continue;

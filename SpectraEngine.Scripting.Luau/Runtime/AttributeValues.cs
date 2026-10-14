@@ -15,7 +15,7 @@ internal static class AttributeValues
 
     // Reads the value a script handed over. `held` is what the attribute
     // holds now: text that equals it is handed back as it is, so a script
-    // that sets the same word every tick makes no string. False for a value
+    // that sets the same word every tick allocates nothing. False for a value
     // no attribute holds, and `refusal` then says so.
     public static bool TryRead(LuauStack stack, int index, in MemberValue held, out MemberValue value, out string? refusal)
     {
@@ -52,7 +52,7 @@ internal static class AttributeValues
     // on top instead.
     public static bool Push(LuauStack stack, in MemberValue value) => value.Kind switch
     {
-        MemberValueKind.Text => stack.Push(value.Text),
+        MemberValueKind.Text => PushText(stack, in value),
         MemberValueKind.Boolean => stack.Push(value.Boolean),
         MemberValueKind.Number => stack.Push(value.Number),
         MemberValueKind.Vector3 => stack.Push(value.Vector),
@@ -61,9 +61,14 @@ internal static class AttributeValues
         _ => stack.PushNil(),
     };
 
-    // A string of Luau is bytes. Bytes that are no text would read back as
-    // other bytes than the script set. The text is kept outside the memory
-    // Luau counts for the scripts, so its length has a bound here.
+    // An entity's keyvalue is a string. What a script set is its own bytes.
+    private static bool PushText(LuauStack stack, in MemberValue value) =>
+        value.IsUtf8 ? stack.PushUtf8(value.Utf8) : stack.Push(value.Text);
+
+    // A string of Luau is bytes, and they are kept as they are. Bytes that
+    // are no text are refused, since a level can hold no such attribute. The
+    // text is kept outside the memory Luau counts for the scripts, so its
+    // length has a bound here.
     private static bool TryReadText(ReadOnlySpan<byte> text, in MemberValue held, out MemberValue value, out string? refusal)
     {
         value = MemberValue.None;
@@ -79,7 +84,7 @@ internal static class AttributeValues
         }
         else
         {
-            value = MemberValue.Of(ScriptContext.TextOf(text, held.Kind == MemberValueKind.Text ? held.Text : string.Empty));
+            value = held.IsUtf8 && text.SequenceEqual(held.Utf8) ? held : MemberValue.OfUtf8(text);
         }
 
         return refusal is null;

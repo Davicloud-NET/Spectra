@@ -11,14 +11,20 @@ internal static class NodeWeight
     // A part with its brush and its transform, measured at about 1.2 KiB.
     public const int OfNode = 1024;
 
-    // The table a node's attributes are in, once it has one.
-    public const int OfAttributes = 384;
+    // What a node's attributes are kept in, once it has one. Measured at
+    // about 125 bytes with the first attribute in it.
+    public const int OfAttributes = 128;
 
-    // A dictionary entry with its value.
-    public const int OfAttribute = 128;
+    // A name's place beside its value: 48 bytes while a node has few, a
+    // dictionary's entry past that.
+    public const int OfAttribute = 64;
 
     // A string's header, beside two bytes for each character.
     public const int OfText = 32;
+
+    // The header of an attribute's text too long to be kept in its value,
+    // beside a byte for each of its bytes.
+    public const int OfBytes = 24;
 
     // A tag only destroyed nodes have is kept by each of them alone, with
     // its empty lists. Every tag is weighed as one, beside its name.
@@ -36,13 +42,20 @@ internal static class NodeWeight
 
         // A name can be one no other node has, so each is weighed here.
         bytes += OfAttributes;
-        foreach (KeyValuePair<string, MemberValue> pair in set.Values)
-        {
-            bytes += OfAttribute + OfText + (2L * pair.Key.Length);
-            if (pair.Value.Kind == MemberValueKind.Text)
-                bytes += OfText + (2L * pair.Value.Text.Length);
-        }
+        foreach (KeyValuePair<string, MemberValue> pair in set)
+            bytes += OfAttribute + OfText + (2L * pair.Key.Length) + TextOf(pair.Value);
 
         return bytes;
+    }
+
+    private static long TextOf(in MemberValue value)
+    {
+        if (value.Kind != MemberValueKind.Text)
+            return 0;
+        if (!value.IsUtf8)
+            return OfText + (2L * value.Text.Length);
+
+        int length = value.Utf8.Length;
+        return length > MemberValue.InlineUtf8Bytes ? OfBytes + length : 0;
     }
 }
