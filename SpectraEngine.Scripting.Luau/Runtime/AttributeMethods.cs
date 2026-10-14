@@ -76,7 +76,7 @@ internal sealed class AttributeMethods
         {
             // Past the budget the value is not kept, and the script is switched
             // off. The message is made first, while the value still counts.
-            int failed = context.Host.FailForMemory(stack);
+            int failed = context.Host.Memory.Fail(stack);
             if (wasSet)
                 Table.Set(node, kept, in held);
             else

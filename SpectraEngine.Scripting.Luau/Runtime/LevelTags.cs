@@ -76,7 +76,7 @@ internal sealed class LevelTags
 
         if (Table.Bytes > before && HasRoom?.Invoke() == false)
         {
-            _host.StopForMemory();
+            _host.Memory.Stop();
             Table.Remove(node, tag, out _);
             return false;
         }
@@ -90,7 +90,7 @@ internal sealed class LevelTags
     }
 
     // What AddTag returns when Add said false: the script is switched off.
-    public int FailForMemory(LuauStack stack) => _host.FailForMemory(stack);
+    public int FailForMemory(LuauStack stack) => _host.Memory.Fail(stack);
 
     // Nor does taking away one it lacks.
     public void Remove(SceneNode node, ReadOnlySpan<char> tag)

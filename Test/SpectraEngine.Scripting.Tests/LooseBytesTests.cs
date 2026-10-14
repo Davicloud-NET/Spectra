@@ -154,4 +154,110 @@ public sealed class LooseBytesTests
         runtime.LooseTreeCount.ShouldBe(0);
         runtime.NodeBytes.ShouldBe(0);
     }
+
+    // What one script let go of is no garbage to Luau's collector, so the
+    // interrupt cannot take it off. Another script that builds up Luau data
+    // before the parts are found is not stopped for them.
+    [Fact]
+    public void Loose_parts_a_script_let_go_of_do_not_stop_another_script()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.AddScript(level.Scene.Root, """
+            local blob = string.rep("x", 65536)
+            local kept = {}
+            for index = 1, 50 do
+                local part = Instance.new("Part")
+                part:SetAttribute("Blob", blob)
+                kept[index] = part
+            end
+            task.wait()
+            kept = nil
+            """, "Keeper");
+        level.AddScript(level.Scene.Root, """
+            task.wait()
+            task.wait()
+            local data = string.rep("y", 5 * 1024 * 1024)
+            print("built")
+            task.wait()
+            print(#data)
+            """, "Builder");
+        LuauScriptRuntime runtime = level.Play().Runtime.ShouldNotBeNull();
+        runtime.MemoryBudget = 8 * Megabyte;
+
+        level.Tick(4);
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["built", "5242880"]);
+        runtime.NodeBytes.ShouldBe(0);
+    }
+
+    // The interrupt lets a script on for loose parts only until they have
+    // been looked over. Those still held then count in full.
+    [Fact]
+    public void Loose_parts_a_script_holds_still_stop_a_script_past_the_budget()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.AddScript(level.Scene.Root, """
+            local blob = string.rep("x", 65536)
+            local kept = {}
+            for index = 1, 50 do
+                local part = Instance.new("Part")
+                part:SetAttribute("Blob", blob)
+                kept[index] = part
+            end
+            while true do
+                task.wait()
+            end
+            """, "Keeper");
+        level.AddScript(level.Scene.Root, """
+            task.wait()
+            task.wait()
+            local data = string.rep("y", 5 * 1024 * 1024)
+            print("built")
+            task.wait()
+            local more = {}
+            for index = 1, 200000 do
+                more[index] = index
+            end
+            print("more")
+            """, "Builder");
+        LuauScriptRuntime runtime = level.Play().Runtime.ShouldNotBeNull();
+        runtime.MemoryBudget = 8 * Megabyte;
+
+        level.Tick(5);
+
+        level.Errors.ShouldHaveSingleItem().ShouldBe(
+            "the scripts hold more than 8 MB, with the tags and attributes they set on nodes, and this one was switched off");
+        level.Printed.ShouldNotContain("more");
+        runtime.LooseTreeCount.ShouldBe(50);
+    }
+
+    // Only a tree that leaves the level for the first time adds what it
+    // keeps to what is looked for.
+    [Fact]
+    public void A_made_model_hidden_and_shown_on_every_tick_asks_for_no_collection()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.AddScript(level.Scene.Root, """
+            local model = Instance.new("Folder")
+            for index = 1, 5 do
+                local part = Instance.new("Part")
+                part.Parent = model
+                part:SetAttribute("Blob", string.rep("x", 65536))
+            end
+            model.Parent = workspace
+            task.wait()
+            game:GetService("RunService").Heartbeat:Connect(function()
+                model.Parent = nil
+                model.Parent = workspace
+            end)
+            """, "Main");
+        LuauScriptRuntime runtime = level.Play().Tick(2).Runtime.ShouldNotBeNull();
+        int before = runtime.LooseLookOverCount;
+
+        level.Tick(100);
+
+        level.Errors.ShouldBeEmpty();
+        (runtime.LooseLookOverCount - before).ShouldBeLessThanOrEqualTo(1);
+    }
 }

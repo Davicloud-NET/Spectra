@@ -59,6 +59,31 @@ enum Body
     BodyCount,
 };
 
+// What the binding writes for the budget with no call, on the thread that
+// runs the state. It mirrors this as Shim.HostCells.
+struct HostCells
+{
+    // Bytes the host keeps for the scripts outside any userdata, such as the
+    // attributes they set on nodes. No collection takes them away. Any
+    // thread may read it.
+    std::atomic<int64_t> live{0};
+
+    // Of those, about what is on made trees in no level. The host lets go
+    // of a tree no script holds, but only finds those when it looks.
+    int64_t loose = 0;
+
+    // A userdata was collected since the host last looked the loose trees
+    // over, so some of them may be held by no script.
+    int32_t looseUnsure = 0;
+
+    // The interrupt let a script go on that the loose trees alone put past
+    // the budget. The host looks them over and clears both.
+    int32_t lookOverWanted = 0;
+};
+
+static_assert(std::atomic<int64_t>::is_always_lock_free && sizeof(std::atomic<int64_t>) == 8, "The binding writes `live` as a plain int64.");
+static_assert(sizeof(HostCells) == 24, "Shim.HostCells has this layout.");
+
 // A name the host gave a number.
 struct Atom
 {
@@ -79,12 +104,7 @@ struct HostState
     // not collected yet. Written by the thread that runs the state, read by any.
     std::atomic<int64_t> outside{0};
 
-    // Bytes the host keeps for the scripts outside any userdata, such as the
-    // attributes they set on nodes. They count against the budget, and no
-    // collection takes them away. The binding writes the whole value through
-    // sl_livecell on the thread that runs the state, on every change, so it
-    // costs no call. An aligned store of eight bytes is never seen torn.
-    alignas(8) volatile int64_t live = 0;
+    HostCells cells;
 
     // What makes up `outside`: the bytes for one userdata, by (slot << 32) |
     // generation. Few userdata have any, so the userdata holds no field for it.
@@ -297,20 +317,44 @@ struct CallScope
 int64_t heldBytes(const HostState* host)
 {
     return host->bytes.load(std::memory_order_relaxed) + host->outside.load(std::memory_order_relaxed)
-        + host->live;
+        + host->cells.live.load(std::memory_order_relaxed);
+}
+
+// What the host may still let go of when it looks the loose trees over.
+int64_t looseBytes(const HostState* host)
+{
+    const HostCells& cells = host->cells;
+    if (!cells.looseUnsure)
+        return 0;
+
+    int64_t live = cells.live.load(std::memory_order_relaxed);
+    return cells.loose < live ? cells.loose : live;
 }
 
 // A full collection first: what the allocator counts includes garbage, and
 // the budget is for what scripts hold. The collection takes what the host
-// keeps for a freed userdata off the count as well.
+// keeps for a freed userdata off the count as well. Loose trees no script
+// holds are not garbage to the collector, so for them the host is asked.
 bool isOverBudget(lua_State* L, HostState* host)
 {
     int64_t budget = host->budget.load(std::memory_order_relaxed);
     if (budget <= 0 || heldBytes(host) <= budget)
         return false;
 
+    HostCells& cells = host->cells;
+    if (cells.lookOverWanted && heldBytes(host) - looseBytes(host) <= budget)
+        return false;
+
     lua_gc(L, LUA_GCCOLLECT, 0);
-    return heldBytes(host) > budget;
+    int64_t held = heldBytes(host);
+    if (held <= budget)
+        return false;
+
+    if (held - looseBytes(host) > budget)
+        return true;
+
+    cells.lookOverWanted = 1;
+    return false;
 }
 
 // Installed for the life of the state. Another thread only stores a serial,
@@ -416,6 +460,7 @@ void objectCollected(lua_State* L, void* data)
     const ObjectPayload* payload = static_cast<const ObjectPayload*>(data);
     uint64_t key = (static_cast<uint64_t>(payload->slot) << 32) | payload->generation;
     host->released[host->releasedCount++] = key;
+    host->cells.looseUnsure = 1;
     if (!host->weights.empty())
         setWeight(host, key, 0);
 }
@@ -1365,11 +1410,12 @@ SL_API int64_t sl_outside(lua_State* L)
     return hostOf(L)->outside.load(std::memory_order_relaxed);
 }
 
-// Where the binding writes how many bytes it keeps for the scripts outside
-// any userdata. They count against the budget. Valid until the state closes.
-SL_API volatile int64_t* sl_livecell(lua_State* L)
+// Where the binding writes what it keeps for the scripts outside any
+// userdata, and reads whether to look its loose trees over. Valid until the
+// state closes.
+SL_API HostCells* sl_cells(lua_State* L)
 {
-    return &hostOf(L)->live;
+    return &hostOf(L)->cells;
 }
 
 // What counts against the budget now, garbage included. Safe from any thread.

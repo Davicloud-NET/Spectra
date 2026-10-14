@@ -49,6 +49,9 @@ internal sealed class NodeLifetime
 
     public int PeakLooseCount => _loose.PeakCount;
 
+    // How many times loose trees were looked over with a full collection.
+    public int LooseLookOvers => _loose.LookOvers;
+
     // How many destroyed nodes scripts made count on, as far as is known.
     public int HeldCount => _held.Count;
 
@@ -114,12 +117,12 @@ internal sealed class NodeLifetime
     // on nodes grew. Garbage, and loose trees no script holds, go first.
     public bool HasRoom()
     {
-        if (!_host.IsOverBudget)
+        if (!_host.Memory.IsOver)
             return true;
 
         _host.Collect();
         _loose.DropUnheld();
-        return !_host.IsOverBudget;
+        return !_host.Memory.IsOver;
     }
 
     // Destroy. Null, or why nothing was destroyed.
@@ -190,7 +193,11 @@ internal sealed class NodeLifetime
     {
         bool isLooseCycleOver = _held.EndTick(_loose.Bytes);
         _host.Objects.ReleaseCollected();
-        if (isLooseCycleOver)
+
+        // The interrupt let a script on that loose trees put past the budget,
+        // as some of them may be held by no script. Those go now, or the
+        // interrupt counts them all again.
+        if (isLooseCycleOver || _host.Memory.IsLookOverWanted)
             _loose.DropUnheld();
 
         _loose.EndTick();
@@ -243,6 +250,7 @@ internal sealed class NodeLifetime
                 nodes.Add(children[c]);
         }
 
+        long made = 0;
         for (int i = 0; i < nodes.Count; i++)
         {
             if (cameIn)
@@ -254,8 +262,11 @@ internal sealed class NodeLifetime
             // What a made node keeps is loose from here, and may be let go of.
             _starter.Left(nodes[i]);
             if (TreeWrites.IsMade(nodes[i]))
-                _loose.Grew(BytesOf(nodes[i]));
+                made += BytesOf(nodes[i]);
         }
+
+        if (!cameIn && TreeWrites.IsMade(top))
+            _loose.Left(top, made);
 
         Return(nodes);
     }

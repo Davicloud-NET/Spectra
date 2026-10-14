@@ -200,7 +200,7 @@ internal static partial class NodeApi
 
         SceneNode? copy = lifetime.Clone(node, out string? refusal);
         if (lifetime.IsOverBudget)
-            return context.Host.FailForMemory(stack);
+            return context.Host.Memory.Fail(stack);
 
         return copy is not null
             ? ScriptResult.Of(context.PushObject(stack, copy))

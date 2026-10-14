@@ -193,11 +193,13 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     // What the tags and attributes scripts set on nodes that are not
     // destroyed weigh, as the memory budget counts them, and the same counted
     // again from every node.
-    internal long NodeBytes => _host.NodeBytes;
+    internal long NodeBytes => _host.Memory.NodeBytes;
 
     internal long PeakNodeBytes => _nodeBytes.Peak;
 
     internal int PeakLooseTreeCount => _lifetime.PeakLooseCount;
+
+    internal int LooseLookOverCount => _lifetime.LooseLookOvers;
 
     internal long CountNodeBytes() => _tags.Table.CountBytes() + _attributes.Table.CountBytes();
 

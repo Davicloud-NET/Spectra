@@ -19,6 +19,6 @@ internal sealed class NodeBytes(LuauHost? host)
         Bytes += bytes;
         Peak = Math.Max(Peak, Bytes);
         if (host is not null)
-            host.NodeBytes = Bytes;
+            host.Memory.NodeBytes = Bytes;
     }
 }
