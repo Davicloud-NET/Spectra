@@ -70,15 +70,15 @@ internal static class NodeWeight
         return built.Count > 0 && built.Contains(tag) ? 0 : OfTag + (2L * tag.Length);
     }
 
+    // Short text and every other kind keep nothing outside the value, and
+    // that is asked first: it is what most sets are.
     private static long TextOf(in MemberValue value)
     {
-        if (value.Kind != MemberValueKind.Text)
+        int outside = value.OutsideBytes;
+        if (outside == 0)
             return 0;
-        if (!value.IsUtf8)
-            return OfText + (2L * value.Text.Length);
 
-        int length = value.Utf8.Length;
-        return length > MemberValue.InlineUtf8Bytes ? OfBytes + length : 0;
+        return (value.IsUtf8 ? OfBytes : OfText) + outside;
     }
 
     // The value the node was built with, and not one equal to it: long text

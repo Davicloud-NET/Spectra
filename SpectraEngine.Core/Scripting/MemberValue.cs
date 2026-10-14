@@ -118,6 +118,18 @@ public readonly struct MemberValue : IEquatable<MemberValue>
         _ => default,
     };
 
+    /// <summary>
+    /// How many bytes of text the value keeps outside itself: the UTF-8 of text longer
+    /// than <see cref="InlineUtf8Bytes"/>, or two for each character of text made from a
+    /// string. Nothing for short text and for every other kind.
+    /// </summary>
+    public int OutsideBytes => _reference switch
+    {
+        byte[] utf8 => utf8.Length,
+        string text => 2 * text.Length,
+        _ => 0,
+    };
+
     /// <summary>The value of a <see cref="MemberValueKind.Vector3"/>.</summary>
     public Vector3 Vector => _kind is MemberValueKind.Vector3 or MemberValueKind.Color ? _vector : default;
 

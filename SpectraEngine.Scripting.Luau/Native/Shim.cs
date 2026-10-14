@@ -9,7 +9,7 @@ namespace SpectraEngine.Scripting.Luau.Native;
 internal static unsafe partial class Shim
 {
     // Moves with SL_SHIM_REVISION in spectra_luau.h. LuauLibrary compares the two.
-    internal const int Revision = 12;
+    internal const int Revision = 13;
 
     // What a host function returns instead of a result count. The shim raises
     // the error or yields once the managed frame has returned.
@@ -94,9 +94,9 @@ internal static unsafe partial class Shim
     [LibraryImport(Lua.Library)] internal static partial long sl_setobjectweight(nint L, uint slot, uint generation, uint weight);
     [LibraryImport(Lua.Library), SuppressGCTransition] internal static partial long sl_outside(nint L);
 
-    // Bytes the host keeps for the scripts outside any userdata. They count
-    // against the budget.
-    [LibraryImport(Lua.Library), SuppressGCTransition] internal static partial void sl_setlive(nint L, long bytes);
+    // Where the host writes the bytes it keeps for the scripts outside any
+    // userdata, which count against the budget. Valid until the state closes.
+    [LibraryImport(Lua.Library)] internal static partial long* sl_livecell(nint L);
 
     // What counts against the budget now, garbage included.
     [LibraryImport(Lua.Library), SuppressGCTransition] internal static partial long sl_held(nint L);

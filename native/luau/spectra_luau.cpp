@@ -81,8 +81,10 @@ struct HostState
 
     // Bytes the host keeps for the scripts outside any userdata, such as the
     // attributes they set on nodes. They count against the budget, and no
-    // collection takes them away. Written and read as `outside` is.
-    std::atomic<int64_t> live{0};
+    // collection takes them away. The binding writes the whole value through
+    // sl_livecell on the thread that runs the state, on every change, so it
+    // costs no call. An aligned store of eight bytes is never seen torn.
+    alignas(8) volatile int64_t live = 0;
 
     // What makes up `outside`: the bytes for one userdata, by (slot << 32) |
     // generation. Few userdata have any, so the userdata holds no field for it.
@@ -295,7 +297,7 @@ struct CallScope
 int64_t heldBytes(const HostState* host)
 {
     return host->bytes.load(std::memory_order_relaxed) + host->outside.load(std::memory_order_relaxed)
-        + host->live.load(std::memory_order_relaxed);
+        + host->live;
 }
 
 // A full collection first: what the allocator counts includes garbage, and
@@ -1363,11 +1365,11 @@ SL_API int64_t sl_outside(lua_State* L)
     return hostOf(L)->outside.load(std::memory_order_relaxed);
 }
 
-// Says how many bytes the host keeps for the scripts outside any userdata.
-// They count against the budget until the host says otherwise.
-SL_API void sl_setlive(lua_State* L, int64_t bytes)
+// Where the binding writes how many bytes it keeps for the scripts outside
+// any userdata. They count against the budget. Valid until the state closes.
+SL_API volatile int64_t* sl_livecell(lua_State* L)
 {
-    hostOf(L)->live.store(bytes, std::memory_order_relaxed);
+    return &hostOf(L)->live;
 }
 
 // What counts against the budget now, garbage included. Safe from any thread.

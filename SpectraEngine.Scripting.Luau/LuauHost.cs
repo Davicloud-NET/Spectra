@@ -31,6 +31,7 @@ public sealed unsafe class LuauHost : IDisposable
     private readonly Lock _closing = new();
     private GCHandle _handle;
     private long _memoryBudget = DefaultMemoryBudget;
+    private readonly long* _nodeBytesCell;
     private long _nodeBytes;
     private string? _heldAtStop;
     private volatile bool _isClosed;
@@ -51,6 +52,7 @@ public sealed unsafe class LuauHost : IDisposable
         _handle = GCHandle.Alloc(this);
         Shim.sl_sethost(_main, GCHandle.ToIntPtr(_handle));
         Shim.sl_setbudget(_main, _memoryBudget);
+        _nodeBytesCell = Shim.sl_livecell(_main);
 
         Functions = new HostFunctions();
         Threads = new ThreadRunner(this, _main);
@@ -118,7 +120,7 @@ public sealed unsafe class LuauHost : IDisposable
         {
             _nodeBytes = value;
             if (!_isClosed)
-                Shim.sl_setlive(_main, value);
+                *_nodeBytesCell = value;
         }
     }
 
