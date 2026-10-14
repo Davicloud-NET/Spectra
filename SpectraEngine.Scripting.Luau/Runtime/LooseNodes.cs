@@ -20,14 +20,13 @@ internal sealed class LooseNodes(
     private const int HeapShare = 8;
 
     private readonly HashSet<SceneNode> _tops = new(ReferenceEqualityComparer.Instance);
-
     private readonly List<SceneNode> _unreached = [];
     private readonly List<SceneNode> _walk = [];
     private int _lookOverAt = FirstLookOver;
     private bool _isSweeping;
 
     // What scripts added to loose trees since the last look-over, and what
-    // the trees left by it kept, as far as none has been let go of since.
+    // the trees it left kept, in bytes.
     private long _grown;
     private long _kept;
 
@@ -63,7 +62,8 @@ internal sealed class LooseNodes(
     public void Grew(long bytes) => _grown += bytes;
 
     // Each time there are twice as many trees as were left the last time,
-    // those no script can reach are let go.
+    // or scripts have set enough on loose trees, those no script can reach
+    // are let go.
     public void LookOver()
     {
         if (_tops.Count < _lookOverAt && !IsDueByBytes())
@@ -95,6 +95,7 @@ internal sealed class LooseNodes(
             return false;
 
         _isSweeping = true;
+        _grown = 0;
         try
         {
             foreach (SceneNode top in _tops)
