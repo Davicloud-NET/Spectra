@@ -139,8 +139,7 @@ internal sealed class AttributeTable
         return grown;
     }
 
-    // A value the node was built with, which weighs nothing: LevelSeed's. A
-    // clone comes into the level with what scripts set on its source.
+    // A value the node was built with, which weighs nothing: LevelSeed's.
     public void SetBuilt(SceneNode node, string name, in MemberValue value)
     {
         NodeAttributes own = OfOrMake(node);

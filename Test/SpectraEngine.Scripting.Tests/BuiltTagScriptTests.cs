@@ -139,6 +139,31 @@ public sealed class BuiltTagScriptTests
     }
 
     [Fact]
+    public void A_copy_that_comes_into_the_level_keeps_what_scripts_set_on_its_source()
+    {
+        using var level = new ScriptLevel();
+        SceneNode sign = level.Part("Sign", new Vector3(0f, 2f, 0f));
+        sign.Attributes = AttributeSet.Empty
+            .With("a/b", MemberValue.Of(3d))
+            .With("Note", MemberValue.Of("built"));
+        sign.Tags = TagSet.Of("Built", "Kept");
+        level.AddScript(level.Scene.Root, """
+            local sign = workspace.Sign
+            sign:SetAttribute("a/b", 4)
+            sign:SetAttribute("Note", nil)
+            sign:RemoveTag("Built")
+            local copy = sign:Clone()
+            copy.Parent = workspace
+            print(copy:GetAttribute("a/b"), copy:GetAttribute("Note"), copy:HasTag("Built"), copy:HasTag("Kept"))
+            """);
+
+        level.Play().Tick(2);
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["4 nil false true"]);
+    }
+
+    [Fact]
     public void No_signal_fires_for_what_the_level_was_built_with()
     {
         using var level = new ScriptLevel();

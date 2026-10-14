@@ -51,6 +51,15 @@ internal sealed class LevelSeed(LuauHost host, EntityWorld world, TagTable tags,
         }
     }
 
+    // A copy a script made has what scripts left on its source, and the
+    // tables have that already. Read, it would get its source's built
+    // values back.
+    public void Copied(SceneNode copy)
+    {
+        if (copy.Tags.Count > 0 || copy.Attributes.Count > 0)
+            _read.TryAdd(copy, WasRead);
+    }
+
     public void Clear() => _read.Clear();
 
     private void Warn(SceneNode node, string name) =>

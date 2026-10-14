@@ -89,6 +89,7 @@ internal sealed class NodeLifetime
         {
             _tags.Table.Copy(copies[i].Source, copies[i].Copy);
             _attributes.Table.Copy(copies[i].Source, copies[i].Copy);
+            _tags.Seed?.Copied(copies[i].Copy);
         }
 
         copies.Clear();
