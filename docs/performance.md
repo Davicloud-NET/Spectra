@@ -194,6 +194,8 @@ That is 5 to 9 percent, about the spread from one run to the next, and a probe t
 
 Tried and left out: weighing loose parts to Luau's collector as destroyed ones are weighed. With a small heap it kept 10 trees waiting. Beside 35 MiB of Luau the look-over at 64 trees still came first, the collector's steps came on top of it, and a tick took 2.1 ms where the old build took 1.3. Noting each loose tree Luau let go of, to forget it with no collection, cost about 0.2 us a part and moved no row. A script that lets loose trees go and makes nothing more is found by the step every 64 ticks instead.
 
+A tree that leaves the level counts towards the next look-over only the first time. A made model with 320 KiB of attributes, hidden and shown on every tick beside one other loose tree, had a full collection on each of 100 ticks, and has none now (`LooseBytesTests`). The interrupt does not stop a script for bytes on loose trees while some of them may be held by no script, and the end of the tick looks them over. That costs nothing on a set: the shim reads two more fields only when the scripts are past the budget. The rows above did not move past their noise in two runs of each build.
+
 ## The open-world verdict
 
 `CsgBench openworld` moves one isolated part in worlds of 1k, 10k and 50k parts and compiles from the previous world. Its MOVE verdict is the edit at 50k over the edit at 1k, and the band is 1.5x. An edit is about 0.09 ms, and one sample is the mean of 16.

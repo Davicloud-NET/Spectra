@@ -1412,8 +1412,8 @@ SL_API int64_t sl_outside(lua_State* L)
 
 // Where the binding writes what it keeps for the scripts outside any
 // userdata, and reads whether to look its loose trees over. Valid until the
-// state closes.
-SL_API HostCells* sl_cells(lua_State* L)
+// state closes. A HostCells, which is no type outside this file.
+SL_API void* sl_cells(lua_State* L)
 {
     return &hostOf(L)->cells;
 }
