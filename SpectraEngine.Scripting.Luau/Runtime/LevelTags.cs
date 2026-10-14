@@ -74,7 +74,9 @@ internal sealed class LevelTags
         if (Table.Add(node, tag, isInLevel) is not { } added)
             return true;
 
-        if (Table.Bytes > before && HasRoom?.Invoke() == false)
+        // Before HasRoom, which can let go of other trees' tags.
+        long grown = Table.Bytes - before;
+        if (grown > 0 && HasRoom?.Invoke() == false)
         {
             _host.Memory.Stop();
             Table.Remove(node, tag, out _);
@@ -84,7 +86,7 @@ internal sealed class LevelTags
         if (isInLevel)
             Fire(added.Added, node);
         else
-            ChangedOutside?.Invoke(node, Table.Bytes - before);
+            ChangedOutside?.Invoke(node, grown);
 
         return true;
     }
