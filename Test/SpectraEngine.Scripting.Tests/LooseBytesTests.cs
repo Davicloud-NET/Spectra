@@ -233,12 +233,14 @@ public sealed class LooseBytesTests
     }
 
     // Only a tree that leaves the level for the first time adds what it
-    // keeps to what is looked for.
+    // keeps to what is looked for. The spare part keeps a tree loose, so a
+    // look-over would collect.
     [Fact]
     public void A_made_model_hidden_and_shown_on_every_tick_asks_for_no_collection()
     {
         using var level = new ScriptLevel(hasCharacter: false);
         level.AddScript(level.Scene.Root, """
+            local spare = Instance.new("Part")
             local model = Instance.new("Folder")
             for index = 1, 5 do
                 local part = Instance.new("Part")
@@ -250,6 +252,7 @@ public sealed class LooseBytesTests
             game:GetService("RunService").Heartbeat:Connect(function()
                 model.Parent = nil
                 model.Parent = workspace
+                spare.Name = "Spare"
             end)
             """, "Main");
         LuauScriptRuntime runtime = level.Play().Tick(2).Runtime.ShouldNotBeNull();
