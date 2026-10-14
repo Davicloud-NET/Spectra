@@ -40,4 +40,16 @@ internal sealed class TagNodes(string tag)
 
     // Whether a listener waits on one of the signals.
     public bool IsHeard => Added is { ListenerCount: > 0 } || Removed is { ListenerCount: > 0 };
+
+    // Where the tag is in a node's list, or -1.
+    public static int IndexOf(List<TagNodes> tags, ReadOnlySpan<char> tag)
+    {
+        for (int i = 0; i < tags.Count; i++)
+        {
+            if (tag.SequenceEqual(tags[i].Tag))
+                return i;
+        }
+
+        return -1;
+    }
 }
