@@ -163,7 +163,36 @@ What a node's attributes hold, from the table `AttributeBytesCostTests` writes (
 
 Of the 124 bytes about 28 are the node's entry in the table's dictionary. Setting an attribute to a short new string allocated a 32 byte string and allocates nothing now. A new 1000 byte string allocates its 1024 byte array where it allocated a 2024 byte string, and setting the same long string again allocates nothing where it made a string each time. `ScriptCostTests` shows no time that moved past its noise.
 
-What is still found by count and not by bytes: a made node that is in no level and was never destroyed waits for the look-over of `LooseNodes`, which comes at 64 such trees. 20000 parts dropped that way with a 64 KiB string each had 7.8 MiB waiting.
+## What scripts set on nodes, and loose trees
+
+What scripts set on nodes that are not destroyed counts against the memory budget by its bytes, and `docs/script-api.md` has the rule. `HeldBytesCostTests` has loads for it beside the ones above. On 14 October 2026 the old build and the new one ran in turn, three times each, on a machine busy with other work:
+
+| Load | Before | After |
+|---|---|---|
+| 200 parts of the level, four 64 KiB strings on each, 8 MiB budget | ran to its end, 50.4 MiB managed | switched off at the budget, 7.8 MiB managed |
+| loose parts, 10 a tick, 64 KiB string | 64 trees waiting, 3.2 to 3.3 MiB, 133 us a tick | 3 trees waiting, 0.0 MiB, 147 to 162 us a tick |
+| the same beside 35 MiB of Luau | 64 trees, 3.8 MiB, 1270 to 1364 us a tick | 64 trees, 3.8 MiB, 1289 to 1345 us a tick |
+| loose parts, 20000 in one call, 64 KiB string | 61 to 64 trees | 4 trees |
+| loose parts, 20000 in one call, 16 byte string | 32 to 62 trees, 1.9 to 2.5 us a part | 14 to 58 trees, 2.3 to 3.0 us a part |
+
+A loose part is made with an attribute and a tag and let go of in no level. "Waiting" is the most loose trees there were at one time. "Managed" is as in the tables above. In one call it is read from another thread while the script allocates fast, and it went from 0.3 to 13 MiB on both builds, so the count of trees is the number to go by there.
+
+A loose tree goes when a look-over comes, which is a full collection. It came at 64 trees, and it still does. It also comes now once scripts have set more on loose trees than the larger of 256 KiB and an eighth of Luau's heap. With 64 KiB strings and a small heap that is every fourth part, at 7 us a collection, which is what the first loose row got slower by. Beside 35 MiB of Luau an eighth is 4.4 MiB, so the count comes first and nothing changed. A full collection costs time for each byte Luau holds, so with a fixed share what a byte added costs is the same at any heap, and what waits is at most that share of it.
+
+Counting is a few additions on every set and every removal, and a write into the shim when the sum moves. The rows of `ScriptCostTests` it touches, as the median of the three runs of each build:
+
+| Crossing | Before | After |
+|---|---|---|
+| set an attribute to another number | 241 ns | 257 ns |
+| set an attribute to another short string | 276 ns | 289 ns |
+| set an attribute to another CFrame | 290 ns | 316 ns |
+| set an attribute to another long string | 448 ns | 469 ns |
+| add a tag and take it off again | 300 ns | 321 ns |
+| set an attribute to the number it has | 146 ns | 146 ns |
+
+That is 5 to 9 percent, about the spread from one run to the next, and a probe that timed only the sets and the tag found 0 to 18 ns. Nothing allocates. The load with nothing destroyed took 4.5 to 5.0 us a tick before and 2.8 to 6.2 after.
+
+Tried and left out: weighing loose parts to Luau's collector as destroyed ones are weighed. With a small heap it kept 10 trees waiting. Beside 35 MiB of Luau the look-over at 64 trees still came first, the collector's steps came on top of it, and a tick took 2.1 ms where the old build took 1.3. Noting each loose tree Luau let go of, to forget it with no collection, cost about 0.2 us a part and moved no row. A script that lets loose trees go and makes nothing more is found by the step every 64 ticks instead.
 
 ## The open-world verdict
 
